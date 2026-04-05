@@ -1,182 +1,71 @@
-.theme-light {
-    --color-title: #000000;
-    --color-axis: #000000;
-    --color-axis-label: #000000;
-    --color-tick-label: #000000;
-    --color-line: #000000;
+/* ─── Tracker Pro Styles ─────────────────────────────────────────────────── */
 
-    --color-legend-border: #000000;
-
-    --color-dot-fill: #69b3a2;
-    --color-dot-stroke: none;
-
-    --color-bar-fill: #69b3a2;
-    --color-bar-border: none;
-
-    --color-tooltip-bg: #ffffff;
-    --color-tooltip-border: #000000;
-    --color-tooltip-label: #000000;
+.tracker-pro-container {
+  position: relative;
+  width: 100%;
+  margin: 0.5em 0 1em;
+  overflow: hidden;
 }
 
-.theme-dark {
-    --color-title: #ffffff;
-    --color-axis: #ffffff;
-    --color-axis-label: #ffffff;
-    --color-tick-label: #ffffff;
-    --color-line: #ffffff;
-    
-    --color-legend-border: #ffffff;
+/* ─── Error Box ──────────────────────────────────────────────────────────── */
 
-    --color-dot-fill: #69b3a2;
-    --color-dot-stroke: none;
-
-    --color-bar-fill: #69b3a2;
-    --color-bar-border: none;
-
-    --color-tooltip-bg: #ffffff;
-    --color-tooltip-border: #000000;
-    --color-tooltip-label: #000000;
+.tracker-pro-error {
+  border: 1px solid var(--color-red, #e74c3c);
+  border-left: 4px solid var(--color-red, #e74c3c);
+  background: var(--background-modifier-error, #ffeaea);
+  color: var(--text-error, #c0392b);
+  border-radius: 6px;
+  padding: 0.6em 1em;
+  font-size: 0.9em;
 }
 
-.tracker-title {
-    fill: var(--color-title);
-    text-anchor: middle;
-    font-size: 18px;
+.tracker-pro-error strong {
+  display: block;
+  margin-bottom: 0.25em;
 }
 
-.tracker-title-small {
-    fill: var(--color-title);
-    text-anchor: middle;
-    font-size: 16px;
+.tracker-pro-error ul {
+  margin: 0;
+  padding-left: 1.2em;
 }
 
-.tracker-axis {
-    fill: none;
-    stroke: var(--color-axis);
-    stroke-width: 1px;
+/* ─── Empty State ────────────────────────────────────────────────────────── */
+
+.tracker-pro-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0.3em;
+  padding: 2em 1em;
+  border: 1px dashed var(--background-modifier-border);
+  border-radius: 8px;
+  color: var(--text-muted);
+  text-align: center;
 }
 
-.tracker-axis-label {
-    fill: var(--color-axis-label);
-    text-anchor: middle;
-    font-size: 14px;
-    stroke: none;
+.tracker-pro-empty span {
+  font-size: 1.1em;
 }
 
-.tracker-tick-label {
-    fill: var(--color-tick-label);
-    stroke: none;
-    font-size: 12px;
+.tracker-pro-empty small {
+  font-size: 0.8em;
+  opacity: 0.7;
 }
 
-.tracker-line {
-    fill: none;
-    stroke: var(--color-line);
-    stroke-width: 1.5px;
-    stroke-linecap: round;
-    stroke-linejoin: round;
+/* ─── SVG Charts (Gauge / Heatmap / Calendar / Candlestick) ─────────────── */
+
+.tracker-pro-container svg {
+  display: block;
+  width: 100%;
+  height: auto;
+  max-height: 500px;
 }
 
-.tracker-dot {
-    fill: var(--color-dot-fill);
-}
+/* ─── Canvas Charts (Chart.js) ───────────────────────────────────────────── */
 
-.tracker-tooltip {
-    fill: var(--color-tooltip-bg);
-    stroke: var(--color-tooltip-border);
-    stroke-width: 1px;
-}
-
-.tracker-tooltip-label {
-    fill: var(--color-tooltip-label);
-    stroke: none;
-    font-size: 12px;
-}
-
-.tracker-legend {
-    fill: none;
-    stroke: var(--color-legend-border);
-    stroke-width: 0.5px;
-}
-
-.tracker-legend-label {
-    font-size: 14px;
-    text-anchor: left;
-}
-
-.tracker-bar {
-    fill: var(--color-bar-fill);
-}
-
-.tracker-month-header-year {
-    fill: var(--color-title);
-    text-anchor: start;
-    font-size: 22px;
-    
-}
-
-.tracker-month-header-month {
-    fill: var(--color-title);
-    text-anchor: start;
-    font-size: 18px;
-}
-
-.tracker-month-dividing-line {
-    fill: var(--color-bar-fill);
-}
-
-.tracker-month-title-arrow {
-    fill: var(--color-title);
-    text-anchor: middle;
-    font-size: 22px;
-}
-
-.tracker-month-title-rotator {
-    fill: var(--color-title);
-    text-anchor: middle;
-    font-size: 20px;
-}
-
-.tracker-month-title-monitor {
-    fill: var(--color-title);
-    text-anchor: middle;
-    font-size: 18px;
-}
-
-.tracker-month-weekday {
-    fill: var(--color-tick-label);
-    stroke: none;
-    font-size: 12px;
-}
-
-.tracker-month-today-circle {
-    fill: none;
-    stroke: "white";
-    stroke-width: 4px;
-}
-
-.tracker-month-selected-circle {
-    fill: none;
-    stroke: "red";
-    stroke-width: 2px;
-}
-
-.tracker-month-label {
-    fill: var(--color-axis-label);
-    text-anchor: middle;
-    font-size: 14px;
-    stroke: none;
-}
-
-.tracker-month-annotation {
-    fill: var(--color-axis-label);
-    text-anchor: middle;
-    font-size: 10px;
-    stroke: none;
-}
-
-.tracker-pie-label {
-    fill: var(--color-tick-label);
-    stroke: none;
-    font-size: 12px;
+.tracker-pro-container canvas {
+  display: block;
+  width: 100% !important;
+  max-height: 400px;
 }

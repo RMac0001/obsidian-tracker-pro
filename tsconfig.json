@@ -5,21 +5,10 @@
     "inlineSources": true,
     "module": "ESNext",
     "target": "ES2018",
-    "allowJs": true,
-    "noImplicitAny": true,
-    "moduleResolution": "node",
-    "importHelpers": true,
     "allowSyntheticDefaultImports": true,
-
-    "lib": [
-      "dom",
-      "es5",
-      "scripthost",
-      "es2015",
-      "ESNext.String"
-    ]
+    "moduleResolution": "bundler",
+    "strict": false,
+    "skipLibCheck": true
   },
-  "include": [
-    "**/*.ts"
-  ]
+  "include": ["src/**/*.ts"]
 }

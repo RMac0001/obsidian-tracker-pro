@@ -1,10 +1,10 @@
 {
-  "id": "obsidian-tracker",
-  "name": "Tracker",
-  "version": "1.19.0",
-  "minAppVersion": "0.9.12",
-  "description": "A plugin tracks occurrences and numbers in your notes",
-  "author": "pyrochlore",
+  "id": "obsidian-tracker-pro",
+  "name": "Tracker Pro",
+  "version": "1.0.0",
+  "minAppVersion": "0.15.0",
+  "description": "Track and visualize data from YAML frontmatter properties with rich chart types.",
+  "author": "Your Name",
   "authorUrl": "",
   "isDesktopOnly": false
 }

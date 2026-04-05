@@ -4,11 +4,13 @@ import Tracker from "./main";
 export interface TrackerSettings {
     folder: string;
     dateFormat: string;
+    dateProperty: string; // frontmatter key to use as date source (empty = use filename)
 }
 
 export const DEFAULT_SETTINGS: TrackerSettings = {
     folder: "/",
     dateFormat: "YYYY-MM-DD",
+    dateProperty: "", // empty means fall back to filename date
 };
 
 export class TrackerSettingTab extends PluginSettingTab {
@@ -50,6 +52,24 @@ export class TrackerSettingTab extends PluginSettingTab {
                     .setValue(this.plugin.settings.dateFormat)
                     .onChange(async (value) => {
                         this.plugin.settings.dateFormat = value;
+                        await this.plugin.saveSettings();
+                    })
+            );
+
+        new Setting(containerEl)
+            .setName("Default date property")
+            .setDesc(
+                "Frontmatter key to read the date from (e.g. \"date\", \"created\").\n" +
+                "When set, the date is read from this frontmatter property instead of the filename.\n" +
+                "Leave empty to keep using the filename (original behaviour).\n" +
+                "You can also override this per block using the 'dateProperty' argument."
+            )
+            .addText((text) =>
+                text
+                    .setPlaceholder("frontmatter key, e.g. date")
+                    .setValue(this.plugin.settings.dateProperty)
+                    .onChange(async (value) => {
+                        this.plugin.settings.dateProperty = value.trim();
                         await this.plugin.saveSettings();
                     })
             );
