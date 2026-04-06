@@ -1,0 +1,71 @@
+/* ─── Tracker Pro Styles ─────────────────────────────────────────────────── */
+
+.tracker-pro-container {
+  position: relative;
+  width: 100%;
+  margin: 0.5em 0 1em;
+  overflow: hidden;
+}
+
+/* ─── Error Box ──────────────────────────────────────────────────────────── */
+
+.tracker-pro-error {
+  border: 1px solid var(--color-red, #e74c3c);
+  border-left: 4px solid var(--color-red, #e74c3c);
+  background: var(--background-modifier-error, #ffeaea);
+  color: var(--text-error, #c0392b);
+  border-radius: 6px;
+  padding: 0.6em 1em;
+  font-size: 0.9em;
+}
+
+.tracker-pro-error strong {
+  display: block;
+  margin-bottom: 0.25em;
+}
+
+.tracker-pro-error ul {
+  margin: 0;
+  padding-left: 1.2em;
+}
+
+/* ─── Empty State ────────────────────────────────────────────────────────── */
+
+.tracker-pro-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0.3em;
+  padding: 2em 1em;
+  border: 1px dashed var(--background-modifier-border);
+  border-radius: 8px;
+  color: var(--text-muted);
+  text-align: center;
+}
+
+.tracker-pro-empty span {
+  font-size: 1.1em;
+}
+
+.tracker-pro-empty small {
+  font-size: 0.8em;
+  opacity: 0.7;
+}
+
+/* ─── SVG Charts (Gauge / Heatmap / Calendar / Candlestick) ─────────────── */
+
+.tracker-pro-container svg {
+  display: block;
+  width: 100%;
+  height: auto;
+  max-height: 500px;
+}
+
+/* ─── Canvas Charts (Chart.js) ───────────────────────────────────────────── */
+
+.tracker-pro-container canvas {
+  display: block;
+  width: 100% !important;
+  max-height: 400px;
+}

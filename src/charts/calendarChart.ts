@@ -37,14 +37,13 @@ export function renderCalendarChart(
   const schemeColor = config.colorScheme ? COLOR_SCHEMES[config.colorScheme] : null;
   const accentColor = config.colors?.[0] ?? schemeColor ?? COLOR_SCHEMES.blue;
 
-  // Starting month: most recent month that has data
-  const allDates = s.points.map(p => p.date);
-  const lastDate = allDates[allDates.length - 1];
-  let viewYear  = lastDate.getFullYear();
-  let viewMonth = lastDate.getMonth();
+  // Always start on the current month
+  const today = new Date();
+  let viewYear  = today.getFullYear();
+  let viewMonth = today.getMonth();
 
   // Today
-  const todayStr = new Date().toISOString().slice(0, 10);
+  const todayStr = today.toISOString().slice(0, 10);
 
   function hexToRgb(hex: string): [number, number, number] {
     const r = parseInt(hex.slice(1, 3), 16);

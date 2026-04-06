@@ -1,0 +1,771 @@
+# Tracker Pro — Full Reference
+
+Tracker Pro is an Obsidian plugin that reads YAML frontmatter from your notes
+and renders them as charts and summaries. It requires no Dataview dependency.
+
+---
+
+## Table of Contents
+
+1. [Installation](#installation)
+2. [Global Settings](#global-settings)
+3. [How It Works](#how-it-works)
+4. [Core Parameters](#core-parameters)
+   - [Data Source](#data-source)
+   - [Date Handling](#date-handling)
+   - [Properties](#properties)
+   - [Aggregation](#aggregation)
+   - [Visuals](#visuals)
+5. [Chart Types](#chart-types)
+   - [line](#line)
+   - [bar](#bar)
+   - [pie](#pie)
+   - [donut](#donut)
+   - [heatmap](#heatmap)
+   - [calendar](#calendar)
+   - [scatter](#scatter)
+   - [radar](#radar)
+   - [gauge](#gauge)
+   - [candlestick](#candlestick)
+   - [summary](#summary)
+6. [Advanced Features](#advanced-features)
+   - [source: fileMeta](#source-filemeta)
+   - [dateAggregation](#dateaggregation)
+7. [Full Parameter Reference](#full-parameter-reference)
+
+---
+
+## Installation
+
+1. Download `main.js`, `manifest.json`, and `styles.css` from the plugin release.
+2. Create the folder `.obsidian/plugins/obsidian-tracker-pro/` inside your vault.
+3. Drop the three files into that folder.
+4. In Obsidian: **Settings → Community Plugins → Installed Plugins**, find
+   **Tracker Pro** and enable it.
+
+---
+
+## Global Settings
+
+Open **Settings → Tracker Pro** to configure defaults that apply to every block:
+
+| Setting | Description |
+|---|---|
+| **Default folder location** | Folder scanned for notes when no `folder` is set in the block. Defaults to `/` (entire vault). |
+| **Default date format** | Format used to parse dates in note filenames (e.g. `YYYY-MM-DD`). |
+| **Default date property** | Frontmatter key to read dates from instead of the filename. Leave empty to keep using the filename. Can be overridden per block with `dateProperty`. |
+
+---
+
+## How It Works
+
+Each Tracker Pro chart is a fenced code block with the language tag `tracker-pro`:
+
+````
+```tracker-pro
+type: line
+folder: Data/Daily
+properties:
+  - mood
+dateRange: last-30-days
+```
+````
+
+Tracker Pro:
+1. Finds all `.md` files matching your `folder` / `file` / `files` setting.
+2. Reads each file's frontmatter via Obsidian's metadata cache.
+3. Extracts a date for each file (from frontmatter or filename).
+4. Filters files to the requested date range.
+5. Extracts the numeric value(s) for each `properties` entry.
+6. Aggregates same-date values (if multiple notes share a date).
+7. Renders the chart using Chart.js (canvas) or SVG.
+
+---
+
+## Core Parameters
+
+### Data Source
+
+At least one of `folder`, `file`, or `files` must be present.
+
+```yaml
+# Scan an entire folder (recursive)
+folder: Data/Daily
+
+# A single specific file
+file: Data/Special Note
+
+# A hand-picked list of files
+files:
+  - Data/NoteA
+  - Data/NoteB
+```
+
+---
+
+### Date Handling
+
+**`dateProperty`** — frontmatter key to read the date from.
+
+```yaml
+dateProperty: creation_date
+```
+
+If omitted, Tracker Pro looks for common frontmatter keys (`date`, `created`,
+`day`, `timestamp`) and then falls back to the filename pattern `YYYY-MM-DD`.
+
+---
+
+**`dateRange`** — preset shorthand for the date window.
+
+| Value | Meaning |
+|---|---|
+| `last-N-days` | Last N calendar days (e.g. `last-7-days`, `last-30-days`) |
+| `last-N-weeks` | Last N weeks |
+| `last-N-months` | Last N months |
+| `last-N-years` | Last N years |
+| `this-week` | Sunday through today |
+| `this-month` | 1st of month through today |
+| `this-year` | Jan 1 through today |
+| `last-year` | Full previous calendar year |
+| `all` | Jan 1 2000 through today |
+
+```yaml
+dateRange: last-30-days
+```
+
+Alternatively, use explicit dates:
+
+```yaml
+startDate: 2025-01-01
+endDate:   2025-03-31
+```
+
+---
+
+### Properties
+
+A list of frontmatter keys to chart. Each becomes one series.
+
+```yaml
+properties:
+  - mood
+  - energy
+```
+
+For **candlestick** charts, `properties` is a mapping instead:
+
+```yaml
+properties:
+  open:   open_price
+  high:   high_price
+  low:    low_price
+  close:  close_price
+  volume: volume   # optional
+```
+
+For **summary** and **fileMeta** charts, `properties` is optional.
+
+---
+
+### Aggregation
+
+**`aggregate`** — how to roll up multiple data points per time bucket.
+
+| Value | Description |
+|---|---|
+| `daily` | One value per calendar day (default). Same-date values are summed. |
+| `weekly` | Values grouped by week (Sunday start), averaged. |
+| `monthly` | Values grouped by calendar month, averaged. |
+| `cumulative` | Running total over time. |
+| `moving-average` | Rolling average over the last `period` data points. |
+
+```yaml
+aggregate: weekly
+```
+
+**`period`** — window size for `moving-average` (default: `7`).
+
+```yaml
+aggregate: moving-average
+period: 14
+```
+
+> **Note on same-date bucketing:** When multiple notes share the same date (common
+> with exercise logs), Tracker Pro sums all their values before aggregating. This
+> is the correct behaviour for properties like `sets` and `reps` where you want
+> the daily total, not the last note's value.
+
+---
+
+**`missingValue`** — how to handle days with no data.
+
+| Value | Description |
+|---|---|
+| `skip` | Gap in the line / bar missing (default). |
+| `zero` | Missing days treated as 0. |
+| `N` | Missing days treated as a specific number. |
+
+```yaml
+missingValue: zero
+```
+
+---
+
+### Visuals
+
+```yaml
+title: My Chart Title
+subtitle: A short subtitle
+height: 350          # chart height in pixels (default: 300)
+width: 100%          # CSS width (default: 100%)
+showLegend: true     # show/hide legend (default: true)
+
+colors:              # hex colors, one per series
+  - "#4f86f7"
+  - "#f76c6c"
+
+colorScheme: green   # for heatmap and calendar: green | blue | red | orange | purple
+
+xAxis:
+  label: Date
+yAxis:
+  label: Score (1–10)
+  min: 0
+  max: 10
+  unit: " kg"        # appended to tooltip values
+```
+
+---
+
+## Chart Types
+
+### `line`
+
+Plots one or more numeric properties over time as connected lines.
+
+**Good for:** trends, scores over time, any continuous data.
+
+```yaml
+type: line
+folder: Data/Daily
+dateRange: last-30-days
+properties:
+  - mood
+  - energy
+title: Mood & Energy
+colors:
+  - "#4f86f7"
+  - "#43c59e"
+yAxis:
+  min: 0
+  max: 10
+  label: Score
+showLegend: true
+```
+
+**Line-specific options:**
+
+| Parameter | Description |
+|---|---|
+| `aggregate` | `daily` (default), `weekly`, `monthly`, `cumulative`, `moving-average` |
+| `period` | Window for `moving-average` (default: 7) |
+| `missingValue` | `skip` (gap), `zero`, or a number |
+| `yAxis.min/max` | Force Y axis bounds |
+| `yAxis.unit` | Suffix appended to tooltip (e.g. `" kg"`) |
+
+---
+
+### `bar`
+
+Same data as `line` but rendered as vertical bars.
+
+**Good for:** counts, weekly/monthly totals, anything where the column height
+is more readable than a line.
+
+```yaml
+type: bar
+folder: Data/Daily
+dateRange: last-30-days
+properties:
+  - sleep
+title: Sleep Duration
+colors:
+  - "#9b59b6"
+yAxis:
+  label: Hours
+  min: 0
+aggregate: daily
+showLegend: false
+```
+
+**Bar-specific options:** identical to `line`. Multiple `properties` entries
+render as grouped bars side by side.
+
+---
+
+### `pie`
+
+Shows the **frequency distribution** of a categorical property. Each unique
+value found in the frontmatter becomes a slice.
+
+**Good for:** exercise type mix, tag distribution, habit categories.
+
+```yaml
+type: pie
+folder: Data/Exercise
+dateProperty: creation_date
+dateRange: last-30-days
+properties:
+  - exercise
+title: Exercise Mix
+showLegend: true
+```
+
+> **How frequency counting works:** for each note in range, the raw value of
+> each listed property is counted. Array values (tags) are counted per item.
+
+---
+
+### `donut`
+
+Identical to `pie` but rendered as a doughnut ring.
+
+```yaml
+type: donut
+folder: Data/Exercise
+dateProperty: creation_date
+dateRange: last-90-days
+properties:
+  - exercise
+title: 90-Day Exercise Mix
+colors:
+  - "#4f86f7"
+  - "#f76c6c"
+  - "#43c59e"
+  - "#f7c948"
+  - "#9b59b6"
+```
+
+---
+
+### `heatmap`
+
+GitHub-style contribution grid. Each cell is one day, coloured by value
+intensity.
+
+**Good for:** visualising habit consistency, activity levels, anything
+calendar-shaped.
+
+```yaml
+type: heatmap
+folder: Data/Daily
+dateRange: this-year
+properties:
+  - mood
+colorScheme: blue
+title: Mood Heatmap
+```
+
+**Heatmap-specific options:**
+
+| Parameter | Values | Description |
+|---|---|---|
+| `colorScheme` | `green` `blue` `red` `orange` `purple` | Cell colour palette (default: `green`) |
+
+Days with no data are shown in the lightest shade. Hover over a cell for
+the date and value tooltip.
+
+---
+
+### `calendar`
+
+A monthly HTML calendar with coloured day cells and navigation controls.
+
+**Good for:** day-level review of any single metric. Interactively browse
+months.
+
+```yaml
+type: calendar
+folder: Data/Daily
+dateRange: this-month
+properties:
+  - mood
+colorScheme: green
+title: Mood
+```
+
+**Controls:**
+
+| Button | Action |
+|---|---|
+| `‹` | Previous month |
+| `○` | Jump to today |
+| `›` | Next month |
+
+Click a highlighted day to pin its value label. Hover for a tooltip.
+
+**Calendar-specific options:**
+
+| Parameter | Description |
+|---|---|
+| `colorScheme` | Colour palette for data intensity |
+| `colors` | Override the accent colour directly (e.g. `colors: ["#e74c3c"]`) |
+
+---
+
+### `scatter`
+
+Plots two properties against each other as X/Y dots. Each note provides one
+point. List the X property first, Y property second.
+
+**Good for:** correlations (sleep vs mood, steps vs energy).
+
+```yaml
+type: scatter
+folder: Data/Daily
+dateRange: last-90-days
+properties:
+  - sleep    # → X axis
+  - mood     # → Y axis
+title: Sleep vs Mood
+xAxis:
+  label: Sleep (hours)
+yAxis:
+  label: Mood score
+colors:
+  - "#4f86f7"
+```
+
+For more than two properties, pairs are grouped: `[0,1]`, `[2,3]`, etc.
+
+---
+
+### `radar`
+
+Spider chart with one axis per property. Uses the **latest value** of each
+series.
+
+**Good for:** multi-dimensional snapshot (mood, energy, sleep, water all at once).
+
+```yaml
+type: radar
+folder: Data/Daily
+dateRange: last-30-days
+properties:
+  - mood
+  - energy
+  - sleep
+  - water
+title: 30-Day Snapshot
+labels:
+  - Mood
+  - Energy
+  - Sleep
+  - Water (L)
+colors:
+  - "#4f86f7"
+yAxis:
+  min: 0
+  max: 10
+```
+
+**Radar-specific options:**
+
+| Parameter | Description |
+|---|---|
+| `labels` | Override axis labels (defaults to property names) |
+| `yAxis.min/max` | Force radial scale bounds |
+
+---
+
+### `gauge`
+
+Half-circle gauge showing the **latest value** of the first property.
+
+**Good for:** showing current level against a target range (e.g. mood, weight,
+completion percentage).
+
+```yaml
+type: gauge
+folder: Data/Daily
+dateRange: last-7-days
+properties:
+  - mood
+min: 0
+max: 10
+title: Current Mood
+thresholds:
+  - value: 3
+    color: "#e74c3c"
+  - value: 6
+    color: "#f7c948"
+  - value: 10
+    color: "#43c59e"
+```
+
+**Gauge-specific options:**
+
+| Parameter | Required | Description |
+|---|---|---|
+| `min` | Yes | Left edge (minimum) value |
+| `max` | Yes | Right edge (maximum) value |
+| `thresholds` | No | Coloured zones. Each entry needs `value` (upper bound) and `color`. Defaults to red/yellow/green thirds. |
+
+---
+
+### `candlestick`
+
+OHLC (Open / High / Low / Close) financial chart rendered as SVG candles.
+Bullish candles (close ≥ open) and bearish candles (close < open) are coloured
+separately.
+
+**Good for:** tracking anything with four measurements per period — price,
+range of scores, experiment results.
+
+```yaml
+type: candlestick
+folder: Data/Finance
+dateRange: last-60-days
+properties:
+  open:   open
+  high:   high
+  low:    low
+  close:  close
+  volume: volume   # optional — adds tooltip info
+title: Stock Price
+colors:
+  - "#43c59e"   # bullish (up candle)
+  - "#f76c6c"   # bearish (down candle)
+height: 350
+```
+
+**Candlestick-specific options:**
+
+| Parameter | Description |
+|---|---|
+| `properties.open` | Frontmatter key for open value |
+| `properties.high` | Frontmatter key for high value |
+| `properties.low` | Frontmatter key for low value |
+| `properties.close` | Frontmatter key for close value |
+| `properties.volume` | Frontmatter key for volume (optional) |
+| `colors[0]` | Bullish candle colour (default: `#43c59e`) |
+| `colors[1]` | Bearish candle colour (default: `#f76c6c`) |
+
+---
+
+### `summary`
+
+A label/value table built from a template string with computed variables.
+No canvas or SVG — pure text.
+
+**Good for:** dashboards, streaks, totals at a glance.
+
+```yaml
+type: summary
+folder: Data/Exercise
+dateProperty: creation_date
+dateRange: this-year
+title: Exercise Stats
+summary:
+  template: |
+    Total sessions: {{totalDays()}}
+    Current streak: {{currentStreak()}}
+    Longest streak: {{maxStreak()}}
+    Days since last session: {{currentBreaks()}}
+    Longest break: {{maxBreaks()}}
+```
+
+Lines containing a `:` are split into a **label | value** two-column table row.
+Lines without `:` span the full width.
+
+**Template variables:**
+
+| Variable | Description |
+|---|---|
+| `{{totalDays()}}` | Count of days that have at least one non-zero value |
+| `{{currentStreak()}}` | Consecutive days up to today (resets if you missed yesterday) |
+| `{{maxStreak()}}` | Longest consecutive-day run in the date range |
+| `{{currentBreaks()}}` | Days since the last active day (0 if active today) |
+| `{{maxBreaks()}}` | Longest gap between active days |
+| `{{sum()}}` | Sum of all values across all series and all days |
+| `{{mean()}}` | Average value per data point (active days only) |
+| `{{max()}}` | Highest single value in the range |
+
+**Using `properties` with `summary`**
+
+`properties` is **optional** for `summary`. When omitted, streak calculations
+use note *presence* (active = note exists that day). When included, calculations
+use the numeric values (active = value is non-null and non-zero).
+
+```yaml
+# Streak based on whether notes exist (no properties needed)
+type: summary
+folder: Data/Exercise
+dateProperty: creation_date
+dateRange: this-year
+title: Exercise Consistency
+summary:
+  template: |
+    Current streak: {{currentStreak()}}
+    Longest streak: {{maxStreak()}}
+    Total sessions: {{totalDays()}}
+```
+
+```yaml
+# Aggregated totals using a numeric property
+type: summary
+folder: Data/Exercise
+dateProperty: creation_date
+dateRange: last-30-days
+properties:
+  - sets
+title: Sets — Last 30 Days
+summary:
+  template: |
+    Total sets: {{sum()}}
+    Daily average: {{mean()}}
+    Best day: {{max()}}
+    Active days: {{totalDays()}}
+```
+
+---
+
+## Advanced Features
+
+### `source: fileMeta`
+
+Read values from the **file itself** rather than frontmatter. No numeric
+property needed in your notes.
+
+```yaml
+type: bar
+folder: Data/Journal
+dateProperty: creation_date
+dateRange: this-year
+source: fileMeta
+target: numWords
+title: Words Per Entry
+```
+
+**`target` options:**
+
+| Target | Description |
+|---|---|
+| `numWords` | Whitespace word count (frontmatter stripped) |
+| `numChars` | Character count (frontmatter stripped) |
+| `numSentences` | Sentence count (split on `.`, `!`, `?`) |
+| `numLinks` | Internal wiki-links + embeds |
+| `size` | Raw file size in bytes |
+
+> **Note:** `numWords` is a simple whitespace count and will differ from
+> tools like Novel Word Count. Use it for relative comparison, not absolute totals.
+
+`source: fileMeta` works with all chart types. Combine with `aggregate` as
+normal:
+
+```yaml
+type: line
+folder: Data/Journal
+dateProperty: creation_date
+dateRange: this-year
+source: fileMeta
+target: numWords
+aggregate: cumulative
+title: Cumulative Words Written
+```
+
+---
+
+### `dateAggregation`
+
+When multiple notes share the same date (e.g. you log each exercise as a
+separate note), Tracker Pro buckets them before building the time series.
+
+The default behaviour is `sum` — daily values are added together, which is
+correct for counts like `sets` and `reps`.
+
+```yaml
+type: bar
+folder: Data/Exercise
+dateProperty: creation_date
+dateRange: last-30-days
+properties:
+  - sets
+# dateAggregation defaults to sum — no need to set it unless you want something else
+```
+
+Override with `dateAggregation`:
+
+| Value | Description |
+|---|---|
+| `sum` | Add all same-date values (default) |
+| `mean` | Average all same-date values |
+| `max` | Keep the highest same-date value |
+| `min` | Keep the lowest same-date value |
+| `count` | Count how many notes exist on that date |
+
+```yaml
+# Count exercise sessions per day (ignores numeric values entirely)
+type: bar
+folder: Data/Exercise
+dateProperty: creation_date
+dateRange: last-30-days
+properties:
+  - sets
+dateAggregation: count
+title: Sessions Per Day
+```
+
+```yaml
+# Track your peak single-set performance per day
+type: line
+folder: Data/Exercise
+dateProperty: creation_date
+dateRange: last-30-days
+properties:
+  - reps
+dateAggregation: max
+title: Daily Max Reps
+```
+
+---
+
+## Full Parameter Reference
+
+All available parameters in one table.
+
+| Parameter | Type | Default | Applies to | Description |
+|---|---|---|---|---|
+| `type` | string | — | all | **Required.** Chart type. |
+| `folder` | string | — | all | Folder path to scan recursively. |
+| `file` | string | — | all | Single file path (without `.md`). |
+| `files` | list | — | all | List of file paths. |
+| `dateRange` | string | last-30-days | all | Preset date window. |
+| `startDate` | ISO date | — | all | Explicit range start. |
+| `endDate` | ISO date | — | all | Explicit range end. |
+| `dateProperty` | string | — | all | Frontmatter key for the note's date. |
+| `properties` | list / map | — | most | Frontmatter key(s) to chart. |
+| `aggregate` | string | `daily` | line, bar, heatmap, gauge, radar | Time aggregation mode. |
+| `period` | number | 7 | line, bar | Moving-average window size. |
+| `dateAggregation` | string | `sum` | all | How to bucket same-date notes. |
+| `missingValue` | `skip` / `zero` / N | `skip` | line, bar | Handling of missing data points. |
+| `source` | `frontmatter` / `fileMeta` | `frontmatter` | all | Where to read values from. |
+| `target` | string | `numWords` | fileMeta only | Which file metric to read. |
+| `title` | string | — | all | Chart title. |
+| `subtitle` | string | — | line, bar, pie, scatter, radar | Subtitle below the title. |
+| `height` | number | 300 | all except summary | Chart height in pixels. |
+| `width` | string | — | all | CSS width (e.g. `400px`, `100%`). |
+| `colors` | list | built-in palette | all | Per-series hex colours. |
+| `colorScheme` | string | `green` | heatmap, calendar | Named colour palette. |
+| `showLegend` | boolean | `true` | line, bar, pie, donut, radar | Show / hide legend. |
+| `xAxis.label` | string | — | line, bar, scatter | X axis label text. |
+| `xAxis.min/max` | number | — | scatter | X axis bounds. |
+| `yAxis.label` | string | — | line, bar, scatter, radar | Y axis label text. |
+| `yAxis.min/max` | number | — | line, bar, scatter, radar | Y axis bounds. |
+| `yAxis.unit` | string | — | line, bar | Suffix added to tooltip values. |
+| `labels` | list | property names | radar | Custom axis labels. |
+| `min` | number | — | gauge | **Required for gauge.** Minimum value. |
+| `max` | number | — | gauge | **Required for gauge.** Maximum value. |
+| `thresholds` | list | red/yellow/green | gauge | Colour zones: `value` + `color` pairs. |
+| `summary.template` | string | — | summary | Multi-line template with `{{variable()}}` placeholders. |
