@@ -178,9 +178,14 @@ export function resolveStartEnd(
   config: TrackerConfig
 ): { start: Date; end: Date } {
   if (config.startDate && config.endDate) {
+    // Parse ISO date strings as local midnight, not UTC
+    const parseLocal = (s: string) => {
+      const m = s.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+      return m ? new Date(+m[1], +m[2] - 1, +m[3]) : new Date(s);
+    };
     return {
-      start: new Date(config.startDate),
-      end: new Date(config.endDate),
+      start: parseLocal(config.startDate),
+      end:   parseLocal(config.endDate),
     };
   }
   if (config.dateRange) {

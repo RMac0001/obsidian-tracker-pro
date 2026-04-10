@@ -41,28 +41,50 @@ function collectFiles(folder: TFolder, out: TFile[]) {
   }
 }
 
+// ─── Date Parsing ────────────────────────────────────────────────────────────
+// IMPORTANT: bare ISO date strings like "2026-04-09" are parsed by JavaScript
+// as UTC midnight. In any timezone behind UTC this shifts the local date back
+// by one day. We always parse date-only strings as LOCAL midnight instead.
+
+function parseLocalDate(raw: unknown): Date | null {
+  if (!raw) return null;
+  const str = String(raw).trim();
+
+  // ISO date-only: YYYY-MM-DD → parse as local midnight
+  const iso = str.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (iso) {
+    const d = new Date(+iso[1], +iso[2] - 1, +iso[3]);
+    return isNaN(d.getTime()) ? null : d;
+  }
+
+  // Everything else (datetime strings, locale strings like "04/09/2026"):
+  // new Date() handles these as local time already
+  const d = new Date(str);
+  return isNaN(d.getTime()) ? null : d;
+}
+
 // ─── Date Extraction ──────────────────────────────────────────────────────────
 
 function extractDate(file: TFile, frontmatter: Record<string, unknown>, dateProperty?: string): Date | null {
   // 1. Explicit dateProperty in frontmatter
   if (dateProperty && frontmatter[dateProperty]) {
-    const d = new Date(frontmatter[dateProperty] as string);
-    if (!isNaN(d.getTime())) return d;
+    const d = parseLocalDate(frontmatter[dateProperty]);
+    if (d) return d;
   }
 
   // 2. Common frontmatter date fields
   for (const key of ["date", "created", "day", "timestamp"]) {
     if (frontmatter[key]) {
-      const d = new Date(frontmatter[key] as string);
-      if (!isNaN(d.getTime())) return d;
+      const d = parseLocalDate(frontmatter[key]);
+      if (d) return d;
     }
   }
 
   // 3. File name pattern: YYYY-MM-DD anywhere in basename
   const nameMatch = file.basename.match(/(\d{4}-\d{2}-\d{2})/);
   if (nameMatch) {
-    const d = new Date(nameMatch[1]);
-    if (!isNaN(d.getTime())) return d;
+    const d = parseLocalDate(nameMatch[1]);
+    if (d) return d;
   }
 
   // 4. File creation time

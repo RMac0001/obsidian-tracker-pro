@@ -28,7 +28,6 @@ and renders them as charts and summaries. It requires no Dataview dependency.
    - [gauge](#gauge)
    - [candlestick](#candlestick)
    - [summary](#summary)
-   - [table](#table)
 6. [Advanced Features](#advanced-features)
    - [source: fileMeta](#source-filemeta)
    - [dateAggregation](#dateaggregation)
@@ -165,7 +164,7 @@ properties:
   volume: volume   # optional
 ```
 
-For **summary**, **table**, and **fileMeta** charts, `properties` is optional.
+For **summary** and **fileMeta** charts, `properties` is optional.
 
 ---
 
@@ -577,17 +576,8 @@ summary:
     Longest break: {{maxBreaks()}}
 ```
 
-> **Always use `|` after `template:`, never `>`.**
-> `|` is YAML's literal block scalar — it preserves newlines exactly as written,
-> which is required for each stat to render on its own row.
-> `>` is the folded scalar — it collapses all newlines into spaces, causing every
-> stat to run together in a single cell.
-
 Lines containing a `:` are split into a **label | value** two-column table row.
 Lines without `:` span the full width.
-
-A **Copy** button appears in the top-right corner of every summary block. Clicking
-it copies the rendered stats to the clipboard as plain text, one stat per line.
 
 **Template variables:**
 
@@ -637,100 +627,6 @@ summary:
     Daily average: {{mean()}}
     Best day: {{max()}}
     Active days: {{totalDays()}}
-```
-
----
-
-### `table`
-
-Groups notes by any frontmatter property and displays per-group aggregations
-as a sortable table. No canvas or SVG — pure HTML.
-
-**Good for:** exercise breakdowns by movement, project task counts, any
-dataset where you want rows per category rather than a time series.
-
-```yaml
-type: table
-folder: Data/Exercise Notes
-dateProperty: creation_date
-dateRange: last-30-days
-groupBy: exercise
-groupLabel: Exercise
-columns:
-  - label: Sessions
-    value: count
-  - label: Sets
-    value: sum(sets)
-  - label: Reps
-    value: sum(reps)
-  - label: Minutes
-    value: sum(time_min)
-title: Exercise Summary — Last 30 Days
-```
-
-**Required parameters:**
-
-| Parameter | Description |
-|---|---|
-| `groupBy` | Frontmatter key whose value defines each row. Notes missing this property are excluded. |
-| `columns` | List of column definitions. Each entry requires a `label` and a `value` expression (see below). |
-
-**Optional parameters:**
-
-| Parameter | Description |
-|---|---|
-| `groupLabel` | Header text for the group column. Defaults to the `groupBy` key name. |
-| `title` | Title shown above the table. |
-| `dateRange` / `startDate` / `endDate` | Standard date range parameters — works the same as all other chart types. |
-| `dateProperty` | Frontmatter key for the note date — works the same as all other chart types. |
-
-**Column `value` expressions:**
-
-| Expression | Description |
-|---|---|
-| `count` | Number of notes in the group within the date range |
-| `sum(prop)` | Sum of a frontmatter property across all notes in the group |
-| `mean(prop)` | Average of a frontmatter property across all notes in the group |
-| `max(prop)` | Highest value of a frontmatter property in the group |
-| `min(prop)` | Lowest value of a frontmatter property in the group |
-
-Rows are sorted alphabetically by the `groupBy` value. Notes where the
-`groupBy` property is absent are silently excluded. `properties` is not
-needed — column values are resolved directly from the `columns` expressions.
-
-**More examples:**
-
-```yaml
-# Book reading tracker — group by genre
-type: table
-folder: Data/Books
-dateRange: this-year
-groupBy: genre
-groupLabel: Genre
-columns:
-  - label: Books
-    value: count
-  - label: Avg Rating
-    value: mean(rating)
-  - label: Best Rating
-    value: max(rating)
-title: Reading by Genre
-```
-
-```yaml
-# Project work log — group by project name
-type: table
-folder: Data/Work Log
-dateRange: last-30-days
-groupBy: project
-columns:
-  - label: Entries
-    value: count
-  - label: Total Hours
-    value: sum(hours)
-  - label: Avg Hours
-    value: mean(hours)
-title: Time by Project
 ```
 
 ---
@@ -849,7 +745,7 @@ All available parameters in one table.
 | `startDate` | ISO date | — | all | Explicit range start. |
 | `endDate` | ISO date | — | all | Explicit range end. |
 | `dateProperty` | string | — | all | Frontmatter key for the note's date. |
-| `properties` | list / map | — | most | Frontmatter key(s) to chart. Optional for summary and table. |
+| `properties` | list / map | — | most | Frontmatter key(s) to chart. |
 | `aggregate` | string | `daily` | line, bar, heatmap, gauge, radar | Time aggregation mode. |
 | `period` | number | 7 | line, bar | Moving-average window size. |
 | `dateAggregation` | string | `sum` | all | How to bucket same-date notes. |
@@ -858,7 +754,7 @@ All available parameters in one table.
 | `target` | string | `numWords` | fileMeta only | Which file metric to read. |
 | `title` | string | — | all | Chart title. |
 | `subtitle` | string | — | line, bar, pie, scatter, radar | Subtitle below the title. |
-| `height` | number | 300 | all except summary, table | Chart height in pixels. |
+| `height` | number | 300 | all except summary | Chart height in pixels. |
 | `width` | string | — | all | CSS width (e.g. `400px`, `100%`). |
 | `colors` | list | built-in palette | all | Per-series hex colours. |
 | `colorScheme` | string | `green` | heatmap, calendar | Named colour palette. |
@@ -873,6 +769,3 @@ All available parameters in one table.
 | `max` | number | — | gauge | **Required for gauge.** Maximum value. |
 | `thresholds` | list | red/yellow/green | gauge | Colour zones: `value` + `color` pairs. |
 | `summary.template` | string | — | summary | Multi-line template with `{{variable()}}` placeholders. |
-| `groupBy` | string | — | table | **Required for table.** Frontmatter key to group rows by. |
-| `groupLabel` | string | groupBy key | table | Override header label for the group column. |
-| `columns` | list | — | table | **Required for table.** List of `{ label, value }` column definitions. |

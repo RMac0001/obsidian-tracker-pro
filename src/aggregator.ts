@@ -2,14 +2,18 @@ import { SeriesData, DataPoint, AggregateType } from "./types";
 
 // ─── Bucket Key Helpers ───────────────────────────────────────────────────────
 
+function localDateKey(d: Date): string {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+}
+
 function dailyKey(d: Date): string {
-  return d.toISOString().slice(0, 10);
+  return localDateKey(d);
 }
 
 function weekKey(d: Date): string {
   const tmp = new Date(d);
   tmp.setDate(d.getDate() - d.getDay()); // Sunday start
-  return tmp.toISOString().slice(0, 10);
+  return localDateKey(tmp);
 }
 
 function monthKey(d: Date): string {

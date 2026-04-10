@@ -23,12 +23,12 @@ export function renderCalendarChart(
     return;
   }
 
-  // Build value map: "YYYY-MM-DD" -> number
+  // Build value map: "YYYY-MM-DD" -> number (local date keys)
   const valueMap = new Map<string, number>();
   let maxVal = 0;
   for (const pt of s.points) {
     if (pt.value === null) continue;
-    const key = pt.date.toISOString().slice(0, 10);
+    const key = `${pt.date.getFullYear()}-${String(pt.date.getMonth() + 1).padStart(2,"0")}-${String(pt.date.getDate()).padStart(2,"0")}`;
     valueMap.set(key, pt.value);
     if (pt.value > maxVal) maxVal = pt.value;
   }
@@ -37,13 +37,13 @@ export function renderCalendarChart(
   const schemeColor = config.colorScheme ? COLOR_SCHEMES[config.colorScheme] : null;
   const accentColor = config.colors?.[0] ?? schemeColor ?? COLOR_SCHEMES.blue;
 
-  // Always start on the current month
-  const today = new Date();
-  let viewYear  = today.getFullYear();
-  let viewMonth = today.getMonth();
+  // Always start on today's month, regardless of where the data falls
+  const todayLocal = new Date();
+  let viewYear  = todayLocal.getFullYear();
+  let viewMonth = todayLocal.getMonth();
 
-  // Today
-  const todayStr = today.toISOString().slice(0, 10);
+  // Today's key for highlighting (local date components)
+  const todayStr = `${todayLocal.getFullYear()}-${String(todayLocal.getMonth() + 1).padStart(2,"0")}-${String(todayLocal.getDate()).padStart(2,"0")}`;
 
   function hexToRgb(hex: string): [number, number, number] {
     const r = parseInt(hex.slice(1, 3), 16);
@@ -81,9 +81,9 @@ export function renderCalendarChart(
     }
 
     const nav = header.createDiv({ cls: "tpro-cal-nav" });
-    const btnPrev = nav.createEl("button", { cls: "tpro-cal-btn", text: "‹" });
-    const btnToday = nav.createEl("button", { cls: "tpro-cal-btn tpro-cal-btn-dot", text: "○" });
-    const btnNext = nav.createEl("button", { cls: "tpro-cal-btn", text: "›" });
+    const btnPrev   = nav.createEl("button", { cls: "tpro-cal-btn", text: "‹" });
+    const btnToday  = nav.createEl("button", { cls: "tpro-cal-btn tpro-cal-btn-dot", text: "○" });
+    const btnNext   = nav.createEl("button", { cls: "tpro-cal-btn", text: "›" });
 
     btnPrev.addEventListener("click", () => {
       viewMonth--;
@@ -97,24 +97,22 @@ export function renderCalendarChart(
     });
     btnToday.addEventListener("click", () => {
       const t = new Date();
-      viewYear = t.getFullYear();
+      viewYear  = t.getFullYear();
       viewMonth = t.getMonth();
       render();
     });
 
     // ── DOW Row ───────────────────────────────────────────────────────────────
     const grid = wrap.createDiv({ cls: "tpro-cal-grid" });
-
     DOW_LABELS.forEach(d => {
       grid.createDiv({ cls: "tpro-cal-dow", text: d });
     });
 
     // ── Day Cells ─────────────────────────────────────────────────────────────
-    const firstDow = new Date(viewYear, viewMonth, 1).getDay();
+    const firstDow    = new Date(viewYear, viewMonth, 1).getDay();
     const daysInMonth = new Date(viewYear, viewMonth + 1, 0).getDate();
     const daysInPrev  = new Date(viewYear, viewMonth, 0).getDate();
 
-    // Tooltip element (shared)
     const tooltip = wrap.createDiv({ cls: "tpro-cal-tooltip" });
     tooltip.style.display = "none";
 
@@ -127,21 +125,21 @@ export function renderCalendarChart(
 
     // Current month days
     for (let day = 1; day <= daysInMonth; day++) {
-      const key = dateKey(viewYear, viewMonth, day);
-      const value = valueMap.get(key);
+      const key     = dateKey(viewYear, viewMonth, day);
+      const value   = valueMap.get(key);
       const isToday = key === todayStr;
 
       const cell = grid.createDiv({ cls: "tpro-cal-cell" + (isToday ? " tpro-cal-today" : "") });
       if (isToday) cell.style.setProperty("--accent", accentColor);
 
-      const span = cell.createSpan({ text: String(day) });
+      cell.createSpan({ text: String(day) });
 
       if (value !== undefined) {
         cell.style.background = cellBg(value);
         cell.style.cursor = "pointer";
         cell.addClass("tpro-cal-hasvalue");
 
-        cell.addEventListener("mouseenter", (e) => {
+        cell.addEventListener("mouseenter", () => {
           tooltip.setText(`${key}: ${value}`);
           tooltip.style.display = "block";
         });
@@ -149,12 +147,10 @@ export function renderCalendarChart(
           tooltip.style.display = "none";
         });
         cell.addEventListener("click", () => {
-          // Toggle a persistent label on click
           const existing = cell.querySelector(".tpro-cal-valuelabel");
           if (existing) {
             existing.remove();
           } else {
-            // Remove any other open labels first
             wrap.querySelectorAll(".tpro-cal-valuelabel").forEach(el => el.remove());
             cell.createDiv({ cls: "tpro-cal-valuelabel", text: String(value) });
           }
@@ -163,14 +159,14 @@ export function renderCalendarChart(
     }
 
     // Trailing overflow (next month)
-    const totalCells = firstDow + daysInMonth;
+    const totalCells   = firstDow + daysInMonth;
     const trailingCount = totalCells % 7 === 0 ? 0 : 7 - (totalCells % 7);
     for (let i = 1; i <= trailingCount; i++) {
       const cell = grid.createDiv({ cls: "tpro-cal-cell tpro-cal-overflow" });
       cell.createSpan({ text: String(i) });
     }
 
-    // ── Styles (injected once per render) ─────────────────────────────────────
+    // ── Styles (injected once) ────────────────────────────────────────────────
     const styleId = "tpro-cal-styles";
     if (!document.getElementById(styleId)) {
       const style = document.createElement("style");

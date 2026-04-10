@@ -37,7 +37,7 @@ export function renderHeatmapChart(
   let maxVal = 0;
   for (const pt of s.points) {
     if (pt.value === null) continue;
-    const key = pt.date.toISOString().slice(0, 10);
+    const key = `${pt.date.getFullYear()}-${String(pt.date.getMonth() + 1).padStart(2,"0")}-${String(pt.date.getDate()).padStart(2,"0")}`;
     valueMap.set(key, pt.value);
     if (pt.value > maxVal) maxVal = pt.value;
   }
@@ -64,7 +64,7 @@ export function renderHeatmapChart(
     for (let d = 0; d < 7; d++) {
       col.push({
         date: new Date(cursor),
-        key: cursor.toISOString().slice(0, 10),
+        key: `${cursor.getFullYear()}-${String(cursor.getMonth() + 1).padStart(2,"0")}-${String(cursor.getDate()).padStart(2,"0")}`,
       });
       cursor.setDate(cursor.getDate() + 1);
     }
