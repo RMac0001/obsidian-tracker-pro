@@ -1,4 +1,4 @@
-# Tracker Pro — Full Reference
+## Full Reference
 
 Tracker Pro is an Obsidian plugin that reads YAML frontmatter from your notes
 and renders them as charts and summaries. It requires no Dataview dependency.
@@ -28,6 +28,7 @@ and renders them as charts and summaries. It requires no Dataview dependency.
    - [gauge](#gauge)
    - [candlestick](#candlestick)
    - [summary](#summary)
+   - [table](#table)
 6. [Advanced Features](#advanced-features)
    - [source: fileMeta](#source-filemeta)
    - [dateAggregation](#dateaggregation)
@@ -164,7 +165,7 @@ properties:
   volume: volume   # optional
 ```
 
-For **summary** and **fileMeta** charts, `properties` is optional.
+For **summary**, **table**, and **fileMeta** charts, `properties` is optional.
 
 ---
 
@@ -266,13 +267,13 @@ showLegend: true
 
 **Line-specific options:**
 
-| Parameter | Description |
-|---|---|
-| `aggregate` | `daily` (default), `weekly`, `monthly`, `cumulative`, `moving-average` |
-| `period` | Window for `moving-average` (default: 7) |
-| `missingValue` | `skip` (gap), `zero`, or a number |
-| `yAxis.min/max` | Force Y axis bounds |
-| `yAxis.unit` | Suffix appended to tooltip (e.g. `" kg"`) |
+| Parameter       | Description                                                            |
+| --------------- | ---------------------------------------------------------------------- |
+| `aggregate`     | `daily` (default), `weekly`, `monthly`, `cumulative`, `moving-average` |
+| `period`        | Window for `moving-average` (default: 7)                               |
+| `missingValue`  | `skip` (gap), `zero`, or a number                                      |
+| `yAxis.min/max` | Force Y axis bounds                                                    |
+| `yAxis.unit`    | Suffix appended to tooltip (e.g. `" kg"`)                              |
 
 ---
 
@@ -576,8 +577,17 @@ summary:
     Longest break: {{maxBreaks()}}
 ```
 
+> **Always use `|` after `template:`, never `>`.**
+> `|` is YAML's literal block scalar — it preserves newlines exactly as written,
+> which is required for each stat to render on its own row.
+> `>` is the folded scalar — it collapses all newlines into spaces, causing every
+> stat to run together in a single cell.
+
 Lines containing a `:` are split into a **label | value** two-column table row.
 Lines without `:` span the full width.
+
+A **Copy** button appears in the top-right corner of every summary block. Clicking
+it copies the rendered stats to the clipboard as plain text, one stat per line.
 
 **Template variables:**
 
@@ -627,6 +637,100 @@ summary:
     Daily average: {{mean()}}
     Best day: {{max()}}
     Active days: {{totalDays()}}
+```
+
+---
+
+### `table`
+
+Groups notes by any frontmatter property and displays per-group aggregations
+as a sortable table. No canvas or SVG — pure HTML.
+
+**Good for:** exercise breakdowns by movement, project task counts, any
+dataset where you want rows per category rather than a time series.
+
+```yaml
+type: table
+folder: Data/Exercise Notes
+dateProperty: creation_date
+dateRange: last-30-days
+groupBy: exercise
+groupLabel: Exercise
+columns:
+  - label: Sessions
+    value: count
+  - label: Sets
+    value: sum(sets)
+  - label: Reps
+    value: sum(reps)
+  - label: Minutes
+    value: sum(time_min)
+title: Exercise Summary — Last 30 Days
+```
+
+**Required parameters:**
+
+| Parameter | Description |
+|---|---|
+| `groupBy` | Frontmatter key whose value defines each row. Notes missing this property are excluded. |
+| `columns` | List of column definitions. Each entry requires a `label` and a `value` expression (see below). |
+
+**Optional parameters:**
+
+| Parameter | Description |
+|---|---|
+| `groupLabel` | Header text for the group column. Defaults to the `groupBy` key name. |
+| `title` | Title shown above the table. |
+| `dateRange` / `startDate` / `endDate` | Standard date range parameters — works the same as all other chart types. |
+| `dateProperty` | Frontmatter key for the note date — works the same as all other chart types. |
+
+**Column `value` expressions:**
+
+| Expression   | Description                                                     |
+| ------------ | --------------------------------------------------------------- |
+| `count`      | Number of notes in the group within the date range              |
+| `sum(prop)`  | Sum of a frontmatter property across all notes in the group     |
+| `mean(prop)` | Average of a frontmatter property across all notes in the group |
+| `max(prop)`  | Highest value of a frontmatter property in the group            |
+| `min(prop)`  | Lowest value of a frontmatter property in the group             |
+
+Rows are sorted alphabetically by the `groupBy` value. Notes where the
+`groupBy` property is absent are silently excluded. `properties` is not
+needed — column values are resolved directly from the `columns` expressions.
+
+**More examples:**
+
+```yaml
+# Book reading tracker — group by genre
+type: table
+folder: Data/Books
+dateRange: this-year
+groupBy: genre
+groupLabel: Genre
+columns:
+  - label: Books
+    value: count
+  - label: Avg Rating
+    value: mean(rating)
+  - label: Best Rating
+    value: max(rating)
+title: Reading by Genre
+```
+
+```yaml
+# Project work log — group by project name
+type: table
+folder: Data/Work Log
+dateRange: last-30-days
+groupBy: project
+columns:
+  - label: Entries
+    value: count
+  - label: Total Hours
+    value: sum(hours)
+  - label: Avg Hours
+    value: mean(hours)
+title: Time by Project
 ```
 
 ---
@@ -692,7 +796,7 @@ dateProperty: creation_date
 dateRange: last-30-days
 properties:
   - sets
-# dateAggregation defaults to sum — no need to set it unless you want something else
+dateAggregation defaults to sum — no need to set it unless you want something else
 ```
 
 Override with `dateAggregation`:
@@ -735,37 +839,54 @@ title: Daily Max Reps
 
 All available parameters in one table.
 
-| Parameter | Type | Default | Applies to | Description |
-|---|---|---|---|---|
-| `type` | string | — | all | **Required.** Chart type. |
-| `folder` | string | — | all | Folder path to scan recursively. |
-| `file` | string | — | all | Single file path (without `.md`). |
-| `files` | list | — | all | List of file paths. |
-| `dateRange` | string | last-30-days | all | Preset date window. |
-| `startDate` | ISO date | — | all | Explicit range start. |
-| `endDate` | ISO date | — | all | Explicit range end. |
-| `dateProperty` | string | — | all | Frontmatter key for the note's date. |
-| `properties` | list / map | — | most | Frontmatter key(s) to chart. |
-| `aggregate` | string | `daily` | line, bar, heatmap, gauge, radar | Time aggregation mode. |
-| `period` | number | 7 | line, bar | Moving-average window size. |
-| `dateAggregation` | string | `sum` | all | How to bucket same-date notes. |
-| `missingValue` | `skip` / `zero` / N | `skip` | line, bar | Handling of missing data points. |
-| `source` | `frontmatter` / `fileMeta` | `frontmatter` | all | Where to read values from. |
-| `target` | string | `numWords` | fileMeta only | Which file metric to read. |
-| `title` | string | — | all | Chart title. |
-| `subtitle` | string | — | line, bar, pie, scatter, radar | Subtitle below the title. |
-| `height` | number | 300 | all except summary | Chart height in pixels. |
-| `width` | string | — | all | CSS width (e.g. `400px`, `100%`). |
-| `colors` | list | built-in palette | all | Per-series hex colours. |
-| `colorScheme` | string | `green` | heatmap, calendar | Named colour palette. |
-| `showLegend` | boolean | `true` | line, bar, pie, donut, radar | Show / hide legend. |
-| `xAxis.label` | string | — | line, bar, scatter | X axis label text. |
-| `xAxis.min/max` | number | — | scatter | X axis bounds. |
-| `yAxis.label` | string | — | line, bar, scatter, radar | Y axis label text. |
-| `yAxis.min/max` | number | — | line, bar, scatter, radar | Y axis bounds. |
-| `yAxis.unit` | string | — | line, bar | Suffix added to tooltip values. |
-| `labels` | list | property names | radar | Custom axis labels. |
-| `min` | number | — | gauge | **Required for gauge.** Minimum value. |
-| `max` | number | — | gauge | **Required for gauge.** Maximum value. |
-| `thresholds` | list | red/yellow/green | gauge | Colour zones: `value` + `color` pairs. |
-| `summary.template` | string | — | summary | Multi-line template with `{{variable()}}` placeholders. |
+| Parameter          | Type                       | Default                             | Applies to                       | Description                                                            |
+| ------------------ | -------------------------- | ----------------------------------- | -------------------------------- | ---------------------------------------------------------------------- |
+| `type`             | string                     | —                                   | all                              | **Required.** Chart type.                                              |
+| `folder`           | string                     | —                                   | all                              | Folder path to scan recursively.                                       |
+| `file`             | string                     | —                                   | all                              | Single file path (without `.md`).                                      |
+| `files`            | list                       | —                                   | all                              | List of file paths.                                                    |
+| `dateRange`        | string                     | [[#Full list of dateRange options]] | all                              | Preset date window.                                                    |
+| `startDate`        | ISO date                   | —                                   | all                              | Explicit range start.                                                  |
+| `endDate`          | ISO date                   | —                                   | all                              | Explicit range end.                                                    |
+| `dateProperty`     | string                     | —                                   | all                              | Frontmatter key for the note's date.                                   |
+| `properties`       | list / map                 | —                                   | most                             | Frontmatter key(s) to chart. Optional for summary and table.           |
+| `aggregate`        | string                     | `daily`                             | line, bar, heatmap, gauge, radar | Time aggregation mode.                                                 |
+| `period`           | number                     | 7                                   | line, bar                        | Moving-average window size.                                            |
+| `dateAggregation`  | string                     | `sum`                               | all                              | How to bucket same-date notes.                                         |
+| `missingValue`     | `skip` / `zero` / N        | `skip`                              | line, bar                        | Handling of missing data points.                                       |
+| `source`           | `frontmatter` / `fileMeta` | `frontmatter`                       | all                              | Where to read values from.                                             |
+| `target`           | string                     | `numWords`                          | fileMeta only                    | Which file metric to read.                                             |
+| `title`            | string                     | —                                   | all                              | Chart title.                                                           |
+| `subtitle`         | string                     | —                                   | line, bar, pie, scatter, radar   | Subtitle below the title.                                              |
+| `height`           | number                     | 300                                 | all except summary, table        | Chart height in pixels.                                                |
+| `width`            | string                     | —                                   | all                              | CSS width (e.g. `400px`, `100%`).                                      |
+| `colors`           | list                       | built-in palette                    | all                              | Per-series hex colours.                                                |
+| `colorScheme`      | string                     | `green`                             | heatmap, calendar                | Named colour palette.                                                  |
+| `showLegend`       | boolean                    | `true`                              | line, bar, pie, donut, radar     | Show / hide legend.                                                    |
+| `xAxis.label`      | string                     | —                                   | line, bar, scatter               | X axis label text.                                                     |
+| `xAxis.min/max`    | number                     | —                                   | scatter                          | X axis bounds.                                                         |
+| `yAxis.label`      | string                     | —                                   | line, bar, scatter, radar        | Y axis label text.                                                     |
+| `yAxis.min/max`    | number                     | —                                   | line, bar, scatter, radar        | Y axis bounds.                                                         |
+| `yAxis.unit`       | string                     | —                                   | line, bar                        | Suffix added to tooltip values.                                        |
+| `labels`           | list                       | property names                      | radar                            | Custom axis labels.                                                    |
+| `min`              | number                     | —                                   | gauge                            | **Required for gauge.** Minimum value.                                 |
+| `max`              | number                     | —                                   | gauge                            | **Required for gauge.** Maximum value.                                 |
+| `thresholds`       | list                       | red/yellow/green                    | gauge                            | Colour zones: `value` + `color` pairs.                                 |
+| `summary.template` | string                     | —                                   | summary                          | Multi-line template with `{{variable()}}` placeholders.                |
+| `groupBy`          | string                     | —                                   | table                            | **Required for table.** Frontmatter key to group rows by.              |
+| `groupLabel`       | string                     | groupBy key                         | table                            | Override header label for the group column.                            |
+| `columns`          | list                       | —                                   | table                            | **Required for table.** List of `{ label, value }` column definitions. |
+
+### Full list of dateRange options
+
+| Value         | What it covers                                          |
+| ------------- | ------------------------------------------------------- |
+| all           | Jan 1 2000 → today                                      |
+| this-week     | Sunday of the current week → today                      |
+| this-month    | 1st of the current month → today                        |
+| this-year     | Jan 1 of the current year → today                       |
+| last-year     | Full previous calendar year (Jan 1 – Dec 31)            |
+| last-N-days   | N days ago → today (e.g. `last-7-days`, `last-30-days`) |
+| last-N-weeks  | N weeks ago → today                                     |
+| last-N-months | N months ago → today                                    |
+| last-N-years  | N years ago → today                                     |

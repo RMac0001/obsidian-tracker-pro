@@ -69,3 +69,55 @@
   width: 100% !important;
   max-height: 400px;
 }
+
+/* ─── Table Chart ─────────────────────────────────────────────────────────── */
+
+.tracker-pro-table-wrapper {
+  padding: 8px 0;
+  overflow-x: auto;
+}
+
+.tracker-pro-table-title {
+  font-size: 1.05em;
+  font-weight: 700;
+  margin-bottom: 8px;
+  color: var(--text-normal);
+}
+
+.tracker-pro-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.9em;
+}
+
+.tracker-pro-table th,
+.tracker-pro-table td {
+  padding: 6px 12px;
+  text-align: left;
+  border-bottom: 1px solid var(--background-modifier-border);
+}
+
+.tracker-pro-table th {
+  font-weight: 600;
+  color: var(--text-muted);
+  font-size: 0.85em;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  border-bottom: 2px solid var(--background-modifier-border);
+}
+
+.tracker-pro-table td:not(:first-child),
+.tracker-pro-table th:not(:first-child) {
+  text-align: right;
+}
+
+.tracker-pro-table tbody tr:hover {
+  background-color: var(--background-modifier-hover);
+}
+
+.tracker-pro-table tfoot td {
+  font-weight: 600;
+  border-top: 2px solid var(--background-modifier-border);
+  border-bottom: none;
+  color: var(--text-normal);
+}

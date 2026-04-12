@@ -11,6 +11,7 @@ import { renderHeatmapChart } from "./charts/heatmapChart";
 import { renderCalendarChart } from "./charts/calendarChart";
 import { renderCandlestickChart } from "./charts/candlestickChart";
 import { renderSummaryChart } from "./charts/summaryChart";
+import { renderTableChart } from "./charts/tableChart";
 
 // ─── Error Display ────────────────────────────────────────────────────────────
 
@@ -119,6 +120,13 @@ export async function renderTracker(
     }
     const canvas = container.createEl("canvas");
     renderScatterChart(canvas, raw, config);
+    return;
+  }
+
+  // ── Table ─────────────────────────────────────────────────────────────────
+  if (config.type === "table") {
+    const entries = await collectRawEntries(app, config);
+    renderTableChart(container, entries, config);
     return;
   }
 

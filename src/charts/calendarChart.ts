@@ -159,7 +159,7 @@ export function renderCalendarChart(
     }
 
     // Trailing overflow (next month)
-    const totalCells   = firstDow + daysInMonth;
+    const totalCells    = firstDow + daysInMonth;
     const trailingCount = totalCells % 7 === 0 ? 0 : 7 - (totalCells % 7);
     for (let i = 1; i <= trailingCount; i++) {
       const cell = grid.createDiv({ cls: "tpro-cal-cell tpro-cal-overflow" });

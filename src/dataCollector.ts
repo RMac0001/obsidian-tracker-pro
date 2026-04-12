@@ -216,7 +216,7 @@ export function buildSeriesData(
     }));
 
     return {
-      name: config.title ?? prop,
+      name: prop,
       points,
       color: config.colors?.[i] ?? defaultColors[i % defaultColors.length],
     };

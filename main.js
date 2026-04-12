@@ -2834,7 +2834,7 @@ var load                = loader.load;
 // ─── Valid Values ─────────────────────────────────────────────────────────────
 const VALID_CHART_TYPES = [
     "line", "bar", "pie", "donut", "heatmap",
-    "scatter", "radar", "gauge", "candlestick", "calendar", "summary",
+    "scatter", "radar", "gauge", "candlestick", "calendar", "summary", "table",
 ];
 const VALID_AGGREGATES = [
     "daily", "weekly", "monthly", "cumulative", "moving-average",
@@ -2909,7 +2909,7 @@ function validateConfig(raw) {
         });
     }
     // properties (not required for summary — presence of files is enough)
-    if (raw.type !== "summary" && raw.source !== "fileMeta") {
+    if (raw.type !== "summary" && raw.type !== "table" && raw.source !== "fileMeta") {
         if (!raw.properties) {
             errors.push({ message: "Missing required field: properties" });
         }
@@ -3194,7 +3194,7 @@ function buildSeriesData(entries, config) {
             value: extractNumericValue(entry.frontmatter, prop),
         }));
         return {
-            name: (_a = config.title) !== null && _a !== void 0 ? _a : prop,
+            name: prop,
             points,
             color: (_c = (_b = config.colors) === null || _b === void 0 ? void 0 : _b[i]) !== null && _c !== void 0 ? _c : defaultColors[i % defaultColors.length],
         };
@@ -18303,9 +18303,30 @@ function buildLabels(series, config) {
     return dates.map((d) => { var _a; return formatDateLabel(d, (_a = config.aggregate) !== null && _a !== void 0 ? _a : "daily"); });
 }
 // ─── Line Chart ───────────────────────────────────────────────────────────────
+// Compute a visually sensible Y-axis minimum for line charts.
+// When the user hasn't set an explicit yAxis.min, we find the data minimum and
+// subtract 10% of the range so small variations (e.g. weight) are visible.
+// If all values are 0 or the range is 0, fall back to 0 so flat data looks flat.
+function computeLineYMin(series, explicitMin) {
+    if (explicitMin !== undefined && explicitMin !== null) return explicitMin;
+    let dataMin = Infinity, dataMax = -Infinity;
+    for (const s of series) {
+        for (const p of s.points) {
+            if (p.value === null) continue;
+            if (p.value < dataMin) dataMin = p.value;
+            if (p.value > dataMax) dataMax = p.value;
+        }
+    }
+    if (!isFinite(dataMin) || !isFinite(dataMax)) return undefined;
+    if (dataMin === 0) return 0;
+    const range = dataMax - dataMin;
+    if (range === 0) return dataMin * 0.95; // flat line: show a little space below
+    return dataMin - range * 0.10;
+}
 function renderLineChart(canvas, series, config) {
     var _a, _b, _c, _d, _e, _f, _g, _h, _j, _k, _l;
     const labels = buildLabels(series, config);
+    const yMin = computeLineYMin(series, config.yAxis?.min);
     const chartConfig = {
         type: "line",
         data: {
@@ -18357,7 +18378,7 @@ function renderLineChart(canvas, series, config) {
                         display: !!((_g = config.yAxis) === null || _g === void 0 ? void 0 : _g.label),
                         text: (_j = (_h = config.yAxis) === null || _h === void 0 ? void 0 : _h.label) !== null && _j !== void 0 ? _j : "",
                     },
-                    min: (_k = config.yAxis) === null || _k === void 0 ? void 0 : _k.min,
+                    min: yMin,
                     max: (_l = config.yAxis) === null || _l === void 0 ? void 0 : _l.max,
                 },
             },
@@ -19124,17 +19145,6 @@ function calcCurrentStreak(days) {
     }
     return streak;
 }
-function calcMaxBreak(days) {
-    if (days.length < 2)
-        return 0;
-    let max = 0;
-    for (let i = 1; i < days.length; i++) {
-        const gap = Math.round((days[i] - days[i - 1]) / DAY_MS) - 1;
-        if (gap > max)
-            max = gap;
-    }
-    return max;
-}
 function calcCurrentBreak(days) {
     if (days.length === 0)
         return 0;
@@ -19143,6 +19153,18 @@ function calcCurrentBreak(days) {
     if (lastDay >= todayMs)
         return 0; // active today
     return Math.round((todayMs - lastDay) / DAY_MS);
+}
+function calcMaxBreak(days, currentBreak) {
+    // Seed with currentBreak so an ongoing break is always a candidate for longest
+    if (days.length < 2)
+        return currentBreak;
+    let max = currentBreak;
+    for (let i = 1; i < days.length; i++) {
+        const gap = Math.round((days[i] - days[i - 1]) / DAY_MS) - 1;
+        if (gap > max)
+            max = gap;
+    }
+    return max;
 }
 function calcTotalDays(days) {
     return days.length;
@@ -19188,17 +19210,135 @@ function applyTemplate(template, vars) {
     });
 }
 // ─── Renderer ─────────────────────────────────────────────────────────────────
+
+// ─── Table Chart ──────────────────────────────────────────────────────────────
+function evalColumnValue(expr, entries) {
+    if (expr === "count") return entries.length;
+    const match = expr.match(/^(sum|mean|max|min)\((.+)\)$/);
+    if (!match) return 0;
+    const [, fn, prop] = match;
+    const values = [];
+    for (const entry of entries) {
+        const raw = entry.frontmatter[prop];
+        if (raw === undefined || raw === null) continue;
+        const n = Number(raw);
+        if (!isNaN(n)) values.push(n);
+    }
+    if (values.length === 0) return 0;
+    switch (fn) {
+        case "sum":  return values.reduce((a, b) => a + b, 0);
+        case "mean": return values.reduce((a, b) => a + b, 0) / values.length;
+        case "max":  return Math.max(...values);
+        case "min":  return Math.min(...values);
+        default:     return 0;
+    }
+}
+function fmtNum(n) {
+    return n % 1 === 0 ? String(n) : n.toFixed(1).replace(/\.0$/, "");
+}
+// Parse a wiki-link string like [[path/to/file|Alias]] or [[file]]
+// Returns { target, alias } or null if not a wiki-link.
+function parseWikiLink(raw) {
+    if (typeof raw !== "string") return null;
+    const m = raw.trim().match(/^\[\[([^\]|]+?)(?:\|([^\]]+?))?\]\]$/);
+    if (!m) return null;
+    return { target: m[1].trim(), alias: m[2] ? m[2].trim() : m[1].trim() };
+}
+function renderTableChart(app, container, entries, config) {
+    const groupBy    = config.groupBy || "";
+    const groupLabel = config.groupLabel || groupBy || "Group";
+    const columns    = config.columns || [];
+    // groups: Map<canonicalKey, { entries, displayName, linkTarget }>
+    const groups = new Map();
+    for (const entry of entries) {
+        let canonicalKey, displayName, linkTarget;
+        if (groupBy) {
+            const rawVal = entry.frontmatter[groupBy];
+            const wl = parseWikiLink(rawVal);
+            if (wl) {
+                // Resolve the wiki-link to a canonical vault path so different
+                // link formats for the same note collapse into one group.
+                const resolved = app.metadataCache.getFirstLinkpathDest(wl.target, entry.filePath);
+                canonicalKey = resolved ? resolved.path : wl.target.toLowerCase();
+                displayName  = wl.alias;
+                linkTarget   = resolved ? resolved.path : wl.target;
+            } else {
+                canonicalKey = rawVal !== undefined && rawVal !== null ? String(rawVal) : "(unknown)";
+                displayName  = canonicalKey;
+                linkTarget   = null;
+            }
+        } else {
+            canonicalKey = "(all)";
+            displayName  = "(all)";
+            linkTarget   = null;
+        }
+        if (!groups.has(canonicalKey)) {
+            groups.set(canonicalKey, { entries: [], displayName, linkTarget });
+        }
+        groups.get(canonicalKey).entries.push(entry);
+    }
+    // Sort groups alphabetically by display name
+    const sortedKeys = Array.from(groups.keys()).sort((a, b) => {
+        const da = groups.get(a).displayName;
+        const db = groups.get(b).displayName;
+        return da.localeCompare(db, undefined, { sensitivity: "base" });
+    });
+    const wrapper = container.createEl("div", { cls: "tracker-pro-table-wrapper" });
+    if (config.title) {
+        wrapper.createEl("div", { cls: "tracker-pro-table-title", text: config.title });
+    }
+    const table = wrapper.createEl("table", { cls: "tracker-pro-table" });
+    const thead = table.createEl("thead");
+    const headerRow = thead.createEl("tr");
+    headerRow.createEl("th", { text: groupLabel });
+    for (const col of columns) {
+        headerRow.createEl("th", { text: col.label });
+    }
+    // Always render the header; bail here if no data so an empty table shows
+    if (entries.length === 0) return;
+    const tbody = table.createEl("tbody");
+    for (const key of sortedKeys) {
+        const group = groups.get(key);
+        const tr = tbody.createEl("tr");
+        const tdGroup = tr.createEl("td");
+        if (group.linkTarget) {
+            tdGroup.createEl("a", {
+                cls: "internal-link",
+                text: group.displayName,
+                attr: { "data-href": group.linkTarget, href: group.linkTarget }
+            });
+        } else {
+            tdGroup.setText(group.displayName);
+        }
+        for (const col of columns) {
+            const val = evalColumnValue(col.value, group.entries);
+            tr.createEl("td", { text: fmtNum(val) });
+        }
+    }
+    // Totals footer — only when there are multiple groups
+    if (sortedKeys.length > 1 && columns.length > 0) {
+        const tfoot = table.createEl("tfoot");
+        const totalRow = tfoot.createEl("tr");
+        totalRow.createEl("td", { text: "Total" });
+        for (const col of columns) {
+            const val = evalColumnValue(col.value, entries);
+            totalRow.createEl("td", { text: fmtNum(val) });
+        }
+    }
+}
 function renderSummaryChart(container, series, config) {
     var _a;
     const summaryConfig = config.summary;
     const template = (_a = summaryConfig === null || summaryConfig === void 0 ? void 0 : summaryConfig.template) !== null && _a !== void 0 ? _a : "Total: {{sum()}} days active";
     const active = getActiveDays(series);
     const days = getSortedDays(active);
+    // currentBreak must be computed before maxBreak so it can be passed in
+    const currentBreak = calcCurrentBreak(days);
     const vars = {
         maxStreak: calcMaxStreak(days),
         currentStreak: calcCurrentStreak(days),
-        maxBreaks: calcMaxBreak(days),
-        currentBreaks: calcCurrentBreak(days),
+        maxBreaks: calcMaxBreak(days, currentBreak),
+        currentBreaks: currentBreak,
         totalDays: calcTotalDays(days),
         sum: calcSum(series),
         mean: calcMean(series),
@@ -19275,7 +19415,7 @@ async function renderTracker(app, container, config) {
     container.empty();
     container.addClass("tracker-pro-container");
     // Apply size (not for summary — it's a table, height makes no sense)
-    if (config.height && config.type !== "summary")
+    if (config.height && config.type !== "summary" && config.type !== "table")
         container.style.height = config.height + "px";
     if (config.width)
         container.style.width = config.width;
@@ -19362,6 +19502,12 @@ async function renderTracker(app, container, config) {
         }
         const canvas = container.createEl("canvas");
         renderScatterChart(canvas, raw, config);
+        return;
+    }
+    // ── Table ─────────────────────────────────────────────────────────────────
+    if (config.type === "table") {
+        const entries = await collectRawEntries(app, config);
+        renderTableChart(app, container, entries, config);
         return;
     }
     // ── Summary ───────────────────────────────────────────────────────────────

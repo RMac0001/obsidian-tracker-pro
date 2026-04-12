@@ -5,7 +5,7 @@ import { TrackerConfig, ChartType, AggregateType, ParseError } from "./types";
 
 const VALID_CHART_TYPES: ChartType[] = [
   "line", "bar", "pie", "donut", "heatmap",
-  "scatter", "radar", "gauge", "candlestick", "calendar", "summary",
+  "scatter", "radar", "gauge", "candlestick", "calendar", "summary", "table",
 ];
 
 const VALID_AGGREGATES: AggregateType[] = [
@@ -90,7 +90,7 @@ function validateConfig(
   }
 
   // properties (not required for summary — presence of files is enough)
-  if (raw.type !== "summary" && raw.source !== "fileMeta") {
+  if (raw.type !== "summary" && raw.type !== "table" && raw.source !== "fileMeta") {
     if (!raw.properties) {
       errors.push({ message: "Missing required field: properties" });
     } else if (raw.type === "candlestick") {

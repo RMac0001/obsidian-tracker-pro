@@ -52,22 +52,23 @@ function calcCurrentStreak(days: number[]): number {
   return streak;
 }
 
-function calcMaxBreak(days: number[]): number {
-  if (days.length < 2) return 0;
-  let max = 0;
-  for (let i = 1; i < days.length; i++) {
-    const gap = Math.round((days[i] - days[i - 1]) / DAY_MS) - 1;
-    if (gap > max) max = gap;
-  }
-  return max;
-}
-
 function calcCurrentBreak(days: number[]): number {
   if (days.length === 0) return 0;
   const todayMs = toDateOnly(new Date());
   const lastDay = days[days.length - 1];
   if (lastDay >= todayMs) return 0; // active today
   return Math.round((todayMs - lastDay) / DAY_MS);
+}
+
+function calcMaxBreak(days: number[], currentBreak: number): number {
+  // Seed with currentBreak so an ongoing break is always a candidate for longest
+  if (days.length < 2) return currentBreak;
+  let max = currentBreak;
+  for (let i = 1; i < days.length; i++) {
+    const gap = Math.round((days[i] - days[i - 1]) / DAY_MS) - 1;
+    if (gap > max) max = gap;
+  }
+  return max;
 }
 
 function calcTotalDays(days: number[]): number {
@@ -126,11 +127,14 @@ export function renderSummaryChart(
   const active  = getActiveDays(series);
   const days    = getSortedDays(active);
 
+  // currentBreak must be computed before maxBreak so it can be passed in
+  const currentBreak = calcCurrentBreak(days);
+
   const vars: Record<string, string | number> = {
     maxStreak:     calcMaxStreak(days),
     currentStreak: calcCurrentStreak(days),
-    maxBreaks:     calcMaxBreak(days),
-    currentBreaks: calcCurrentBreak(days),
+    maxBreaks:     calcMaxBreak(days, currentBreak),
+    currentBreaks: currentBreak,
     totalDays:     calcTotalDays(days),
     sum:           calcSum(series),
     mean:          calcMean(series),

@@ -11,7 +11,8 @@ export type ChartType =
   | "gauge"
   | "candlestick"
   | "calendar"
-  | "summary";
+  | "summary"
+  | "table";
 
 // ─── Aggregation ─────────────────────────────────────────────────────────────
 
@@ -100,6 +101,11 @@ export interface TrackerConfig {
   source?: "frontmatter" | "fileMeta";
   target?: string;  // e.g. "numWords", "numChars", "numSentences", "numLinks", "size"
   missingValue?: number | "skip" | "zero"; // how to handle nulls (default: "skip")
+
+  // Table chart
+  groupBy?: string;             // frontmatter key to group rows by
+  groupLabel?: string;          // header label for the group column (default: groupBy)
+  columns?: TableColumnDef[];   // column definitions
 }
 
 // ─── Internal Data Structures ─────────────────────────────────────────────────
@@ -133,4 +139,11 @@ export interface OHLCDataPoint {
 export interface ParseError {
   message: string;
   line?: number;
+}
+
+// ─── Table Column Definition ──────────────────────────────────────────────────
+
+export interface TableColumnDef {
+  label: string;
+  value: string; // "count" | "sum(prop)" | "mean(prop)" | "max(prop)" | "min(prop)"
 }
