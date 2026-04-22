@@ -6,6 +6,7 @@ import {
     DEFAULT_SETTINGS,
     TrackerSettingTab,
 } from "./settings";
+import { logMeal } from "./mealLogger";
 
 export default class Tracker extends Plugin {
     settings: TrackerSettings;
@@ -16,6 +17,14 @@ export default class Tracker extends Plugin {
         await this.loadSettings();
         this.addSettingTab(new TrackerSettingTab(this.app, this));
 
+        // ── Meal Logger command ───────────────────────────────────────────────
+        this.addCommand({
+            id: "log-meal",
+            name: "Log meal",
+            callback: () => logMeal(this.app, this.settings),
+        });
+
+        // ── Tracker code block processor ──────────────────────────────────────
         this.registerMarkdownCodeBlockProcessor(
             "tracker-pro",
             async (source, el, _ctx) => {

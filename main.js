@@ -3188,7 +3188,7 @@ function buildSeriesData(entries, config) {
         "#9b59b6", "#e67e22", "#1abc9c", "#e74c3c",
     ];
     return properties.map((prop, i) => {
-        var _a, _b, _c;
+        var _a, _b;
         const points = entries.map((entry) => ({
             date: entry.date,
             value: extractNumericValue(entry.frontmatter, prop),
@@ -3196,7 +3196,7 @@ function buildSeriesData(entries, config) {
         return {
             name: prop,
             points,
-            color: (_c = (_b = config.colors) === null || _b === void 0 ? void 0 : _b[i]) !== null && _c !== void 0 ? _c : defaultColors[i % defaultColors.length],
+            color: (_b = (_a = config.colors) === null || _a === void 0 ? void 0 : _a[i]) !== null && _b !== void 0 ? _b : defaultColors[i % defaultColors.length],
         };
     });
 }
@@ -6186,7 +6186,7 @@ function getContainerSize(canvas, width, height) {
         maxHeight: maxHeight || INFINITY
     };
 }
-const round1 = (v)=>Math.round(v * 10) / 10;
+const round1$1 = (v)=>Math.round(v * 10) / 10;
 // eslint-disable-next-line complexity
 function getMaximumSize(canvas, bbWidth, bbHeight, aspectRatio) {
     const style = getComputedStyle(canvas);
@@ -6203,17 +6203,17 @@ function getMaximumSize(canvas, bbWidth, bbHeight, aspectRatio) {
     }
     width = Math.max(0, width - margins.width);
     height = Math.max(0, aspectRatio ? width / aspectRatio : height - margins.height);
-    width = round1(Math.min(width, maxWidth, containerSize.maxWidth));
-    height = round1(Math.min(height, maxHeight, containerSize.maxHeight));
+    width = round1$1(Math.min(width, maxWidth, containerSize.maxWidth));
+    height = round1$1(Math.min(height, maxHeight, containerSize.maxHeight));
     if (width && !height) {
         // https://github.com/chartjs/Chart.js/issues/4659
         // If the canvas has width, but no height, default to aspectRatio of 2 (canvas default)
-        height = round1(width / 2);
+        height = round1$1(width / 2);
     }
     const maintainHeight = bbWidth !== undefined || bbHeight !== undefined;
     if (maintainHeight && aspectRatio && containerSize.height && height > containerSize.height) {
         height = containerSize.height;
-        width = round1(Math.floor(height * aspectRatio));
+        width = round1$1(Math.floor(height * aspectRatio));
     }
     return {
         width,
@@ -6227,10 +6227,10 @@ function getMaximumSize(canvas, bbWidth, bbHeight, aspectRatio) {
  * @returns True if the canvas context size or transformation has changed.
  */ function retinaScale(chart, forceRatio, forceStyle) {
     const pixelRatio = forceRatio || 1;
-    const deviceHeight = round1(chart.height * pixelRatio);
-    const deviceWidth = round1(chart.width * pixelRatio);
-    chart.height = round1(chart.height);
-    chart.width = round1(chart.width);
+    const deviceHeight = round1$1(chart.height * pixelRatio);
+    const deviceWidth = round1$1(chart.width * pixelRatio);
+    chart.height = round1$1(chart.height);
+    chart.width = round1$1(chart.width);
     const canvas = chart.canvas;
     // If no style has been set on the canvas, the render size is used as display size,
     // making the chart visually bigger, so let's enforce it to the "correct" values.
@@ -18302,31 +18302,41 @@ function buildLabels(series, config) {
     const dates = (_b = (_a = series[0]) === null || _a === void 0 ? void 0 : _a.points.map((p) => p.date)) !== null && _b !== void 0 ? _b : [];
     return dates.map((d) => { var _a; return formatDateLabel(d, (_a = config.aggregate) !== null && _a !== void 0 ? _a : "daily"); });
 }
-// ─── Line Chart ───────────────────────────────────────────────────────────────
-// Compute a visually sensible Y-axis minimum for line charts.
-// When the user hasn't set an explicit yAxis.min, we find the data minimum and
-// subtract 10% of the range so small variations (e.g. weight) are visible.
-// If all values are 0 or the range is 0, fall back to 0 so flat data looks flat.
+// ─── Smart Y-axis Min (Line Chart) ────────────────────────────────────────────
+// When the user hasn't set an explicit yAxis.min, find the data minimum and
+// subtract 10% of the range so small variations (e.g. weight) are clearly
+// visible rather than appearing as a flat line near the top of a 0-based axis.
+// Falls back to 0 when data starts at zero, or returns a slight buffer below a
+// flat line.
 function computeLineYMin(series, explicitMin) {
-    if (explicitMin !== undefined && explicitMin !== null) return explicitMin;
-    let dataMin = Infinity, dataMax = -Infinity;
+    if (explicitMin !== undefined && explicitMin !== null)
+        return explicitMin;
+    let dataMin = Infinity;
+    let dataMax = -Infinity;
     for (const s of series) {
         for (const p of s.points) {
-            if (p.value === null) continue;
-            if (p.value < dataMin) dataMin = p.value;
-            if (p.value > dataMax) dataMax = p.value;
+            if (p.value === null)
+                continue;
+            if (p.value < dataMin)
+                dataMin = p.value;
+            if (p.value > dataMax)
+                dataMax = p.value;
         }
     }
-    if (!isFinite(dataMin) || !isFinite(dataMax)) return undefined;
-    if (dataMin === 0) return 0;
+    if (!isFinite(dataMin) || !isFinite(dataMax))
+        return undefined;
+    if (dataMin === 0)
+        return 0;
     const range = dataMax - dataMin;
-    if (range === 0) return dataMin * 0.95; // flat line: show a little space below
+    if (range === 0)
+        return dataMin * 0.95; // flat line: add a little space below
     return dataMin - range * 0.10;
 }
+// ─── Line Chart ───────────────────────────────────────────────────────────────
 function renderLineChart(canvas, series, config) {
     var _a, _b, _c, _d, _e, _f, _g, _h, _j, _k, _l;
     const labels = buildLabels(series, config);
-    const yMin = computeLineYMin(series, config.yAxis?.min);
+    const yMin = computeLineYMin(series, (_a = config.yAxis) === null || _a === void 0 ? void 0 : _a.min);
     const chartConfig = {
         type: "line",
         data: {
@@ -18348,14 +18358,14 @@ function renderLineChart(canvas, series, config) {
             plugins: {
                 title: {
                     display: !!config.title,
-                    text: (_a = config.title) !== null && _a !== void 0 ? _a : "",
+                    text: (_b = config.title) !== null && _b !== void 0 ? _b : "",
                     font: { size: 14, weight: "bold" },
                 },
                 subtitle: {
                     display: !!config.subtitle,
-                    text: (_b = config.subtitle) !== null && _b !== void 0 ? _b : "",
+                    text: (_c = config.subtitle) !== null && _c !== void 0 ? _c : "",
                 },
-                legend: { display: (_c = config.showLegend) !== null && _c !== void 0 ? _c : true },
+                legend: { display: (_d = config.showLegend) !== null && _d !== void 0 ? _d : true },
                 tooltip: {
                     callbacks: {
                         label: (ctx) => {
@@ -18369,14 +18379,14 @@ function renderLineChart(canvas, series, config) {
             scales: {
                 x: {
                     title: {
-                        display: !!((_d = config.xAxis) === null || _d === void 0 ? void 0 : _d.label),
-                        text: (_f = (_e = config.xAxis) === null || _e === void 0 ? void 0 : _e.label) !== null && _f !== void 0 ? _f : "",
+                        display: !!((_e = config.xAxis) === null || _e === void 0 ? void 0 : _e.label),
+                        text: (_g = (_f = config.xAxis) === null || _f === void 0 ? void 0 : _f.label) !== null && _g !== void 0 ? _g : "",
                     },
                 },
                 y: {
                     title: {
-                        display: !!((_g = config.yAxis) === null || _g === void 0 ? void 0 : _g.label),
-                        text: (_j = (_h = config.yAxis) === null || _h === void 0 ? void 0 : _h.label) !== null && _j !== void 0 ? _j : "",
+                        display: !!((_h = config.yAxis) === null || _h === void 0 ? void 0 : _h.label),
+                        text: (_k = (_j = config.yAxis) === null || _j === void 0 ? void 0 : _j.label) !== null && _k !== void 0 ? _k : "",
                     },
                     min: yMin,
                     max: (_l = config.yAxis) === null || _l === void 0 ? void 0 : _l.max,
@@ -19210,122 +19220,6 @@ function applyTemplate(template, vars) {
     });
 }
 // ─── Renderer ─────────────────────────────────────────────────────────────────
-
-// ─── Table Chart ──────────────────────────────────────────────────────────────
-function evalColumnValue(expr, entries) {
-    if (expr === "count") return entries.length;
-    const match = expr.match(/^(sum|mean|max|min)\((.+)\)$/);
-    if (!match) return 0;
-    const [, fn, prop] = match;
-    const values = [];
-    for (const entry of entries) {
-        const raw = entry.frontmatter[prop];
-        if (raw === undefined || raw === null) continue;
-        const n = Number(raw);
-        if (!isNaN(n)) values.push(n);
-    }
-    if (values.length === 0) return 0;
-    switch (fn) {
-        case "sum":  return values.reduce((a, b) => a + b, 0);
-        case "mean": return values.reduce((a, b) => a + b, 0) / values.length;
-        case "max":  return Math.max(...values);
-        case "min":  return Math.min(...values);
-        default:     return 0;
-    }
-}
-function fmtNum(n) {
-    return n % 1 === 0 ? String(n) : n.toFixed(1).replace(/\.0$/, "");
-}
-// Parse a wiki-link string like [[path/to/file|Alias]] or [[file]]
-// Returns { target, alias } or null if not a wiki-link.
-function parseWikiLink(raw) {
-    if (typeof raw !== "string") return null;
-    const m = raw.trim().match(/^\[\[([^\]|]+?)(?:\|([^\]]+?))?\]\]$/);
-    if (!m) return null;
-    return { target: m[1].trim(), alias: m[2] ? m[2].trim() : m[1].trim() };
-}
-function renderTableChart(app, container, entries, config) {
-    const groupBy    = config.groupBy || "";
-    const groupLabel = config.groupLabel || groupBy || "Group";
-    const columns    = config.columns || [];
-    // groups: Map<canonicalKey, { entries, displayName, linkTarget }>
-    const groups = new Map();
-    for (const entry of entries) {
-        let canonicalKey, displayName, linkTarget;
-        if (groupBy) {
-            const rawVal = entry.frontmatter[groupBy];
-            const wl = parseWikiLink(rawVal);
-            if (wl) {
-                // Resolve the wiki-link to a canonical vault path so different
-                // link formats for the same note collapse into one group.
-                const resolved = app.metadataCache.getFirstLinkpathDest(wl.target, entry.filePath);
-                canonicalKey = resolved ? resolved.path : wl.target.toLowerCase();
-                displayName  = wl.alias;
-                linkTarget   = resolved ? resolved.path : wl.target;
-            } else {
-                canonicalKey = rawVal !== undefined && rawVal !== null ? String(rawVal) : "(unknown)";
-                displayName  = canonicalKey;
-                linkTarget   = null;
-            }
-        } else {
-            canonicalKey = "(all)";
-            displayName  = "(all)";
-            linkTarget   = null;
-        }
-        if (!groups.has(canonicalKey)) {
-            groups.set(canonicalKey, { entries: [], displayName, linkTarget });
-        }
-        groups.get(canonicalKey).entries.push(entry);
-    }
-    // Sort groups alphabetically by display name
-    const sortedKeys = Array.from(groups.keys()).sort((a, b) => {
-        const da = groups.get(a).displayName;
-        const db = groups.get(b).displayName;
-        return da.localeCompare(db, undefined, { sensitivity: "base" });
-    });
-    const wrapper = container.createEl("div", { cls: "tracker-pro-table-wrapper" });
-    if (config.title) {
-        wrapper.createEl("div", { cls: "tracker-pro-table-title", text: config.title });
-    }
-    const table = wrapper.createEl("table", { cls: "tracker-pro-table" });
-    const thead = table.createEl("thead");
-    const headerRow = thead.createEl("tr");
-    headerRow.createEl("th", { text: groupLabel });
-    for (const col of columns) {
-        headerRow.createEl("th", { text: col.label });
-    }
-    // Always render the header; bail here if no data so an empty table shows
-    if (entries.length === 0) return;
-    const tbody = table.createEl("tbody");
-    for (const key of sortedKeys) {
-        const group = groups.get(key);
-        const tr = tbody.createEl("tr");
-        const tdGroup = tr.createEl("td");
-        if (group.linkTarget) {
-            tdGroup.createEl("a", {
-                cls: "internal-link",
-                text: group.displayName,
-                attr: { "data-href": group.linkTarget, href: group.linkTarget }
-            });
-        } else {
-            tdGroup.setText(group.displayName);
-        }
-        for (const col of columns) {
-            const val = evalColumnValue(col.value, group.entries);
-            tr.createEl("td", { text: fmtNum(val) });
-        }
-    }
-    // Totals footer — only when there are multiple groups
-    if (sortedKeys.length > 1 && columns.length > 0) {
-        const tfoot = table.createEl("tfoot");
-        const totalRow = tfoot.createEl("tr");
-        totalRow.createEl("td", { text: "Total" });
-        for (const col of columns) {
-            const val = evalColumnValue(col.value, entries);
-            totalRow.createEl("td", { text: fmtNum(val) });
-        }
-    }
-}
 function renderSummaryChart(container, series, config) {
     var _a;
     const summaryConfig = config.summary;
@@ -19391,6 +19285,97 @@ function renderSummaryChart(container, series, config) {
     }
 }
 
+// ─── Column Expression Evaluator ─────────────────────────────────────────────
+function evalColumnValue(expr, entries) {
+    if (expr === "count") {
+        return entries.length;
+    }
+    const match = expr.match(/^(sum|mean|max|min)\((.+)\)$/);
+    if (!match)
+        return 0;
+    const [, fn, prop] = match;
+    const values = [];
+    for (const entry of entries) {
+        const raw = entry.frontmatter[prop];
+        if (raw === undefined || raw === null)
+            continue;
+        const n = Number(raw);
+        if (!isNaN(n))
+            values.push(n);
+    }
+    if (values.length === 0)
+        return 0;
+    switch (fn) {
+        case "sum": return values.reduce((a, b) => a + b, 0);
+        case "mean": return values.reduce((a, b) => a + b, 0) / values.length;
+        case "max": return Math.max(...values);
+        case "min": return Math.min(...values);
+        default: return 0;
+    }
+}
+// ─── Format Number ────────────────────────────────────────────────────────────
+function fmt(n) {
+    // Show up to 1 decimal place, drop trailing zeros
+    return n % 1 === 0 ? String(n) : n.toFixed(1).replace(/\.0$/, "");
+}
+// ─── Main Renderer ────────────────────────────────────────────────────────────
+function renderTableChart(container, entries, config) {
+    var _a, _b, _c, _d;
+    const groupBy = (_a = config.groupBy) !== null && _a !== void 0 ? _a : "";
+    const groupLabel = (_b = config.groupLabel) !== null && _b !== void 0 ? _b : groupBy;
+    const columns = (_c = config.columns) !== null && _c !== void 0 ? _c : [];
+    // ── Group entries by groupBy value ──
+    const groups = new Map();
+    for (const entry of entries) {
+        const key = groupBy
+            ? String((_d = entry.frontmatter[groupBy]) !== null && _d !== void 0 ? _d : "(unknown)")
+            : "(all)";
+        if (!groups.has(key))
+            groups.set(key, []);
+        groups.get(key).push(entry);
+    }
+    // Sort groups alphabetically
+    const sortedKeys = Array.from(groups.keys()).sort((a, b) => a.localeCompare(b, undefined, { sensitivity: "base" }));
+    // ── Build table ──────────────────────────────────────────────────────────
+    const wrapper = container.createEl("div", { cls: "tracker-pro-table-wrapper" });
+    if (config.title) {
+        wrapper.createEl("div", { cls: "tracker-pro-table-title", text: config.title });
+    }
+    const table = wrapper.createEl("table", { cls: "tracker-pro-table" });
+    // Header row
+    const thead = table.createEl("thead");
+    const headerRow = thead.createEl("tr");
+    headerRow.createEl("th", { text: groupLabel });
+    for (const col of columns) {
+        headerRow.createEl("th", { text: col.label });
+    }
+    // Body rows
+    // Always render the header; bail here if no data so an empty table shows
+    if (entries.length === 0)
+        return;
+    const tbody = table.createEl("tbody");
+    for (const key of sortedKeys) {
+        const groupEntries = groups.get(key);
+        const tr = tbody.createEl("tr");
+        tr.createEl("td", { text: key });
+        for (const col of columns) {
+            const val = evalColumnValue(col.value, groupEntries);
+            tr.createEl("td", { text: fmt(val) });
+        }
+    }
+    // ── Totals row ────────────────────────────────────────────────────────────
+    if (sortedKeys.length > 1 && columns.length > 0) {
+        const tfoot = table.createEl("tfoot");
+        const totalRow = tfoot.createEl("tr");
+        totalRow.createEl("td", { text: "Total" });
+        for (const col of columns) {
+            // For count/sum: sum across all entries; for mean/max/min: compute over all
+            const val = evalColumnValue(col.value, entries);
+            totalRow.createEl("td", { text: fmt(val) });
+        }
+    }
+}
+
 // ─── Error Display ────────────────────────────────────────────────────────────
 function renderErrors(container, errors) {
     container.empty();
@@ -19415,7 +19400,7 @@ async function renderTracker(app, container, config) {
     container.empty();
     container.addClass("tracker-pro-container");
     // Apply size (not for summary — it's a table, height makes no sense)
-    if (config.height && config.type !== "summary" && config.type !== "table")
+    if (config.height && config.type !== "summary")
         container.style.height = config.height + "px";
     if (config.width)
         container.style.width = config.width;
@@ -19507,7 +19492,7 @@ async function renderTracker(app, container, config) {
     // ── Table ─────────────────────────────────────────────────────────────────
     if (config.type === "table") {
         const entries = await collectRawEntries(app, config);
-        renderTableChart(app, container, entries, config);
+        renderTableChart(container, entries, config);
         return;
     }
     // ── Summary ───────────────────────────────────────────────────────────────
@@ -19541,9 +19526,15 @@ async function renderTracker(app, container, config) {
 }
 
 const DEFAULT_SETTINGS = {
+    // ── Tracker Pro (existing) ────────────────────────────────────────────────
     folder: "/",
     dateFormat: "YYYY-MM-DD",
-    dateProperty: "", // empty means fall back to filename date
+    dateProperty: "",
+    // ── Meal Logger ───────────────────────────────────────────────────────────
+    mealLogFolder: "Food/Logs/{{DATE:YYYY}}/{{DATE:YYYY-MM}}",
+    mealLogFilename: "{{DATE:YYYY-MM-DD}}",
+    foodFolder: "Food/Database",
+    recipeFolder: "Recipes",
 };
 class TrackerSettingTab extends obsidian.PluginSettingTab {
     constructor(app, plugin) {
@@ -19551,11 +19542,14 @@ class TrackerSettingTab extends obsidian.PluginSettingTab {
         this.plugin = plugin;
     }
     display() {
-        let { containerEl } = this;
+        const { containerEl } = this;
         containerEl.empty();
+        // ── Tracker Pro ───────────────────────────────────────────────────────
+        containerEl.createEl("h2", { text: "Tracker Pro" });
         new obsidian.Setting(containerEl)
             .setName("Default folder location")
-            .setDesc("Files in this folder will be parsed and used as input data of the tracker plugin.\nYou can also override it using 'folder' argument in the tracker codeblock.")
+            .setDesc("Files in this folder will be parsed and used as input data of the tracker plugin.\n" +
+            "You can also override it using 'folder' argument in the tracker codeblock.")
             .addText((text) => text
             .setPlaceholder("Folder Path")
             .setValue(this.plugin.settings.folder)
@@ -19565,7 +19559,8 @@ class TrackerSettingTab extends obsidian.PluginSettingTab {
         }));
         new obsidian.Setting(containerEl)
             .setName("Default date format")
-            .setDesc("This format is used to parse the date in your diary title.\nYou can also override it using 'dateFormat' argument in the tracker codeblock.")
+            .setDesc("This format is used to parse the date in your diary title.\n" +
+            "You can also override it using 'dateFormat' argument in the tracker codeblock.")
             .addText((text) => text
             .setPlaceholder("YYYY-MM-DD")
             .setValue(this.plugin.settings.dateFormat)
@@ -19586,6 +19581,396 @@ class TrackerSettingTab extends obsidian.PluginSettingTab {
             this.plugin.settings.dateProperty = value.trim();
             await this.plugin.saveSettings();
         }));
+        // ── Meal Logger ───────────────────────────────────────────────────────
+        containerEl.createEl("h2", { text: "Meal Logger" });
+        containerEl.createEl("p", {
+            text: "Use {{DATE:FORMAT}} tokens in path and filename templates. " +
+                "Examples: {{DATE:YYYY}}, {{DATE:YYYY-MM}}, {{DATE:YYYY-MM-DD}}.",
+            attr: { style: "font-size:0.85em;color:var(--text-muted);margin:0 0 12px;" },
+        });
+        new obsidian.Setting(containerEl)
+            .setName("Meal log folder")
+            .setDesc("Folder path where daily food log notes are stored. Supports {{DATE:FORMAT}} tokens.\n" +
+            "Example: Food/Logs/{{DATE:YYYY}}/{{DATE:YYYY-MM}}")
+            .addText((text) => text
+            .setPlaceholder("Food/Logs/{{DATE:YYYY}}/{{DATE:YYYY-MM}}")
+            .setValue(this.plugin.settings.mealLogFolder)
+            .onChange(async (value) => {
+            this.plugin.settings.mealLogFolder = value.trim();
+            await this.plugin.saveSettings();
+        }));
+        new obsidian.Setting(containerEl)
+            .setName("Meal log filename")
+            .setDesc("Filename template for daily food log notes (without .md). Supports {{DATE:FORMAT}} tokens.\n" +
+            "Example: {{DATE:YYYY-MM-DD}}")
+            .addText((text) => text
+            .setPlaceholder("{{DATE:YYYY-MM-DD}}")
+            .setValue(this.plugin.settings.mealLogFilename)
+            .onChange(async (value) => {
+            this.plugin.settings.mealLogFilename = value.trim();
+            await this.plugin.saveSettings();
+        }));
+        new obsidian.Setting(containerEl)
+            .setName("Food database folder")
+            .setDesc("Folder containing individual food notes. Each note should have calories, protein, fat, and carbs frontmatter fields (per serving).")
+            .addText((text) => text
+            .setPlaceholder("Food/Database")
+            .setValue(this.plugin.settings.foodFolder)
+            .onChange(async (value) => {
+            this.plugin.settings.foodFolder = value.trim();
+            await this.plugin.saveSettings();
+        }));
+        new obsidian.Setting(containerEl)
+            .setName("Recipes folder")
+            .setDesc("Folder containing recipe notes. Each note should have calories, protein, fat, and carbs frontmatter fields (per serving).")
+            .addText((text) => text
+            .setPlaceholder("Recipes")
+            .setValue(this.plugin.settings.recipeFolder)
+            .onChange(async (value) => {
+            this.plugin.settings.recipeFolder = value.trim();
+            await this.plugin.saveSettings();
+        }));
+    }
+}
+
+const MEAL_TYPES = ["Breakfast", "Lunch", "Dinner", "Snacks"];
+const MACROS = ["cal", "protein", "fat", "carbs"];
+// ─── Helpers ──────────────────────────────────────────────────────────────────
+function resolveDateTemplate(template) {
+    return template.replace(/\{\{DATE:([^}]+)\}\}/g, (_, fmt) => window.moment().format(fmt));
+}
+function mealKey(mealType) {
+    return mealType.toLowerCase();
+}
+function round1(n) {
+    return Math.round(n * 10) / 10;
+}
+function getFoodMeta(app, file) {
+    var _a, _b, _c, _d, _e, _f, _g, _h;
+    const fm = (_b = (_a = app.metadataCache.getFileCache(file)) === null || _a === void 0 ? void 0 : _a.frontmatter) !== null && _b !== void 0 ? _b : {};
+    return {
+        servingSize: Number((_c = fm.serving_size) !== null && _c !== void 0 ? _c : 1),
+        servingUnit: String((_d = fm.serving_unit) !== null && _d !== void 0 ? _d : "serving"),
+        nutrition: {
+            calories: Number((_e = fm.calories) !== null && _e !== void 0 ? _e : 0),
+            protein: Number((_f = fm.protein) !== null && _f !== void 0 ? _f : 0),
+            fat: Number((_g = fm.fat) !== null && _g !== void 0 ? _g : 0),
+            carbs: Number((_h = fm.carbs) !== null && _h !== void 0 ? _h : 0),
+        },
+    };
+}
+function getRecipeMeta(app, file) {
+    var _a, _b, _c, _d, _e, _f;
+    const fm = (_b = (_a = app.metadataCache.getFileCache(file)) === null || _a === void 0 ? void 0 : _a.frontmatter) !== null && _b !== void 0 ? _b : {};
+    return {
+        servingSize: 1,
+        servingUnit: "serving",
+        nutrition: {
+            calories: Number((_c = fm.calories) !== null && _c !== void 0 ? _c : 0),
+            protein: Number((_d = fm.protein) !== null && _d !== void 0 ? _d : 0),
+            fat: Number((_e = fm.fat) !== null && _e !== void 0 ? _e : 0),
+            carbs: Number((_f = fm.carbs) !== null && _f !== void 0 ? _f : 0),
+        },
+    };
+}
+function sumNutrition(entries) {
+    return entries.reduce((acc, e) => ({
+        calories: acc.calories + e.nutrition.calories,
+        protein: acc.protein + e.nutrition.protein,
+        fat: acc.fat + e.nutrition.fat,
+        carbs: acc.carbs + e.nutrition.carbs,
+    }), { calories: 0, protein: 0, fat: 0, carbs: 0 });
+}
+// ─── Modals ───────────────────────────────────────────────────────────────────
+class StringSuggestModal extends obsidian.FuzzySuggestModal {
+    constructor(app, options, placeholder, onChoose) {
+        super(app);
+        this.options = options;
+        this.onChoose = onChoose;
+        this.setPlaceholder(placeholder);
+    }
+    getItems() { return this.options; }
+    getItemText(item) { return item; }
+    onChooseItem(item) { this.onChoose(item); }
+}
+class FileSuggestModal extends obsidian.FuzzySuggestModal {
+    constructor(app, files, placeholder, onChoose) {
+        super(app);
+        this.files = files;
+        this.onChoose = onChoose;
+        this.setPlaceholder(placeholder);
+    }
+    getItems() { return this.files; }
+    getItemText(file) { return file.basename; }
+    onChooseItem(file) { this.onChoose(file); }
+}
+/**
+ * Unified amount modal.
+ *
+ * Foods:   asks "How many oz?" (or whatever serving_unit is)
+ *          multiplier = amount / serving_size
+ *          default = serving_size (i.e. one serving pre-filled)
+ *
+ * Recipes: asks "How many servings?"
+ *          multiplier = amount
+ *          default = 1
+ */
+class AmountModal extends obsidian.Modal {
+    constructor(app, itemName, meta, isFood, onSubmit) {
+        super(app);
+        this.itemName = itemName;
+        this.meta = meta;
+        this.isFood = isFood;
+        this.onSubmit = onSubmit;
+    }
+    onOpen() {
+        const { contentEl } = this;
+        contentEl.createEl("h3", { text: this.itemName });
+        // Context hint
+        const hint = this.isFood
+            ? `1 serving = ${this.meta.servingSize} ${this.meta.servingUnit}  ·  ${this.meta.nutrition.calories} cal per serving`
+            : `${this.meta.nutrition.calories} cal per serving`;
+        contentEl.createEl("p", {
+            text: hint,
+            attr: { style: "margin:4px 0 12px;color:var(--text-muted);font-size:0.85em;" },
+        });
+        // Label
+        const labelText = this.isFood
+            ? `Amount (${this.meta.servingUnit})`
+            : "Servings";
+        contentEl.createEl("label", {
+            text: labelText,
+            attr: { style: "font-size:0.9em;color:var(--text-muted);" },
+        });
+        this.input = contentEl.createEl("input", {
+            attr: {
+                type: "number",
+                min: "0.01",
+                step: this.isFood ? "0.5" : "0.25",
+                style: "display:block;width:100%;padding:8px 10px;font-size:1.1em;" +
+                    "border:1px solid var(--background-modifier-border);" +
+                    "border-radius:6px;background:var(--background-primary);" +
+                    "color:var(--text-normal);margin:6px 0 12px;",
+            },
+        });
+        // Pre-fill: one serving worth of the unit for foods, 1 for recipes
+        this.input.value = this.isFood ? String(this.meta.servingSize) : "1";
+        this.input.focus();
+        this.input.select();
+        const btn = contentEl.createEl("button", {
+            text: "Add to meal",
+            attr: { style: "width:100%;padding:8px;cursor:pointer;" },
+        });
+        btn.onclick = () => this.submit();
+        this.input.addEventListener("keydown", (e) => {
+            if (e.key === "Enter")
+                this.submit();
+        });
+    }
+    submit() {
+        const val = parseFloat(this.input.value);
+        if (isNaN(val) || val <= 0) {
+            new obsidian.Notice("Please enter a valid amount.");
+            return;
+        }
+        this.close();
+        if (this.isFood) {
+            const multiplier = val / this.meta.servingSize;
+            const unit = this.meta.servingUnit;
+            const displayAmount = `${val} ${unit}`;
+            this.onSubmit(multiplier, displayAmount);
+        }
+        else {
+            const multiplier = val;
+            const displayAmount = `${val} ${val === 1 ? "serving" : "servings"}`;
+            this.onSubmit(multiplier, displayAmount);
+        }
+    }
+    onClose() { this.contentEl.empty(); }
+}
+// ─── Frontmatter Builder ──────────────────────────────────────────────────────
+function buildUpdatedFrontmatter(existing, mealType, entries, settings) {
+    const key = mealKey(mealType);
+    const mealNutrition = sumNutrition(entries);
+    const fm = { ...existing };
+    const dateKey = settings.dateProperty || "creation_date";
+    if (!fm[dateKey]) {
+        fm[dateKey] = window.moment().format("YYYY-MM-DD");
+    }
+    // Ensure all 20 nutrition fields exist
+    for (const m of ["breakfast", "lunch", "dinner", "snacks"]) {
+        for (const macro of MACROS) {
+            if (!(`${macro}_${m}` in fm))
+                fm[`${macro}_${m}`] = 0;
+        }
+    }
+    for (const macro of MACROS) {
+        if (!(`${macro}_total` in fm))
+            fm[`${macro}_total`] = 0;
+    }
+    // Accumulate into this meal (safe to call twice for the same meal type)
+    fm[`cal_${key}`] = round1((fm[`cal_${key}`] || 0) + mealNutrition.calories);
+    fm[`protein_${key}`] = round1((fm[`protein_${key}`] || 0) + mealNutrition.protein);
+    fm[`fat_${key}`] = round1((fm[`fat_${key}`] || 0) + mealNutrition.fat);
+    fm[`carbs_${key}`] = round1((fm[`carbs_${key}`] || 0) + mealNutrition.carbs);
+    // Recalculate totals from all four meals
+    const allKeys = ["breakfast", "lunch", "dinner", "snacks"];
+    fm.cal_total = round1(allKeys.reduce((s, m) => s + (fm[`cal_${m}`] || 0), 0));
+    fm.protein_total = round1(allKeys.reduce((s, m) => s + (fm[`protein_${m}`] || 0), 0));
+    fm.fat_total = round1(allKeys.reduce((s, m) => s + (fm[`fat_${m}`] || 0), 0));
+    fm.carbs_total = round1(allKeys.reduce((s, m) => s + (fm[`carbs_${m}`] || 0), 0));
+    return fm;
+}
+// ─── Note Content Helpers ─────────────────────────────────────────────────────
+function buildEntryLines(entries) {
+    return entries
+        .map((e) => `- ${e.name} (${e.displayAmount}) — ` +
+        `${round1(e.nutrition.calories)} cal | ` +
+        `${round1(e.nutrition.protein)}g protein | ` +
+        `${round1(e.nutrition.fat)}g fat | ` +
+        `${round1(e.nutrition.carbs)}g carbs`)
+        .join("\n");
+}
+function buildNewNoteContent(mealType, entries, fm) {
+    let content = "---\n";
+    for (const [k, v] of Object.entries(fm)) {
+        content += `${k}: ${v}\n`;
+    }
+    content += "---\n\n";
+    for (const meal of MEAL_TYPES) {
+        content += `## ${meal}\n`;
+        if (meal === mealType) {
+            content += buildEntryLines(entries) + "\n";
+        }
+        content += "\n";
+    }
+    return content;
+}
+// ─── Folder Creation ──────────────────────────────────────────────────────────
+async function ensureFolders(app, filePath) {
+    const parts = filePath.split("/");
+    parts.pop();
+    let current = "";
+    for (const part of parts) {
+        current = current ? `${current}/${part}` : part;
+        if (!app.vault.getAbstractFileByPath(current)) {
+            try {
+                await app.vault.createFolder(current);
+            }
+            catch ( /* already exists */_a) { /* already exists */ }
+        }
+    }
+}
+// ─── Today's Note Path ────────────────────────────────────────────────────────
+function resolveTodayPath(settings) {
+    const folder = resolveDateTemplate(settings.mealLogFolder);
+    const filename = resolveDateTemplate(settings.mealLogFilename);
+    return obsidian.normalizePath(`${folder}/${filename}.md`);
+}
+// ─── Save Meal ────────────────────────────────────────────────────────────────
+async function saveMeal(app, settings, mealType, entries) {
+    const filePath = resolveTodayPath(settings);
+    const existing = app.vault.getAbstractFileByPath(filePath);
+    if (existing instanceof obsidian.TFile) {
+        // Update frontmatter
+        await app.fileManager.processFrontMatter(existing, (fm) => {
+            const updated = buildUpdatedFrontmatter(fm, mealType, entries, settings);
+            for (const key of Object.keys(fm))
+                delete fm[key];
+            Object.assign(fm, updated);
+        });
+        // Append entry lines to the correct meal section
+        const content = await app.vault.read(existing);
+        const entryLines = buildEntryLines(entries);
+        const header = `## ${mealType}`;
+        const lines = content.split("\n");
+        const headerIdx = lines.findIndex((l) => l.trim() === header);
+        if (headerIdx !== -1) {
+            let nextSection = lines.length;
+            for (let i = headerIdx + 1; i < lines.length; i++) {
+                if (lines[i].startsWith("## ")) {
+                    nextSection = i;
+                    break;
+                }
+            }
+            let lastContent = headerIdx;
+            for (let i = headerIdx + 1; i < nextSection; i++) {
+                if (lines[i].trim() !== "")
+                    lastContent = i;
+            }
+            lines.splice(lastContent + 1, 0, ...entryLines.split("\n"));
+            await app.vault.modify(existing, lines.join("\n"));
+        }
+        else {
+            const appended = content.trimEnd() + `\n\n## ${mealType}\n${entryLines}\n`;
+            await app.vault.modify(existing, appended);
+        }
+        new obsidian.Notice(`✓ ${mealType} added to today's food log`);
+    }
+    else {
+        // Create new note
+        await ensureFolders(app, filePath);
+        const fm = buildUpdatedFrontmatter({}, mealType, entries, settings);
+        const content = buildNewNoteContent(mealType, entries, fm);
+        await app.vault.create(filePath, content);
+        new obsidian.Notice(`✓ Today's food log created with ${mealType}`);
+    }
+}
+// ─── Main Entry Point ─────────────────────────────────────────────────────────
+async function logMeal(app, settings) {
+    const entries = [];
+    new StringSuggestModal(app, MEAL_TYPES, "Which meal are you logging?", (mealTypeStr) => promptForItem(mealTypeStr)).open();
+    function promptForItem(mealType) {
+        const runningTotal = sumNutrition(entries);
+        const totalLabel = entries.length > 0
+            ? `  (${entries.length} item${entries.length > 1 ? "s" : ""} · ${round1(runningTotal.calories)} cal)`
+            : "";
+        new StringSuggestModal(app, [
+            "Search food database",
+            "Search recipes",
+            `Done — save ${mealType}${totalLabel}`,
+        ], "Add another item or finish...", (choice) => {
+            if (choice.startsWith("Done")) {
+                if (entries.length === 0) {
+                    new obsidian.Notice("No items added — meal not saved.");
+                    return;
+                }
+                saveMeal(app, settings, mealType, entries).catch((e) => {
+                    new obsidian.Notice(`Error saving meal: ${String(e)}`);
+                    console.error(e);
+                });
+                return;
+            }
+            const isFood = choice === "Search food database";
+            const folder = isFood ? settings.foodFolder : settings.recipeFolder;
+            const label = isFood ? "foods" : "recipes";
+            const files = app.vault
+                .getMarkdownFiles()
+                .filter((f) => f.path.startsWith(folder.replace(/\/$/, "") + "/"));
+            if (files.length === 0) {
+                new obsidian.Notice(`No files found in: ${folder}`);
+                promptForItem(mealType);
+                return;
+            }
+            new FileSuggestModal(app, files, `Search ${label}...`, (file) => {
+                const meta = isFood ? getFoodMeta(app, file) : getRecipeMeta(app, file);
+                new AmountModal(app, file.basename, meta, isFood, (multiplier, displayAmount) => {
+                    entries.push({
+                        name: file.basename,
+                        displayAmount,
+                        multiplier,
+                        nutrition: {
+                            calories: meta.nutrition.calories * multiplier,
+                            protein: meta.nutrition.protein * multiplier,
+                            fat: meta.nutrition.fat * multiplier,
+                            carbs: meta.nutrition.carbs * multiplier,
+                        },
+                    });
+                    new obsidian.Notice(`Added: ${file.basename} — ${displayAmount}`);
+                    promptForItem(mealType);
+                }).open();
+            }).open();
+        }).open();
     }
 }
 
@@ -19594,6 +19979,13 @@ class Tracker extends obsidian.Plugin {
         console.log("loading tracker-pro plugin");
         await this.loadSettings();
         this.addSettingTab(new TrackerSettingTab(this.app, this));
+        // ── Meal Logger command ───────────────────────────────────────────────
+        this.addCommand({
+            id: "log-meal",
+            name: "Log meal",
+            callback: () => logMeal(this.app, this.settings),
+        });
+        // ── Tracker code block processor ──────────────────────────────────────
         this.registerMarkdownCodeBlockProcessor("tracker-pro", async (source, el, _ctx) => {
             const container = el.createDiv({ cls: "tracker-pro-root" });
             let src = source;
