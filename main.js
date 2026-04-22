@@ -19285,15 +19285,6 @@ function renderSummaryChart(container, series, config) {
     }
 }
 
-// ─── Multiplication alias ─────────────────────────────────────────────────────
-// Replaces 'x' with '*' in common positions without stomping property names.
-// Handles: "fat x 9", "fat_breakfast x 9", "fatx9", "9xfat"
-function normalizeMult(expr) {
-    return expr
-        .replace(/\s+x\s+/g, " * ") // "a x b"  → "a * b"
-        .replace(/([a-zA-Z0-9_])\s*x\s*(\d)/g, "$1*$2") // "propx9" → "prop*9"
-        .replace(/(\d)\s*x\s*([a-zA-Z_(])/g, "$1*$2"); // "9xprop" → "9*prop"
-}
 // ─── Single-aggregation fast path ─────────────────────────────────────────────
 function evalAgg(fn, prop, entries) {
     if (fn === "count")
@@ -19323,7 +19314,7 @@ function evalAgg(fn, prop, entries) {
 // then applies the aggregation function across all per-entry results.
 function evalAggExpr(fn, innerExpr, entries) {
     var _a;
-    const inner = normalizeMult(innerExpr.trim());
+    const inner = innerExpr.trim();
     // Fast path: plain property name
     if (/^[a-zA-Z_][a-zA-Z0-9_]*$/.test(inner)) {
         return evalAgg(fn, inner, entries);
@@ -19363,9 +19354,8 @@ function evalAggExpr(fn, innerExpr, entries) {
 // ─── Numeric expression evaluator ────────────────────────────────────────────
 // Resolves all agg() calls to numbers, then evaluates the remaining arithmetic.
 function evalNumericExpr(expr, entries) {
-    const normalized = normalizeMult(expr);
     // Replace agg(inner) — inner may contain nested parentheses
-    const resolved = normalized
+    const resolved = expr
         .replace(/\b(sum|mean|max|min|count)\s*\(([^)(]*(?:\([^)(]*\)[^)(]*)*)\)/g, (_, fn, inner) => String(evalAggExpr(fn, inner, entries)))
         .replace(/\bcount\b/g, String(entries.length));
     try {
@@ -19438,7 +19428,6 @@ function evalColumnValue(expr, entries) {
         if (/\b(sum|mean|max|min|count)\s*[\((]/.test(trimmed) ||
             /\bcount\b/.test(trimmed) ||
             /[+\-*\/]/.test(trimmed) ||
-            /\bx\b/.test(trimmed) ||
             /^\d/.test(trimmed)) {
             return fmt(evalNumericExpr(trimmed, entries));
         }
