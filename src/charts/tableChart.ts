@@ -38,6 +38,26 @@ function fmt(n: number): string {
   return n % 1 === 0 ? String(n) : n.toFixed(1).replace(/\.0$/, "");
 }
 
+// ─── Group-by Cell Renderer ───────────────────────────────────────────────────
+
+function renderGroupByCell(parent: HTMLElement, key: string): void {
+  const td         = parent.createEl("td");
+  const wikiMatch  = key.match(/^\[\[([^\]|]+)(?:\|([^\]]+))?\]\]$/);
+  if (wikiMatch) {
+    const linkPath    = wikiMatch[1];
+    const displayText = wikiMatch[2]
+      ?? linkPath.replace(/\.md$/, "").split("/").pop()
+      ?? linkPath;
+    td.createEl("a", {
+      text: displayText,
+      cls:  "internal-link",
+      attr: { "data-href": linkPath, href: linkPath },
+    });
+  } else {
+    td.setText(key);
+  }
+}
+
 // ─── Main Renderer ────────────────────────────────────────────────────────────
 
 export function renderTableChart(
@@ -92,7 +112,7 @@ export function renderTableChart(
   for (const key of sortedKeys) {
     const groupEntries = groups.get(key)!;
     const tr = tbody.createEl("tr");
-    tr.createEl("td", { text: key });
+    renderGroupByCell(tr, key);
 
     for (const col of columns) {
       const val = evalColumnValue(col.value, groupEntries);

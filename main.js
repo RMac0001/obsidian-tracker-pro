@@ -19318,6 +19318,24 @@ function fmt(n) {
     // Show up to 1 decimal place, drop trailing zeros
     return n % 1 === 0 ? String(n) : n.toFixed(1).replace(/\.0$/, "");
 }
+// ─── Group-by Cell Renderer ───────────────────────────────────────────────────
+function renderGroupByCell(parent, key) {
+    var _a, _b;
+    const td = parent.createEl("td");
+    const wikiMatch = key.match(/^\[\[([^\]|]+)(?:\|([^\]]+))?\]\]$/);
+    if (wikiMatch) {
+        const linkPath = wikiMatch[1];
+        const displayText = (_b = (_a = wikiMatch[2]) !== null && _a !== void 0 ? _a : linkPath.replace(/\.md$/, "").split("/").pop()) !== null && _b !== void 0 ? _b : linkPath;
+        td.createEl("a", {
+            text: displayText,
+            cls: "internal-link",
+            attr: { "data-href": linkPath, href: linkPath },
+        });
+    }
+    else {
+        td.setText(key);
+    }
+}
 // ─── Main Renderer ────────────────────────────────────────────────────────────
 function renderTableChart(container, entries, config) {
     var _a, _b, _c, _d;
@@ -19357,7 +19375,7 @@ function renderTableChart(container, entries, config) {
     for (const key of sortedKeys) {
         const groupEntries = groups.get(key);
         const tr = tbody.createEl("tr");
-        tr.createEl("td", { text: key });
+        renderGroupByCell(tr, key);
         for (const col of columns) {
             const val = evalColumnValue(col.value, groupEntries);
             tr.createEl("td", { text: fmt(val) });
