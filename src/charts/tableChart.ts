@@ -1,6 +1,17 @@
 import { RawEntry, TrackerConfig, TableColumnDef } from "../types";
 
-// ─── Aggregation Helpers ──────────────────────────────────────────────────────
+// ─── Multiplication alias ─────────────────────────────────────────────────────
+// Replaces 'x' with '*' in common positions without stomping property names.
+// Handles: "fat x 9", "fat_breakfast x 9", "fatx9", "9xfat"
+
+function normalizeMult(expr: string): string {
+  return expr
+    .replace(/\s+x\s+/g, " * ")                          // "a x b"  → "a * b"
+    .replace(/([a-zA-Z0-9_])\s*x\s*(\d)/g, "$1*$2")      // "propx9" → "prop*9"
+    .replace(/(\d)\s*x\s*([a-zA-Z_(])/g, "$1*$2");       // "9xprop" → "9*prop"
+}
+
+// ─── Single-aggregation fast path ─────────────────────────────────────────────
 
 function evalAgg(fn: string, prop: string, entries: RawEntry[]): number {
   if (fn === "count") return entries.length;
@@ -23,43 +34,149 @@ function evalAgg(fn: string, prop: string, entries: RawEntry[]): number {
   }
 }
 
-// ─── Column Expression Evaluator ─────────────────────────────────────────────
-//
-// Supports:
-//   Simple:      sum(cal_breakfast)
-//   Arithmetic:  sum(carbs_breakfast)/sum(cal_breakfast)*100
-//   With suffix: sum(carbs_breakfast)/sum(cal_breakfast)*100&%
-//   With suffix: sum(cal_breakfast)& kcal
-//
-// The part after the first & is appended verbatim to the formatted number.
+// ─── Aggregate with inner expression ─────────────────────────────────────────
+// Handles sum(fat_breakfast * 9), mean(fat/cal*100), etc.
+// For each entry, substitutes property values into the expression, evaluates,
+// then applies the aggregation function across all per-entry results.
 
-function evalColumnValue(expr: string, entries: RawEntry[]): string {
-  // Split off optional display suffix (everything after the first &)
-  const ampIdx  = expr.indexOf("&");
-  const suffix  = ampIdx !== -1 ? expr.slice(ampIdx + 1) : "";
-  const numExpr = ampIdx !== -1 ? expr.slice(0, ampIdx).trim() : expr.trim();
+function evalAggExpr(fn: string, innerExpr: string, entries: RawEntry[]): number {
+  const inner = normalizeMult(innerExpr.trim());
 
-  // Replace every aggregation call (and bare "count") with its numeric value
-  const resolved = numExpr.replace(
-    /\b(sum|mean|max|min|count)\(([^)]*)\)|\bcount\b/g,
-    (match, fn, prop) => {
-      if (!fn) return String(entries.length);          // bare "count"
-      return String(evalAgg(fn, prop.trim(), entries));
-    }
-  );
-
-  // Evaluate the resulting arithmetic expression safely
-  let value: number;
-  try {
-    // User-authored expression evaluated in an isolated function scope
-    // eslint-disable-next-line no-new-func
-    value = new Function("return (" + resolved + ")")() as number;
-    if (!isFinite(value) || isNaN(value)) value = 0;
-  } catch {
-    value = 0;
+  // Fast path: plain property name
+  if (/^[a-zA-Z_][a-zA-Z0-9_]*$/.test(inner)) {
+    return evalAgg(fn, inner, entries);
   }
 
-  return fmt(value) + suffix;
+  // Collect all property-name identifiers (not followed by '(' — those are functions)
+  const propRegex = /\b([a-zA-Z_][a-zA-Z0-9_]*)\b(?!\s*\()/g;
+  const props = new Set<string>();
+  let m: RegExpExecArray | null;
+  while ((m = propRegex.exec(inner)) !== null) props.add(m[1]);
+
+  const perEntry: number[] = [];
+  for (const entry of entries) {
+    let e = inner;
+    for (const p of props) {
+      const v = Number(entry.frontmatter[p] ?? 0);
+      e = e.replace(new RegExp(`\\b${p}\\b`, "g"), String(isNaN(v) ? 0 : v));
+    }
+    try {
+      // eslint-disable-next-line no-new-func
+      const v = new Function("return (" + e + ")")() as number;
+      if (isFinite(v) && !isNaN(v)) perEntry.push(v);
+    } catch { /* skip bad entry */ }
+  }
+
+  if (perEntry.length === 0) return 0;
+  switch (fn) {
+    case "sum":   return perEntry.reduce((a, b) => a + b, 0);
+    case "mean":  return perEntry.reduce((a, b) => a + b, 0) / perEntry.length;
+    case "max":   return Math.max(...perEntry);
+    case "min":   return Math.min(...perEntry);
+    case "count": return entries.length;
+    default:      return 0;
+  }
+}
+
+// ─── Numeric expression evaluator ────────────────────────────────────────────
+// Resolves all agg() calls to numbers, then evaluates the remaining arithmetic.
+
+function evalNumericExpr(expr: string, entries: RawEntry[]): number {
+  const normalized = normalizeMult(expr);
+
+  // Replace agg(inner) — inner may contain nested parentheses
+  const resolved = normalized
+    .replace(
+      /\b(sum|mean|max|min|count)\s*\(([^)(]*(?:\([^)(]*\)[^)(]*)*)\)/g,
+      (_, fn, inner) => String(evalAggExpr(fn, inner, entries))
+    )
+    .replace(/\bcount\b/g, String(entries.length));
+
+  try {
+    // eslint-disable-next-line no-new-func
+    const v = new Function("return (" + resolved + ")")() as number;
+    return isFinite(v) && !isNaN(v) ? v : 0;
+  } catch {
+    return 0;
+  }
+}
+
+// ─── Column expression evaluator ─────────────────────────────────────────────
+//
+// & is a string concatenation operator (like Excel / LibreOffice Calc).
+// Each segment between & is one of:
+//
+//   "quoted text"          → literal string, inner spaces preserved
+//   sum(prop * 9) / ...    → numeric expression, formatted with fmt()
+//   bare words             → literal string, surrounding spaces preserved
+//
+// Examples:
+//   sum(fat_breakfast * 9) / sum(cal_breakfast) * 100
+//     → "42.1"
+//
+//   sum(fat_breakfast * 9) / sum(cal_breakfast) * 100 & "%"
+//     → "42.1%"
+//
+//   "I ate " & sum(cal_breakfast) & " calories today"
+//     → "I ate 380 calories today"
+//
+//   "Fat: " & sum(fat_breakfast * 9) / sum(cal_breakfast) * 100 & "% of calories"
+//     → "Fat: 42.1% of calories"
+
+function evalColumnValue(expr: string, entries: RawEntry[]): string {
+  // ── Split on & outside quoted strings ────────────────────────────────────
+  const parts: string[] = [];
+  let current = "";
+  let inQuote = false;
+  let quoteChar = "";
+
+  for (let i = 0; i < expr.length; i++) {
+    const ch = expr[i];
+    if (inQuote) {
+      if (ch === quoteChar) inQuote = false;
+      current += ch;
+    } else if (ch === '"' || ch === "'") {
+      inQuote = true;
+      quoteChar = ch;
+      current += ch;
+    } else if (ch === "&") {
+      parts.push(current);
+      current = "";
+    } else {
+      current += ch;
+    }
+  }
+  parts.push(current);
+
+  // ── Evaluate each part ────────────────────────────────────────────────────
+  return parts
+    .map((part) => {
+      const trimmed = part.trim();
+
+      // Quoted string literal — remove outer quotes, preserve inner content
+      if (
+        (trimmed.startsWith('"') && trimmed.endsWith('"') && trimmed.length >= 2) ||
+        (trimmed.startsWith("'") && trimmed.endsWith("'") && trimmed.length >= 2)
+      ) {
+        return trimmed.slice(1, -1);
+      }
+
+      // Numeric expression — contains an agg function, arithmetic, or leading digit
+      if (
+        /\b(sum|mean|max|min|count)\s*[\((]/.test(trimmed) ||
+        /\bcount\b/.test(trimmed) ||
+        /[+\-*\/]/.test(trimmed) ||
+        /\bx\b/.test(trimmed) ||
+        /^\d/.test(trimmed)
+      ) {
+        return fmt(evalNumericExpr(trimmed, entries));
+      }
+
+      // Bare string literal — preserve surrounding spaces so "I ate & X & today"
+      // naturally produces "I ate 380 today" without needing explicit spaces
+      return part;
+    })
+    .join("");
 }
 
 // ─── Format Number ────────────────────────────────────────────────────────────
