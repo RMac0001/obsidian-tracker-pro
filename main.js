@@ -19916,6 +19916,115 @@ async function saveMeal(app, settings, mealType, entries) {
         new obsidian.Notice(`✓ Today's food log created with ${mealType}`);
     }
 }
+// ─── Shared Frontmatter Helpers ───────────────────────────────────────────────
+function zeroMealInFrontmatter(fm, mealType) {
+    const key = mealKey(mealType);
+    fm[`cal_${key}`] = 0;
+    fm[`protein_${key}`] = 0;
+    fm[`fat_${key}`] = 0;
+    fm[`carbs_${key}`] = 0;
+    recalcTotals(fm);
+}
+function subtractFromFrontmatter(fm, mealType, nutrition) {
+    const key = mealKey(mealType);
+    fm[`cal_${key}`] = round1((fm[`cal_${key}`] || 0) - nutrition.calories);
+    fm[`protein_${key}`] = round1((fm[`protein_${key}`] || 0) - nutrition.protein);
+    fm[`fat_${key}`] = round1((fm[`fat_${key}`] || 0) - nutrition.fat);
+    fm[`carbs_${key}`] = round1((fm[`carbs_${key}`] || 0) - nutrition.carbs);
+    recalcTotals(fm);
+}
+function recalcTotals(fm) {
+    const allKeys = ["breakfast", "lunch", "dinner", "snacks"];
+    fm.cal_total = round1(allKeys.reduce((s, m) => s + (fm[`cal_${m}`] || 0), 0));
+    fm.protein_total = round1(allKeys.reduce((s, m) => s + (fm[`protein_${m}`] || 0), 0));
+    fm.fat_total = round1(allKeys.reduce((s, m) => s + (fm[`fat_${m}`] || 0), 0));
+    fm.carbs_total = round1(allKeys.reduce((s, m) => s + (fm[`carbs_${m}`] || 0), 0));
+}
+function getMealSectionLines(lines, mealType) {
+    const header = `## ${mealType}`;
+    const headerIdx = lines.findIndex((l) => l.trim() === header);
+    if (headerIdx === -1)
+        return { headerIdx: -1, nextSection: -1, entryLines: [] };
+    let nextSection = lines.length;
+    for (let i = headerIdx + 1; i < lines.length; i++) {
+        if (lines[i].startsWith("## ")) {
+            nextSection = i;
+            break;
+        }
+    }
+    const entryLines = lines
+        .slice(headerIdx + 1, nextSection)
+        .filter((l) => l.trimStart().startsWith("- "));
+    return { headerIdx, nextSection, entryLines };
+}
+// ─── Clear Meal ───────────────────────────────────────────────────────────────
+function clearMeal(app, settings) {
+    new StringSuggestModal(app, MEAL_TYPES, "Which meal to clear?", (mealTypeStr) => {
+        const mealType = mealTypeStr;
+        new StringSuggestModal(app, [`Yes — clear ${mealType}`, "Cancel"], `Clear all ${mealType} entries from today's log?`, async (choice) => {
+            if (!choice.startsWith("Yes"))
+                return;
+            const filePath = resolveTodayPath(settings);
+            const file = app.vault.getAbstractFileByPath(filePath);
+            if (!(file instanceof obsidian.TFile)) {
+                new obsidian.Notice("No food log found for today.");
+                return;
+            }
+            await app.fileManager.processFrontMatter(file, (fm) => zeroMealInFrontmatter(fm, mealType));
+            const content = await app.vault.read(file);
+            const lines = content.split("\n");
+            const { headerIdx, nextSection } = getMealSectionLines(lines, mealType);
+            if (headerIdx !== -1) {
+                const filtered = lines.filter((_, i) => !(i > headerIdx && i < nextSection && lines[i].trimStart().startsWith("- ")));
+                await app.vault.modify(file, filtered.join("\n"));
+            }
+            new obsidian.Notice(`✓ ${mealType} cleared from today's log`);
+        }).open();
+    }).open();
+}
+// ─── Edit Today's Log ─────────────────────────────────────────────────────────
+function editMealLog(app, settings) {
+    new StringSuggestModal(app, MEAL_TYPES, "Which meal to edit?", async (mealTypeStr) => {
+        const mealType = mealTypeStr;
+        const filePath = resolveTodayPath(settings);
+        const file = app.vault.getAbstractFileByPath(filePath);
+        if (!(file instanceof obsidian.TFile)) {
+            new obsidian.Notice("No food log found for today.");
+            return;
+        }
+        const content = await app.vault.read(file);
+        const lines = content.split("\n");
+        const { headerIdx, entryLines } = getMealSectionLines(lines, mealType);
+        if (headerIdx === -1) {
+            new obsidian.Notice(`No ${mealType} section found in today's log.`);
+            return;
+        }
+        if (entryLines.length === 0) {
+            new obsidian.Notice(`No items in ${mealType} to remove.`);
+            return;
+        }
+        new StringSuggestModal(app, entryLines, `Remove which ${mealType} item?`, async (selectedLine) => {
+            const match = selectedLine.match(/— ([\d.]+) cal \| ([\d.]+)g protein \| ([\d.]+)g fat \| ([\d.]+)g carbs/);
+            if (!match) {
+                new obsidian.Notice("Could not parse nutrition from that line.");
+                return;
+            }
+            const removed = {
+                calories: parseFloat(match[1]),
+                protein: parseFloat(match[2]),
+                fat: parseFloat(match[3]),
+                carbs: parseFloat(match[4]),
+            };
+            // Remove exactly the first occurrence of that line
+            const idx = lines.indexOf(selectedLine);
+            if (idx !== -1)
+                lines.splice(idx, 1);
+            await app.vault.modify(file, lines.join("\n"));
+            await app.fileManager.processFrontMatter(file, (fm) => subtractFromFrontmatter(fm, mealType, removed));
+            new obsidian.Notice(`✓ Item removed from ${mealType}`);
+        }).open();
+    }).open();
+}
 // ─── Main Entry Point ─────────────────────────────────────────────────────────
 async function logMeal(app, settings) {
     const entries = [];
@@ -19925,11 +20034,20 @@ async function logMeal(app, settings) {
         const totalLabel = entries.length > 0
             ? `  (${entries.length} item${entries.length > 1 ? "s" : ""} · ${round1(runningTotal.calories)} cal)`
             : "";
-        new StringSuggestModal(app, [
+        const itemOptions = [
             "Search food database",
             "Search recipes",
-            `Done — save ${mealType}${totalLabel}`,
-        ], "Add another item or finish...", (choice) => {
+        ];
+        if (entries.length > 0) {
+            itemOptions.push(`Remove last item (${entries[entries.length - 1].name})`);
+        }
+        itemOptions.push(`Done — save ${mealType}${totalLabel}`);
+        new StringSuggestModal(app, itemOptions, "Add another item or finish...", (choice) => {
+            if (choice.startsWith("Remove last item")) {
+                entries.pop();
+                promptForItem(mealType);
+                return;
+            }
             if (choice.startsWith("Done")) {
                 if (entries.length === 0) {
                     new obsidian.Notice("No items added — meal not saved.");
@@ -19979,11 +20097,21 @@ class Tracker extends obsidian.Plugin {
         console.log("loading tracker-pro plugin");
         await this.loadSettings();
         this.addSettingTab(new TrackerSettingTab(this.app, this));
-        // ── Meal Logger command ───────────────────────────────────────────────
+        // ── Meal Logger commands ──────────────────────────────────────────────
         this.addCommand({
             id: "log-meal",
             name: "Log meal",
             callback: () => logMeal(this.app, this.settings),
+        });
+        this.addCommand({
+            id: "clear-meal",
+            name: "Clear meal",
+            callback: () => clearMeal(this.app, this.settings),
+        });
+        this.addCommand({
+            id: "edit-meal-log",
+            name: "Edit today's meal log",
+            callback: () => editMealLog(this.app, this.settings),
         });
         // ── Tracker code block processor ──────────────────────────────────────
         this.registerMarkdownCodeBlockProcessor("tracker-pro", async (source, el, _ctx) => {

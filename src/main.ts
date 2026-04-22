@@ -6,7 +6,7 @@ import {
     DEFAULT_SETTINGS,
     TrackerSettingTab,
 } from "./settings";
-import { logMeal } from "./mealLogger";
+import { logMeal, clearMeal, editMealLog } from "./mealLogger";
 
 export default class Tracker extends Plugin {
     settings: TrackerSettings;
@@ -17,11 +17,23 @@ export default class Tracker extends Plugin {
         await this.loadSettings();
         this.addSettingTab(new TrackerSettingTab(this.app, this));
 
-        // ── Meal Logger command ───────────────────────────────────────────────
+        // ── Meal Logger commands ──────────────────────────────────────────────
         this.addCommand({
             id: "log-meal",
             name: "Log meal",
             callback: () => logMeal(this.app, this.settings),
+        });
+
+        this.addCommand({
+            id: "clear-meal",
+            name: "Clear meal",
+            callback: () => clearMeal(this.app, this.settings),
+        });
+
+        this.addCommand({
+            id: "edit-meal-log",
+            name: "Edit today's meal log",
+            callback: () => editMealLog(this.app, this.settings),
         });
 
         // ── Tracker code block processor ──────────────────────────────────────
