@@ -19441,8 +19441,8 @@ async function renderTracker(app, container, config) {
     var _a, _b, _c, _d;
     container.empty();
     container.addClass("tracker-pro-container");
-    // Apply size (not for summary — it's a table, height makes no sense)
-    if (config.height && config.type !== "summary")
+    // Apply size (charts only — tables and summaries size to their content)
+    if (config.height && config.type !== "summary" && config.type !== "table")
         container.style.height = config.height + "px";
     if (config.width)
         container.style.width = config.width;

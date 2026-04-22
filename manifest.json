@@ -1,7 +1,7 @@
 {
   "id": "obsidian-tracker-pro",
   "name": "Tracker Pro",
-  "version": "1.1.4",
+  "version": "1.1.5",
   "minAppVersion": "0.15.0",
   "description": "Track and visualize data from YAML frontmatter properties with rich chart types.",
   "author": "Your Name",
