@@ -19285,15 +19285,10 @@ function renderSummaryChart(container, series, config) {
     }
 }
 
-// ─── Column Expression Evaluator ─────────────────────────────────────────────
-function evalColumnValue(expr, entries) {
-    if (expr === "count") {
+// ─── Aggregation Helpers ──────────────────────────────────────────────────────
+function evalAgg(fn, prop, entries) {
+    if (fn === "count")
         return entries.length;
-    }
-    const match = expr.match(/^(sum|mean|max|min)\((.+)\)$/);
-    if (!match)
-        return 0;
-    const [, fn, prop] = match;
     const values = [];
     for (const entry of entries) {
         const raw = entry.frontmatter[prop];
@@ -19313,9 +19308,42 @@ function evalColumnValue(expr, entries) {
         default: return 0;
     }
 }
+// ─── Column Expression Evaluator ─────────────────────────────────────────────
+//
+// Supports:
+//   Simple:      sum(cal_breakfast)
+//   Arithmetic:  sum(carbs_breakfast)/sum(cal_breakfast)*100
+//   With suffix: sum(carbs_breakfast)/sum(cal_breakfast)*100&%
+//   With suffix: sum(cal_breakfast)& kcal
+//
+// The part after the first & is appended verbatim to the formatted number.
+function evalColumnValue(expr, entries) {
+    // Split off optional display suffix (everything after the first &)
+    const ampIdx = expr.indexOf("&");
+    const suffix = ampIdx !== -1 ? expr.slice(ampIdx + 1) : "";
+    const numExpr = ampIdx !== -1 ? expr.slice(0, ampIdx).trim() : expr.trim();
+    // Replace every aggregation call (and bare "count") with its numeric value
+    const resolved = numExpr.replace(/\b(sum|mean|max|min|count)\(([^)]*)\)|\bcount\b/g, (match, fn, prop) => {
+        if (!fn)
+            return String(entries.length); // bare "count"
+        return String(evalAgg(fn, prop.trim(), entries));
+    });
+    // Evaluate the resulting arithmetic expression safely
+    let value;
+    try {
+        // User-authored expression evaluated in an isolated function scope
+        // eslint-disable-next-line no-new-func
+        value = new Function("return (" + resolved + ")")();
+        if (!isFinite(value) || isNaN(value))
+            value = 0;
+    }
+    catch (_a) {
+        value = 0;
+    }
+    return fmt(value) + suffix;
+}
 // ─── Format Number ────────────────────────────────────────────────────────────
 function fmt(n) {
-    // Show up to 1 decimal place, drop trailing zeros
     return n % 1 === 0 ? String(n) : n.toFixed(1).replace(/\.0$/, "");
 }
 // ─── Group-by Cell Renderer ───────────────────────────────────────────────────
@@ -19367,7 +19395,6 @@ function renderTableChart(container, entries, config) {
     for (const col of columns) {
         headerRow.createEl("th", { text: col.label });
     }
-    // Body rows
     // Always render the header; bail here if no data so an empty table shows
     if (entries.length === 0)
         return;
@@ -19377,8 +19404,7 @@ function renderTableChart(container, entries, config) {
         const tr = tbody.createEl("tr");
         renderGroupByCell(tr, key);
         for (const col of columns) {
-            const val = evalColumnValue(col.value, groupEntries);
-            tr.createEl("td", { text: fmt(val) });
+            tr.createEl("td", { text: evalColumnValue(col.value, groupEntries) });
         }
     }
     // ── Totals row ────────────────────────────────────────────────────────────
@@ -19387,9 +19413,7 @@ function renderTableChart(container, entries, config) {
         const totalRow = tfoot.createEl("tr");
         totalRow.createEl("td", { text: "Total" });
         for (const col of columns) {
-            // For count/sum: sum across all entries; for mean/max/min: compute over all
-            const val = evalColumnValue(col.value, entries);
-            totalRow.createEl("td", { text: fmt(val) });
+            totalRow.createEl("td", { text: evalColumnValue(col.value, entries) });
         }
     }
 }
