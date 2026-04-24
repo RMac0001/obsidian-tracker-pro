@@ -12,7 +12,8 @@ export type ChartType =
   | "candlestick"
   | "calendar"
   | "summary"
-  | "table";
+  | "table"
+  | "daily-table";
 
 // ─── Aggregation ─────────────────────────────────────────────────────────────
 
@@ -106,6 +107,12 @@ export interface TrackerConfig {
   groupBy?: string;             // frontmatter key to group rows by
   groupLabel?: string;          // header label for the group column (default: groupBy)
   columns?: TableColumnDef[];   // column definitions
+
+  // Daily-table chart
+  rows?: (string | { label: string; key: string })[];  // meal row definitions
+  totalRow?: string;            // label for per-day total row (omit to hide)
+  showEmptyRows?: boolean;      // show rows with zero values (default: true)
+  dateFormat?: string;          // moment.js format for the date column (default: MM/DD/YY)
 }
 
 // ─── Internal Data Structures ─────────────────────────────────────────────────

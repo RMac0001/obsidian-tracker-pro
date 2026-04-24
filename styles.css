@@ -121,3 +121,28 @@
   border-bottom: none;
   color: var(--text-normal);
 }
+
+/* ─── Daily Table Chart ────────────────────────────────────────────────────── */
+
+.tracker-pro-daily-table .tracker-pro-daily-date {
+  color: var(--text-muted);
+  font-size: 0.85em;
+  white-space: nowrap;
+  min-width: 72px;
+  text-align: left !important;
+}
+
+.tracker-pro-daily-table .tracker-pro-daily-meal {
+  color: var(--text-normal);
+  text-align: left !important;
+}
+
+.tracker-pro-daily-total td {
+  font-weight: 600;
+  border-top: 1px solid var(--background-modifier-border);
+}
+
+.tracker-pro-daily-total .tracker-pro-daily-total-label {
+  color: var(--text-muted);
+  font-style: italic;
+}

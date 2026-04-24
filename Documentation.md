@@ -29,6 +29,7 @@ and renders them as charts and summaries. It requires no Dataview dependency.
    - [candlestick](#candlestick)
    - [summary](#summary)
    - [table](#table)
+   - [daily-table](#daily-table)
 6. [Advanced Features](#advanced-features)
    - [source: fileMeta](#source-filemeta)
    - [dateAggregation](#dateaggregation)
@@ -165,7 +166,7 @@ properties:
   volume: volume   # optional
 ```
 
-For **summary**, **table**, and **fileMeta** charts, `properties` is optional.
+For **summary**, **table**, **daily-table**, and **fileMeta** charts, `properties` is optional.
 
 ---
 
@@ -735,6 +736,131 @@ title: Time by Project
 
 ---
 
+### `daily-table`
+
+A per-day table optimised for meal and nutrition logs. Each row is a date (summary
+mode) or a date/meal combination (expanded mode). Column values use the `{row}`
+placeholder to reference the current row's key — so one column definition covers
+every row automatically.
+
+**Good for:** daily food logs, nutrition breakdowns by meal, any dataset where
+you want to see multiple sub-categories per day in a single table.
+
+---
+
+#### Summary mode (one row per day)
+
+Omit `rows:` to get one row per day. Column expressions use `{row}` = `"total"`,
+so `sum(cal_{row})` reads `cal_total` from frontmatter.
+
+```yaml
+type: daily-table
+folder: Food/Logs/{{DATE:YYYY}}/{{DATE:YYYY-MM}}
+dateRange: last-7-days
+dateFormat: MM/DD/YY
+columns:
+  - label: Calories
+    value: sum(cal_{row})
+  - label: Protein
+    value: sum(protein_{row}) & "g"
+  - label: Fat
+    value: sum(fat_{row}) & "g"
+  - label: Carbs
+    value: sum(carbs_{row}) & "g"
+title: Daily Nutrition — Last 7 Days
+```
+
+---
+
+#### Expanded mode (one sub-row per meal)
+
+Add `rows:` to break each day into per-meal sub-rows. On each row, `{row}` is
+substituted with that row's key (lowercase by default).
+
+```yaml
+type: daily-table
+folder: Food/Logs/{{DATE:YYYY}}/{{DATE:YYYY-MM}}
+dateRange: last-7-days
+rows:
+  - Breakfast
+  - Lunch
+  - Dinner
+  - Snacks
+totalRow: Daily Total
+showEmptyRows: false
+dateFormat: MM/DD/YY
+columns:
+  - label: Calories
+    value: sum(cal_{row})
+  - label: Protein
+    value: sum(protein_{row}) & "g"
+  - label: Fat
+    value: sum(fat_{row}) & "g"
+  - label: Carbs
+    value: sum(carbs_{row}) & "g"
+  - label: Carbs %
+    value: sum(carbs_{row} * 4) / sum(cal_{row}) * 100 & "%"
+title: Meal Breakdown — Last 7 Days
+```
+
+Row `Breakfast` maps to key `breakfast`. To use a custom key, use the long form:
+
+```yaml
+rows:
+  - label: Morning
+    key: breakfast
+  - label: Midday
+    key: lunch
+```
+
+**How `{row}` works:**
+
+The `{row}` placeholder is replaced with the row's key before the expression is
+evaluated. So:
+
+| Row | Expression | Evaluated as |
+|-----|-----------|--------------|
+| Breakfast | `sum(cal_{row})` | `sum(cal_breakfast)` |
+| Lunch     | `sum(cal_{row})` | `sum(cal_lunch)` |
+| Total     | `sum(cal_{row})` | `sum(cal_total)` |
+
+**Required parameters:**
+
+| Parameter | Description |
+|---|---|
+| `columns` | List of `{ label, value }` column definitions. Use `{row}` in `value`. |
+
+**Optional parameters:**
+
+| Parameter | Default | Description |
+|---|---|---|
+| `rows` | — | List of row definitions. Omit for summary mode. Each entry is a string (key = lowercase) or `{ label, key }`. |
+| `totalRow` | — | Label for the per-day total sub-row. Omit to hide it. Uses key `"total"`. |
+| `showEmptyRows` | `true` | Set `false` to hide meal rows where the first column is 0. |
+| `dateFormat` | `MM/DD/YY` | moment.js date format for the Date column (e.g. `YYYY-MM-DD`, `ddd MM/DD`). |
+| `title` | — | Title shown above the table. |
+| `dateRange` / `startDate` / `endDate` | — | Standard date range — same as all other chart types. |
+| `dateProperty` | — | Frontmatter key for the note date. |
+
+**Column `value` expressions:**
+
+Identical to the `table` chart — supports `sum()`, `mean()`, `max()`, `min()`,
+`count`, arithmetic, `&` concatenation, and quoted string literals. For a
+single-entry context (one log note per day), `sum(cal_breakfast)` simply returns
+the `cal_breakfast` value from that day's frontmatter.
+
+```yaml
+# Calorie percentage breakdown
+- label: Fat %
+  value: sum(fat_{row} * 9) / sum(cal_{row}) * 100 & "%"
+
+# Concatenation
+- label: Summary
+  value: sum(cal_{row}) & " cal / " & sum(protein_{row}) & "g protein"
+```
+
+---
+
 ## Advanced Features
 
 ### `source: fileMeta`
@@ -875,7 +1001,11 @@ All available parameters in one table.
 | `summary.template` | string                     | —                                   | summary                          | Multi-line template with `{{variable()}}` placeholders.                |
 | `groupBy`          | string                     | —                                   | table                            | **Required for table.** Frontmatter key to group rows by.              |
 | `groupLabel`       | string                     | groupBy key                         | table                            | Override header label for the group column.                            |
-| `columns`          | list                       | —                                   | table                            | **Required for table.** List of `{ label, value }` column definitions. |
+| `columns`          | list                       | —                                   | table, daily-table               | **Required for table/daily-table.** List of `{ label, value }` column definitions. |
+| `rows`             | list                       | —                                   | daily-table                      | Meal row definitions. Omit for summary mode (one row per day). |
+| `totalRow`         | string                     | —                                   | daily-table                      | Label for the per-day total sub-row (uses key `total`). Omit to hide. |
+| `showEmptyRows`    | boolean                    | `true`                              | daily-table                      | Hide meal rows where the first column evaluates to 0. |
+| `dateFormat`       | string                     | `MM/DD/YY`                          | daily-table                      | moment.js format for the date column. |
 
 ### Full list of dateRange options
 
