@@ -150,4 +150,7 @@
 .tracker-pro-daily-total .tracker-pro-daily-total-label {
   color: var(--text-muted);
   font-style: italic;
+  font-weight: bold;
 }
+
+
