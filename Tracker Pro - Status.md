@@ -17,10 +17,10 @@ The core meal logging feature was integrated from the handoff files.
 - Daily log note path is templated: `mealLogFolder` and `mealLogFilename` support `{{DATE:FORMAT}}` tokens
 
 **Four new settings fields:**
-- `Meal log folder` — e.g. `Food/Logs/{{DATE:YYYY}}/{{DATE:YYYY-MM}}`
+- `Meal log folder` — e.g. `Data/Food Logs/{{DATE:YYYY}}/{{DATE:YYYY-MM}}`
 - `Meal log filename` — e.g. `{{DATE:YYYY-MM-DD}}`
-- `Food database folder` — e.g. `Food/Database`
-- `Recipes folder` — e.g. `Recipes`
+- `Food database folder` — e.g. `Data/Food`
+- `Recipes folder` — e.g. `Data/Recipes`
 
 **Daily log frontmatter schema** — 20 fields written automatically:
 ```
