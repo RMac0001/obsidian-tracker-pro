@@ -199,3 +199,7 @@ A `folders:` array to query across multiple folders in one chart block. Currentl
 
 ### 5. Click-through on table rows
 Clicking a row opens the source note. Very Obsidian-native and useful for drilling into a specific day's log from a summary table.
+
+### 6. Meals Feature
+
+[[Tracker Pro - Meals Feature|Meals]] would be a saved combination of Foods and/or Recipes that are always eaten together, always representing one serving of the complete plate. They would live in `Data/Meals/` alongside `Data/Food/` and `Data/Recipes/`. Tabled for now
