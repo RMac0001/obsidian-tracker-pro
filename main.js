@@ -20171,11 +20171,14 @@ function buildUpdatedFrontmatter(existing, mealType, entries, settings) {
 // ─── Note Content Helpers ─────────────────────────────────────────────────────
 function buildEntryLines(entries) {
     return entries
-        .map((e) => `- ${e.name} (${e.displayAmount}) — ` +
-        `${round1(e.nutrition.calories)} cal | ` +
-        `${round1(e.nutrition.protein)}g protein | ` +
-        `${round1(e.nutrition.fat)}g fat | ` +
-        `${round1(e.nutrition.carbs)}g carbs`)
+        .map((e) => {
+        const link = e.isRecipe ? `[[Recipe - ${e.name}]]` : `[[${e.name}]]`;
+        return (`- ${link} (${e.displayAmount}) — ` +
+            `${round1(e.nutrition.calories)} cal | ` +
+            `${round1(e.nutrition.protein)}g protein | ` +
+            `${round1(e.nutrition.fat)}g fat | ` +
+            `${round1(e.nutrition.carbs)}g carbs`);
+    })
         .join("\n");
 }
 function buildNewNoteContent(mealType, entries, fm) {
@@ -20422,6 +20425,7 @@ async function logMeal(app, settings) {
                 new AmountModal(app, file.basename, meta, isFood, (multiplier, displayAmount) => {
                     entries.push({
                         name: file.basename,
+                        isRecipe: !isFood,
                         displayAmount,
                         multiplier,
                         nutrition: {

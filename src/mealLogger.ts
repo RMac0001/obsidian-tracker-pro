@@ -25,6 +25,7 @@ interface FoodMeta {
 
 interface MealEntry {
     name: string;
+    isRecipe: boolean;
     displayAmount: string;   // "6 oz" | "1.5 servings"
     multiplier: number;      // factor applied to per-serving nutrition
     nutrition: NutritionValues; // already multiplied
@@ -271,14 +272,16 @@ function buildUpdatedFrontmatter(
 
 function buildEntryLines(entries: MealEntry[]): string {
     return entries
-        .map(
-            (e) =>
-                `- ${e.name} (${e.displayAmount}) — ` +
+        .map((e) => {
+            const link = e.isRecipe ? `[[Recipe - ${e.name}]]` : `[[${e.name}]]`;
+            return (
+                `- ${link} (${e.displayAmount}) — ` +
                 `${round1(e.nutrition.calories)} cal | ` +
                 `${round1(e.nutrition.protein)}g protein | ` +
                 `${round1(e.nutrition.fat)}g fat | ` +
                 `${round1(e.nutrition.carbs)}g carbs`
-        )
+            );
+        })
         .join("\n");
 }
 
@@ -610,6 +613,7 @@ export async function logMeal(app: App, settings: TrackerSettings): Promise<void
                     new AmountModal(app, file.basename, meta, isFood, (multiplier, displayAmount) => {
                         entries.push({
                             name: file.basename,
+                            isRecipe: !isFood,
                             displayAmount,
                             multiplier,
                             nutrition: {
