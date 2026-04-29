@@ -51,8 +51,8 @@ While building a meal, a "Remove last item (Name)" option appears in the menu wh
 
 Log line format:
 ```
-- [[Food Name]] (2 oz) — 220 cal | 14g protein | 8g fat | 0g carbs
-- [[Recipe - Recipe Name]] (1 serving) — 450 cal | 30g protein | 12g fat | 40g carbs
+- [[Peanut Butter]] (2 oz) — 220 cal | 14g protein | 8g fat | 0g carbs
+- [[Recipe - Cup of Coffee]] (1 serving) — 45 cal | 0g protein | 2g fat | 5g carbs
 ```
 
 ---
