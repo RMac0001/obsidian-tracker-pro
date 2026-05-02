@@ -30,6 +30,7 @@ and renders them as charts and summaries. It requires no Dataview dependency.
    - [summary](#summary)
    - [table](#table)
    - [daily-table](#daily-table)
+   - [bills](#bills)
 6. [Advanced Features](#advanced-features)
    - [source: fileMeta](#source-filemeta)
    - [dateAggregation](#dateaggregation)
@@ -861,6 +862,92 @@ the `cal_breakfast` value from that day's frontmatter.
 
 ---
 
+### `bills`
+
+An interactive bill payment tracker. Reads master bill notes and payment notes
+from your vault and renders a two-section table (This Month / Next Month) with
+checkboxes for recording payments.
+
+**Good for:** tracking recurring bills, subscriptions, and any regular payment
+obligations across one or more billing frequencies.
+
+**Vault structure required:**
+
+| Path | Purpose |
+|---|---|
+| `Data/Bills/Bill-{Name}.md` | Master bill note (permanent, one per bill) |
+| `Data/Bills/Payments/BP-{YYYY}/BP-{YYYY-MM}/BP-{Name}-{YYYY-MM}.md` | Payment note (one per bill per month) |
+
+> Folder paths are configurable in **Settings → Bills**.
+
+**Master note frontmatter fields:**
+
+```yaml
+bill_active: true
+bill_amount_due: 180        # optional — omit for variable bills
+bill_company: Ottawa Hydro
+bill_due_date: 2026-03-15   # anchor date; future occurrences calculated from here
+bill_frequency: monthly     # monthly | quarterly | annual
+bill_type: Utility
+```
+
+**Codeblock syntax:**
+
+```yaml
+type: bills
+bill_type: Utility   # optional — omit to show all active bills
+title: My Bills      # optional
+```
+
+**Rendered output:**
+
+Two sections — *This Month* and *Next Month* — each containing a table of bills
+sorted alphabetically by name.
+
+| Column | Description |
+|---|---|
+| ☐ | Checkbox — checked when `bill_status: paid` |
+| Bill | `bill_name` (derived from master filename) |
+| Company | `bill_company` |
+| Due Date | Formatted as `May 15` |
+| Amount Due | `bill_amount_due` or `—` if blank |
+| Amount Paid | `bill_amount_paid` or `—` |
+| Paid Date | `bill_paid_date` formatted as `May 12` or `—` |
+
+**Visual states:**
+
+| State | Appearance |
+|---|---|
+| Overdue (unpaid and due ≤ today) | Entire row bold red |
+| Paid | Checkbox checked, renders normally |
+| Upcoming | Renders normally |
+
+**Checkbox interaction:**
+
+Clicking an unchecked checkbox opens a **Record Payment** modal. Enter the
+amount paid and click **Save** — the plugin re-reads the master note for
+current values, rewrites the payment note with `bill_status: paid`,
+`bill_amount_paid`, and `bill_paid_date` (today), then re-renders the table.
+
+Checked boxes cannot be unchecked via the UI — edit the payment note directly
+to reverse a payment.
+
+**Auto-creation:** when the renderer encounters a next-month bill with no
+payment note, it creates the note automatically using current master values.
+
+**`Generate Monthly Bills` command:** run from the command palette at the start
+of each month to create all this-month payment notes at once. The command is
+idempotent — it skips notes that already exist.
+
+**Due date calculation:**
+
+`bill_due_date` is an anchor. Future occurrences are derived by adding the
+frequency interval (1 / 3 / 12 months) until a date in the target month is
+found. If the anchor day exceeds the days in the target month, it is clamped
+(e.g. Jan 31 → Feb 28).
+
+---
+
 ## Advanced Features
 
 ### `source: fileMeta`
@@ -1006,6 +1093,7 @@ All available parameters in one table.
 | `totalRow`         | string                     | —                                   | daily-table                      | Label for the per-day total sub-row (uses key `total`). Omit to hide. |
 | `showEmptyRows`    | boolean                    | `true`                              | daily-table                      | Hide meal rows where the first column evaluates to 0. |
 | `dateFormat`       | string                     | `MM/DD/YY`                          | daily-table                      | moment.js format for the date column. |
+| `bill_type`        | string                     | —                                   | bills                            | Filter to bills matching this `bill_type` value. Omit to show all active bills. |
 
 ### Full list of dateRange options
 
