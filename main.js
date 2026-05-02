@@ -19747,6 +19747,13 @@ function getBillPaths(settings) {
     };
 }
 // ─── Helpers ───────────────────────────────────────────────────────────────────
+function parseBool(val) {
+    if (typeof val === "boolean")
+        return val;
+    if (typeof val === "string")
+        return val.toLowerCase() === "true";
+    return false;
+}
 function paymentNotePath(billName, year, month, paymentTemplate) {
     const folder = resolveBillPath(paymentTemplate, new Date(year, month, 1)).replace(/\/$/, "");
     const ym = `${year}-${String(month + 1).padStart(2, "0")}`;
@@ -19787,20 +19794,20 @@ function readMasterBills(app, masterFolder) {
         return !rel.includes("/") && f.basename.startsWith("Bill-");
     })
         .map(f => {
-        var _a, _b, _c, _d, _e, _f;
+        var _a, _b, _c, _d, _e;
         const fm = (_b = (_a = app.metadataCache.getFileCache(f)) === null || _a === void 0 ? void 0 : _a.frontmatter) !== null && _b !== void 0 ? _b : {};
         const freq = fm.bill_frequency;
         return {
             fileName: f.basename.slice("Bill-".length),
-            bill_status: String((_c = fm.bill_status) !== null && _c !== void 0 ? _c : "inactive").toLowerCase(),
+            bill_active: parseBool(fm.bill_active),
             bill_amount_due: fm.bill_amount_due != null ? Number(fm.bill_amount_due) : undefined,
-            bill_company: String((_d = fm.bill_company) !== null && _d !== void 0 ? _d : ""),
-            bill_due_date: String((_e = fm.bill_due_date) !== null && _e !== void 0 ? _e : ""),
+            bill_company: String((_c = fm.bill_company) !== null && _c !== void 0 ? _c : ""),
+            bill_due_date: String((_d = fm.bill_due_date) !== null && _d !== void 0 ? _d : ""),
             bill_frequency: (["monthly", "quarterly", "annual"].includes(freq) ? freq : "monthly"),
-            bill_type: String((_f = fm.bill_type) !== null && _f !== void 0 ? _f : ""),
+            bill_type: String((_e = fm.bill_type) !== null && _e !== void 0 ? _e : ""),
         };
     })
-        .filter(b => b.bill_status === "active");
+        .filter(b => b.bill_active);
 }
 function readPaymentNote(app, billName, year, month, paymentTemplate) {
     var _a, _b, _c, _d, _e, _f;

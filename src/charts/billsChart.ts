@@ -11,7 +11,7 @@ const DEFAULT_PAYMENT_FOLDER = "Data/Bills/Payments/BP-{YYYY}/BP-{YYYY-MM}";
 
 interface MasterBill {
   fileName:        string;   // e.g. "Hydro" stripped from "Bill-Hydro"
-  bill_status:     string;   // "active" | "inactive"
+  bill_active:     boolean;
   bill_amount_due?: number;
   bill_company:    string;
   bill_due_date:   string;   // ISO anchor date
@@ -60,6 +60,12 @@ function getBillPaths(settings?: TrackerSettings): { masterFolder: string; payme
 }
 
 // ─── Helpers ───────────────────────────────────────────────────────────────────
+
+function parseBool(val: unknown): boolean {
+  if (typeof val === "boolean") return val;
+  if (typeof val === "string")  return val.toLowerCase() === "true";
+  return false;
+}
 
 function paymentNotePath(billName: string, year: number, month: number, paymentTemplate: string): string {
   const folder = resolveBillPath(paymentTemplate, new Date(year, month, 1)).replace(/\/$/, "");
@@ -114,7 +120,7 @@ function readMasterBills(app: App, masterFolder: string): MasterBill[] {
       const freq = fm.bill_frequency;
       return {
         fileName:        f.basename.slice("Bill-".length),
-        bill_status:     String(fm.bill_status ?? "inactive").toLowerCase(),
+        bill_active:     parseBool(fm.bill_active),
         bill_amount_due: fm.bill_amount_due != null ? Number(fm.bill_amount_due) : undefined,
         bill_company:    String(fm.bill_company  ?? ""),
         bill_due_date:   String(fm.bill_due_date ?? ""),
@@ -122,7 +128,7 @@ function readMasterBills(app: App, masterFolder: string): MasterBill[] {
         bill_type:       String(fm.bill_type     ?? ""),
       };
     })
-    .filter(b => b.bill_status === "active");
+    .filter(b => b.bill_active);
 }
 
 function readPaymentNote(
