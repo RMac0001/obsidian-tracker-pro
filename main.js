@@ -19717,9 +19717,35 @@ function renderDailyTable(container, entries, config) {
     }
 }
 
-// ─── Constants ─────────────────────────────────────────────────────────────────
-const BILLS_FOLDER = "Data/Bills";
-const PAYMENTS_BASE = "Data/Bills/Payments";
+// ─── Defaults ──────────────────────────────────────────────────────────────────
+const DEFAULT_MASTER_FOLDER = "Data/Bills";
+const DEFAULT_PAYMENT_FOLDER = "Data/Bills/Payments/BP-{YYYY}/BP-{YYYY-MM}";
+// ─── Path Resolution ───────────────────────────────────────────────────────────
+//
+// Supported variables: {YYYY} {YY} {MMMM} {MMM} {MM} {M}
+// Replace longest patterns first to avoid partial matches.
+function resolveBillPath(template, date) {
+    const yyyy = String(date.getFullYear());
+    const yy = yyyy.slice(-2);
+    const mm = String(date.getMonth() + 1).padStart(2, "0");
+    const mNum = String(date.getMonth() + 1);
+    const mmmm = date.toLocaleString("en-US", { month: "long" });
+    const mmm = date.toLocaleString("en-US", { month: "short" });
+    return template
+        .replace(/\{MMMM\}/g, mmmm)
+        .replace(/\{MMM\}/g, mmm)
+        .replace(/\{MM\}/g, mm)
+        .replace(/\{M\}/g, mNum)
+        .replace(/\{YYYY\}/g, yyyy)
+        .replace(/\{YY\}/g, yy);
+}
+function getBillPaths(settings) {
+    var _a, _b;
+    return {
+        masterFolder: ((_a = settings === null || settings === void 0 ? void 0 : settings.billsMasterFolder) !== null && _a !== void 0 ? _a : DEFAULT_MASTER_FOLDER).replace(/\/$/, ""),
+        paymentTemplate: (_b = settings === null || settings === void 0 ? void 0 : settings.billsPaymentFolder) !== null && _b !== void 0 ? _b : DEFAULT_PAYMENT_FOLDER,
+    };
+}
 // ─── Helpers ───────────────────────────────────────────────────────────────────
 function parseBool(val) {
     if (typeof val === "boolean")
@@ -19728,9 +19754,10 @@ function parseBool(val) {
         return val.toLowerCase() === "true";
     return false;
 }
-function paymentNotePath(billName, year, month) {
+function paymentNotePath(billName, year, month, paymentTemplate) {
+    const folder = resolveBillPath(paymentTemplate, new Date(year, month, 1)).replace(/\/$/, "");
     const ym = `${year}-${String(month + 1).padStart(2, "0")}`;
-    return obsidian.normalizePath(`${PAYMENTS_BASE}/BP-${year}/BP-${ym}/BP-${billName}-${ym}.md`);
+    return obsidian.normalizePath(`${folder}/BP-${billName}-${ym}.md`);
 }
 // Advance from the anchor date by the frequency step until the target year/month is reached.
 // Returns the ISO due date for that month, or null if the bill does not occur that month.
@@ -19757,11 +19784,15 @@ function calculateDueDateForMonth(anchor, frequency, targetYear, targetMon // 0-
     return `${targetYear}-${String(targetMon + 1).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
 }
 // ─── Vault Reads ───────────────────────────────────────────────────────────────
-function readMasterBills(app) {
+// Master notes are direct children of masterFolder (not in any subfolder).
+function readMasterBills(app, masterFolder) {
     return app.vault.getMarkdownFiles()
-        .filter(f => f.path.startsWith(BILLS_FOLDER + "/") &&
-        !f.path.startsWith(PAYMENTS_BASE + "/") &&
-        f.basename.startsWith("Bill-"))
+        .filter(f => {
+        if (!f.path.startsWith(masterFolder + "/"))
+            return false;
+        const rel = f.path.slice(masterFolder.length + 1);
+        return !rel.includes("/") && f.basename.startsWith("Bill-");
+    })
         .map(f => {
         var _a, _b, _c, _d, _e;
         const fm = (_b = (_a = app.metadataCache.getFileCache(f)) === null || _a === void 0 ? void 0 : _a.frontmatter) !== null && _b !== void 0 ? _b : {};
@@ -19778,9 +19809,9 @@ function readMasterBills(app) {
     })
         .filter(b => b.bill_active);
 }
-function readPaymentNote(app, billName, year, month) {
+function readPaymentNote(app, billName, year, month, paymentTemplate) {
     var _a, _b, _c, _d, _e, _f;
-    const path = paymentNotePath(billName, year, month);
+    const path = paymentNotePath(billName, year, month, paymentTemplate);
     const file = app.vault.getAbstractFileByPath(path);
     if (!(file instanceof obsidian.TFile))
         return null;
@@ -19826,8 +19857,8 @@ function buildPaymentContent(billName, company, billType, dueDate, amountDue, am
     fm += body;
     return fm;
 }
-async function createPaymentNote(app, master, dueDate, year, month) {
-    const path = paymentNotePath(master.fileName, year, month);
+async function createPaymentNote(app, master, dueDate, year, month, paymentTemplate) {
+    const path = paymentNotePath(master.fileName, year, month, paymentTemplate);
     await ensureFolders$1(app, path);
     const monthName = new Date(year, month, 1).toLocaleString("en-US", { month: "long" });
     const body = `Payment record for ${master.bill_company} — ${monthName} ${year}.\n`;
@@ -19843,8 +19874,8 @@ async function createPaymentNote(app, master, dueDate, year, month) {
         filePath: path,
     };
 }
-// Synthetic PaymentNote from master when no file exists yet (this-month display)
-function syntheticPayment(master, dueDate, year, month) {
+// Synthetic PaymentNote from master when no file exists yet (this-month display).
+function syntheticPayment(master, dueDate, year, month, paymentTemplate) {
     return {
         bill_name: master.fileName,
         bill_company: master.bill_company,
@@ -19852,7 +19883,7 @@ function syntheticPayment(master, dueDate, year, month) {
         bill_due_date: dueDate,
         bill_amount_due: master.bill_amount_due,
         bill_status: "unpaid",
-        filePath: paymentNotePath(master.fileName, year, month),
+        filePath: paymentNotePath(master.fileName, year, month, paymentTemplate),
     };
 }
 // ─── Date Formatting ───────────────────────────────────────────────────────────
@@ -19913,9 +19944,7 @@ class RecordPaymentModal extends obsidian.Modal {
         }
         this.input.focus();
         this.input.select();
-        const btnRow = contentEl.createEl("div", {
-            attr: { style: "display:flex;gap:8px;" },
-        });
+        const btnRow = contentEl.createEl("div", { attr: { style: "display:flex;gap:8px;" } });
         const saveBtn = btnRow.createEl("button", { text: "Save", attr: { style: "flex:1;padding:8px;cursor:pointer;" } });
         const cancelBtn = btnRow.createEl("button", { text: "Cancel", attr: { style: "flex:1;padding:8px;cursor:pointer;" } });
         saveBtn.onclick = () => this.submit();
@@ -19939,13 +19968,16 @@ class RecordPaymentModal extends obsidian.Modal {
     onClose() { this.contentEl.empty(); }
 }
 // ─── Save Payment ─────────────────────────────────────────────────────────────
-async function savePayment(app, payment, amountPaid) {
+async function savePayment(app, payment, amountPaid, masterFolder) {
     var _a, _b;
     const today = todayIso();
     // Re-read master for source-of-truth values
-    const masterFile = app.vault.getMarkdownFiles().find(f => f.path.startsWith(BILLS_FOLDER + "/") &&
-        !f.path.startsWith(PAYMENTS_BASE + "/") &&
-        f.basename === `Bill-${payment.bill_name}`);
+    const masterFile = app.vault.getMarkdownFiles().find(f => {
+        if (!f.path.startsWith(masterFolder + "/"))
+            return false;
+        const rel = f.path.slice(masterFolder.length + 1);
+        return !rel.includes("/") && f.basename === `Bill-${payment.bill_name}`;
+    });
     const masterFm = masterFile
         ? ((_b = (_a = app.metadataCache.getFileCache(masterFile)) === null || _a === void 0 ? void 0 : _a.frontmatter) !== null && _b !== void 0 ? _b : {})
         : {};
@@ -19957,8 +19989,7 @@ async function savePayment(app, payment, amountPaid) {
         const existing = await app.vault.read(existingFile);
         const bodyMatch = existing.match(/^---[\s\S]*?---\n+([\s\S]*)$/);
         const body = bodyMatch ? bodyMatch[1] : `Payment record for ${payment.bill_company}.\n`;
-        const content = buildPaymentContent(payment.bill_name, payment.bill_company, payment.bill_type, payment.bill_due_date, amountDue, amountPaid, today, "paid", body);
-        await app.vault.modify(existingFile, content);
+        await app.vault.modify(existingFile, buildPaymentContent(payment.bill_name, payment.bill_company, payment.bill_type, payment.bill_due_date, amountDue, amountPaid, today, "paid", body));
     }
     else {
         await ensureFolders$1(app, payment.filePath);
@@ -19967,28 +19998,26 @@ async function savePayment(app, payment, amountPaid) {
         const dMonth = dueParts ? parseInt(dueParts[2]) - 1 : new Date().getMonth();
         const monthName = new Date(dYear, dMonth, 1).toLocaleString("en-US", { month: "long" });
         const body = `Payment record for ${payment.bill_company} — ${monthName} ${dYear}.\n`;
-        const content = buildPaymentContent(payment.bill_name, payment.bill_company, payment.bill_type, payment.bill_due_date, amountDue, amountPaid, today, "paid", body);
-        await app.vault.create(payment.filePath, content);
+        await app.vault.create(payment.filePath, buildPaymentContent(payment.bill_name, payment.bill_company, payment.bill_type, payment.bill_due_date, amountDue, amountPaid, today, "paid", body));
     }
     new obsidian.Notice(`✓ Payment recorded for ${payment.bill_name}`);
 }
 // ─── Row Renderer ─────────────────────────────────────────────────────────────
-function renderBillRow(app, tbody, payment, onPaymentSaved) {
+function renderBillRow(app, tbody, payment, masterFolder, onPaymentSaved) {
     const paid = payment.bill_status === "paid";
     const overdue = isOverdue(payment);
     const tr = tbody.createEl("tr");
     if (overdue)
         tr.addClass("tracker-pro-bills-overdue");
-    // Checkbox cell
     const checkTd = tr.createEl("td", { cls: "tracker-pro-bills-check" });
     const checkbox = checkTd.createEl("input", { attr: { type: "checkbox" } });
     checkbox.checked = paid;
-    checkbox.disabled = paid; // checked boxes are non-interactive
+    checkbox.disabled = paid;
     if (!paid) {
         checkbox.addEventListener("change", () => {
-            checkbox.checked = false; // revert; re-render handles final state
+            checkbox.checked = false;
             new RecordPaymentModal(app, payment, async (amountPaid) => {
-                await savePayment(app, payment, amountPaid);
+                await savePayment(app, payment, amountPaid, masterFolder);
                 onPaymentSaved();
             }).open();
         });
@@ -20001,7 +20030,7 @@ function renderBillRow(app, tbody, payment, onPaymentSaved) {
     tr.createEl("td", { text: payment.bill_paid_date ? fmtDate(payment.bill_paid_date) : "—", cls: "tracker-pro-bills-date" });
 }
 // ─── Section Renderer ─────────────────────────────────────────────────────────
-function renderSection(app, wrapper, heading, payments, onPaymentSaved) {
+function renderSection(app, wrapper, heading, payments, masterFolder, onPaymentSaved) {
     if (payments.length === 0)
         return;
     wrapper.createEl("div", { cls: "tracker-pro-bills-section-header", text: heading });
@@ -20013,72 +20042,70 @@ function renderSection(app, wrapper, heading, payments, onPaymentSaved) {
     }
     const tbody = table.createEl("tbody");
     for (const p of payments) {
-        renderBillRow(app, tbody, p, onPaymentSaved);
+        renderBillRow(app, tbody, p, masterFolder, onPaymentSaved);
     }
 }
 // ─── Main Renderer ─────────────────────────────────────────────────────────────
-async function renderBillsChart(container, app, config) {
+async function renderBillsChart(container, app, config, settings) {
+    const { masterFolder, paymentTemplate } = getBillPaths(settings);
     async function render() {
         var _a, _b, _c;
         container.empty();
         container.addClass("tracker-pro-container");
         const now = new Date();
         const thisYear = now.getFullYear();
-        const thisMonth = now.getMonth(); // 0-indexed
+        const thisMonth = now.getMonth();
         const nextMonth = thisMonth === 11 ? 0 : thisMonth + 1;
         const nextYear = thisMonth === 11 ? thisYear + 1 : thisYear;
         const typeFilter = (_a = config.bill_type) === null || _a === void 0 ? void 0 : _a.toLowerCase();
-        let masters = readMasterBills(app);
-        if (typeFilter) {
+        let masters = readMasterBills(app, masterFolder);
+        if (typeFilter)
             masters = masters.filter(m => m.bill_type.toLowerCase() === typeFilter);
-        }
         masters.sort((a, b) => a.fileName.localeCompare(b.fileName));
         const thisMonthPayments = [];
         const nextMonthPayments = [];
         for (const master of masters) {
             const thisDue = calculateDueDateForMonth(master.bill_due_date, master.bill_frequency, thisYear, thisMonth);
             if (thisDue) {
-                const note = (_b = readPaymentNote(app, master.fileName, thisYear, thisMonth)) !== null && _b !== void 0 ? _b : syntheticPayment(master, thisDue, thisYear, thisMonth);
-                thisMonthPayments.push(note);
+                thisMonthPayments.push((_b = readPaymentNote(app, master.fileName, thisYear, thisMonth, paymentTemplate)) !== null && _b !== void 0 ? _b : syntheticPayment(master, thisDue, thisYear, thisMonth, paymentTemplate));
             }
             const nextDue = calculateDueDateForMonth(master.bill_due_date, master.bill_frequency, nextYear, nextMonth);
             if (nextDue) {
-                const note = (_c = readPaymentNote(app, master.fileName, nextYear, nextMonth)) !== null && _c !== void 0 ? _c : await createPaymentNote(app, master, nextDue, nextYear, nextMonth);
-                nextMonthPayments.push(note);
+                nextMonthPayments.push((_c = readPaymentNote(app, master.fileName, nextYear, nextMonth, paymentTemplate)) !== null && _c !== void 0 ? _c : await createPaymentNote(app, master, nextDue, nextYear, nextMonth, paymentTemplate));
             }
         }
         const wrapper = container.createEl("div", { cls: "tracker-pro-bills-wrapper" });
-        if (config.title) {
+        if (config.title)
             wrapper.createEl("div", { cls: "tracker-pro-table-title", text: config.title });
-        }
         const thisMon = new Date(thisYear, thisMonth, 1).toLocaleString("en-US", { month: "long" });
         const nextMon = new Date(nextYear, nextMonth, 1).toLocaleString("en-US", { month: "long" });
-        renderSection(app, wrapper, `This Month — ${thisMon} ${thisYear}`, thisMonthPayments, render);
-        renderSection(app, wrapper, `Next Month — ${nextMon} ${nextYear}`, nextMonthPayments, render);
+        renderSection(app, wrapper, `This Month — ${thisMon} ${thisYear}`, thisMonthPayments, masterFolder, render);
+        renderSection(app, wrapper, `Next Month — ${nextMon} ${nextYear}`, nextMonthPayments, masterFolder, render);
         if (thisMonthPayments.length === 0 && nextMonthPayments.length === 0) {
             const empty = wrapper.createEl("div", { cls: "tracker-pro-empty" });
             empty.createEl("span", { text: "📋 No bills found" });
-            empty.createEl("small", { text: "No active master notes found in Data/Bills/" });
+            empty.createEl("small", { text: `No active master notes found in ${masterFolder}/` });
         }
     }
     await render();
 }
 // ─── Generate Monthly Bills Command ──────────────────────────────────────────
-async function generateMonthlyBills(app) {
+async function generateMonthlyBills(app, settings) {
+    const { masterFolder, paymentTemplate } = getBillPaths(settings);
     const now = new Date();
     const year = now.getFullYear();
     const month = now.getMonth();
     const monthName = now.toLocaleString("en-US", { month: "long" });
-    const masters = readMasterBills(app);
+    const masters = readMasterBills(app, masterFolder);
     let created = 0;
     for (const master of masters) {
         const dueDate = calculateDueDateForMonth(master.bill_due_date, master.bill_frequency, year, month);
         if (!dueDate)
             continue;
-        const path = paymentNotePath(master.fileName, year, month);
+        const path = paymentNotePath(master.fileName, year, month, paymentTemplate);
         if (app.vault.getAbstractFileByPath(path) instanceof obsidian.TFile)
-            continue; // already exists
-        await createPaymentNote(app, master, dueDate, year, month);
+            continue;
+        await createPaymentNote(app, master, dueDate, year, month, paymentTemplate);
         created++;
     }
     new obsidian.Notice(`Generated ${created} bill${created !== 1 ? "s" : ""} for ${monthName} ${year}`);
@@ -20103,7 +20130,7 @@ function renderEmpty(container, config) {
     box.createEl("small", { text: `No notes matching the config were found in the specified date range.` });
 }
 // ─── Main Render ──────────────────────────────────────────────────────────────
-async function renderTracker(app, container, config) {
+async function renderTracker(app, container, config, settings) {
     var _a, _b, _c, _d;
     container.empty();
     container.addClass("tracker-pro-container");
@@ -20211,7 +20238,7 @@ async function renderTracker(app, container, config) {
     }
     // ── Bills ──────────────────────────────────────────────────────────────────
     if (config.type === "bills") {
-        await renderBillsChart(container, app, config);
+        await renderBillsChart(container, app, config, settings);
         return;
     }
     // ── Summary ───────────────────────────────────────────────────────────────
@@ -20254,6 +20281,9 @@ const DEFAULT_SETTINGS = {
     mealLogFilename: "{{DATE:YYYY-MM-DD}}",
     foodFolder: "Food/Database",
     recipeFolder: "Recipes",
+    // ── Bills ─────────────────────────────────────────────────────────────────
+    billsMasterFolder: "Data/Bills",
+    billsPaymentFolder: "Data/Bills/Payments/BP-{YYYY}/BP-{YYYY-MM}",
 };
 class TrackerSettingTab extends obsidian.PluginSettingTab {
     constructor(app, plugin) {
@@ -20347,6 +20377,36 @@ class TrackerSettingTab extends obsidian.PluginSettingTab {
             .setValue(this.plugin.settings.recipeFolder)
             .onChange(async (value) => {
             this.plugin.settings.recipeFolder = value.trim();
+            await this.plugin.saveSettings();
+        }));
+        // ── Bills ─────────────────────────────────────────────────────────────
+        containerEl.createEl("h2", { text: "Bills" });
+        containerEl.createEl("p", {
+            text: "Path templates support date variables: {YYYY}, {YY}, {MMMM}, {MMM}, {MM}, {M}. " +
+                "Variables are resolved to the target billing period at runtime.",
+            attr: { style: "font-size:0.85em;color:var(--text-muted);margin:0 0 12px;" },
+        });
+        new obsidian.Setting(containerEl)
+            .setName("Master bills folder")
+            .setDesc("Folder where your master bill definition notes are stored. " +
+            "Each note should be named Bill-{Name}.md with bill_active, bill_due_date, bill_frequency, and bill_type fields.")
+            .addText((text) => text
+            .setPlaceholder("Data/Bills")
+            .setValue(this.plugin.settings.billsMasterFolder)
+            .onChange(async (value) => {
+            this.plugin.settings.billsMasterFolder = value.trim();
+            await this.plugin.saveSettings();
+        }));
+        new obsidian.Setting(containerEl)
+            .setName("Payment notes folder")
+            .setDesc("Folder path template where monthly payment notes are stored. " +
+            "Supports date variables for the billing period. The filename is always BP-{Bill Name}-{YYYY-MM}.md.\n" +
+            "Example: Data/Bills/Payments/BP-{YYYY}/BP-{YYYY-MM}")
+            .addText((text) => text
+            .setPlaceholder("Data/Bills/Payments/BP-{YYYY}/BP-{YYYY-MM}")
+            .setValue(this.plugin.settings.billsPaymentFolder)
+            .onChange(async (value) => {
+            this.plugin.settings.billsPaymentFolder = value.trim();
             await this.plugin.saveSettings();
         }));
     }
@@ -20836,7 +20896,7 @@ class Tracker extends obsidian.Plugin {
         this.addCommand({
             id: "generate-monthly-bills",
             name: "Generate Monthly Bills",
-            callback: () => generateMonthlyBills(this.app),
+            callback: () => generateMonthlyBills(this.app, this.settings),
         });
         // ── Tracker code block processor ──────────────────────────────────────
         this.registerMarkdownCodeBlockProcessor("tracker-pro", async (source, el, _ctx) => {
@@ -20856,7 +20916,7 @@ class Tracker extends obsidian.Plugin {
                 config.dateProperty = this.settings.dateProperty;
             }
             try {
-                await renderTracker(this.app, container, config);
+                await renderTracker(this.app, container, config, this.settings);
             }
             catch (e) {
                 renderErrors(container, [{ message: String(e) }]);

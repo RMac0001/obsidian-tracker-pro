@@ -1,33 +1,62 @@
 import { App, Modal, Notice, TFile, normalizePath } from "obsidian";
 import { TrackerConfig } from "../types";
+import { TrackerSettings } from "../settings";
 
-// ─── Constants ─────────────────────────────────────────────────────────────────
+// ─── Defaults ──────────────────────────────────────────────────────────────────
 
-const BILLS_FOLDER   = "Data/Bills";
-const PAYMENTS_BASE  = "Data/Bills/Payments";
+const DEFAULT_MASTER_FOLDER  = "Data/Bills";
+const DEFAULT_PAYMENT_FOLDER = "Data/Bills/Payments/BP-{YYYY}/BP-{YYYY-MM}";
 
 // ─── Internal Types ────────────────────────────────────────────────────────────
 
 interface MasterBill {
-  fileName:       string;   // e.g. "Hydro" stripped from "Bill-Hydro"
-  bill_active:    boolean;
+  fileName:        string;   // e.g. "Hydro" stripped from "Bill-Hydro"
+  bill_active:     boolean;
   bill_amount_due?: number;
-  bill_company:   string;
-  bill_due_date:  string;   // ISO anchor date
-  bill_frequency: "monthly" | "quarterly" | "annual";
-  bill_type:      string;
+  bill_company:    string;
+  bill_due_date:   string;   // ISO anchor date
+  bill_frequency:  "monthly" | "quarterly" | "annual";
+  bill_type:       string;
 }
 
 interface PaymentNote {
-  bill_name:        string;
-  bill_company:     string;
-  bill_type:        string;
-  bill_due_date:    string;
-  bill_amount_due?: number;
+  bill_name:         string;
+  bill_company:      string;
+  bill_type:         string;
+  bill_due_date:     string;
+  bill_amount_due?:  number;
   bill_amount_paid?: number;
-  bill_paid_date?:  string;
-  bill_status:      "unpaid" | "paid";
-  filePath:         string; // runtime only — never written to the note
+  bill_paid_date?:   string;
+  bill_status:       "unpaid" | "paid";
+  filePath:          string; // runtime only — never written to the note
+}
+
+// ─── Path Resolution ───────────────────────────────────────────────────────────
+//
+// Supported variables: {YYYY} {YY} {MMMM} {MMM} {MM} {M}
+// Replace longest patterns first to avoid partial matches.
+
+export function resolveBillPath(template: string, date: Date): string {
+  const yyyy = String(date.getFullYear());
+  const yy   = yyyy.slice(-2);
+  const mm   = String(date.getMonth() + 1).padStart(2, "0");
+  const mNum = String(date.getMonth() + 1);
+  const mmmm = date.toLocaleString("en-US", { month: "long" });
+  const mmm  = date.toLocaleString("en-US", { month: "short" });
+  return template
+    .replace(/\{MMMM\}/g, mmmm)
+    .replace(/\{MMM\}/g,  mmm)
+    .replace(/\{MM\}/g,   mm)
+    .replace(/\{M\}/g,    mNum)
+    .replace(/\{YYYY\}/g, yyyy)
+    .replace(/\{YY\}/g,   yy);
+}
+
+function getBillPaths(settings?: TrackerSettings): { masterFolder: string; paymentTemplate: string } {
+  return {
+    masterFolder:    (settings?.billsMasterFolder  ?? DEFAULT_MASTER_FOLDER).replace(/\/$/, ""),
+    paymentTemplate: settings?.billsPaymentFolder  ?? DEFAULT_PAYMENT_FOLDER,
+  };
 }
 
 // ─── Helpers ───────────────────────────────────────────────────────────────────
@@ -38,9 +67,10 @@ function parseBool(val: unknown): boolean {
   return false;
 }
 
-function paymentNotePath(billName: string, year: number, month: number): string {
-  const ym = `${year}-${String(month + 1).padStart(2, "0")}`;
-  return normalizePath(`${PAYMENTS_BASE}/BP-${year}/BP-${ym}/BP-${billName}-${ym}.md`);
+function paymentNotePath(billName: string, year: number, month: number, paymentTemplate: string): string {
+  const folder = resolveBillPath(paymentTemplate, new Date(year, month, 1)).replace(/\/$/, "");
+  const ym     = `${year}-${String(month + 1).padStart(2, "0")}`;
+  return normalizePath(`${folder}/BP-${billName}-${ym}.md`);
 }
 
 // Advance from the anchor date by the frequency step until the target year/month is reached.
@@ -77,31 +107,34 @@ function calculateDueDateForMonth(
 
 // ─── Vault Reads ───────────────────────────────────────────────────────────────
 
-function readMasterBills(app: App): MasterBill[] {
+// Master notes are direct children of masterFolder (not in any subfolder).
+function readMasterBills(app: App, masterFolder: string): MasterBill[] {
   return app.vault.getMarkdownFiles()
-    .filter(f =>
-      f.path.startsWith(BILLS_FOLDER + "/") &&
-      !f.path.startsWith(PAYMENTS_BASE + "/") &&
-      f.basename.startsWith("Bill-")
-    )
+    .filter(f => {
+      if (!f.path.startsWith(masterFolder + "/")) return false;
+      const rel = f.path.slice(masterFolder.length + 1);
+      return !rel.includes("/") && f.basename.startsWith("Bill-");
+    })
     .map(f => {
-      const fm = app.metadataCache.getFileCache(f)?.frontmatter ?? {};
+      const fm   = app.metadataCache.getFileCache(f)?.frontmatter ?? {};
       const freq = fm.bill_frequency;
       return {
-        fileName:       f.basename.slice("Bill-".length),
-        bill_active:    parseBool(fm.bill_active),
+        fileName:        f.basename.slice("Bill-".length),
+        bill_active:     parseBool(fm.bill_active),
         bill_amount_due: fm.bill_amount_due != null ? Number(fm.bill_amount_due) : undefined,
-        bill_company:   String(fm.bill_company   ?? ""),
-        bill_due_date:  String(fm.bill_due_date   ?? ""),
-        bill_frequency: (["monthly","quarterly","annual"].includes(freq) ? freq : "monthly") as MasterBill["bill_frequency"],
-        bill_type:      String(fm.bill_type       ?? ""),
+        bill_company:    String(fm.bill_company  ?? ""),
+        bill_due_date:   String(fm.bill_due_date ?? ""),
+        bill_frequency:  (["monthly","quarterly","annual"].includes(freq) ? freq : "monthly") as MasterBill["bill_frequency"],
+        bill_type:       String(fm.bill_type     ?? ""),
       };
     })
     .filter(b => b.bill_active);
 }
 
-function readPaymentNote(app: App, billName: string, year: number, month: number): PaymentNote | null {
-  const path = paymentNotePath(billName, year, month);
+function readPaymentNote(
+  app: App, billName: string, year: number, month: number, paymentTemplate: string
+): PaymentNote | null {
+  const path = paymentNotePath(billName, year, month, paymentTemplate);
   const file = app.vault.getAbstractFileByPath(path);
   if (!(file instanceof TFile)) return null;
 
@@ -134,15 +167,15 @@ async function ensureFolders(app: App, filePath: string): Promise<void> {
 }
 
 function buildPaymentContent(
-  billName:    string,
-  company:     string,
-  billType:    string,
-  dueDate:     string,
-  amountDue:   number | undefined,
-  amountPaid:  number | undefined,
-  paidDate:    string | undefined,
-  status:      "unpaid" | "paid",
-  body:        string
+  billName:   string,
+  company:    string,
+  billType:   string,
+  dueDate:    string,
+  amountDue:  number | undefined,
+  amountPaid: number | undefined,
+  paidDate:   string | undefined,
+  status:     "unpaid" | "paid",
+  body:       string
 ): string {
   let fm = "---\n";
   fm += `bill_amount_due: ${amountDue !== undefined ? amountDue : ""}\n`;
@@ -159,18 +192,19 @@ function buildPaymentContent(
 }
 
 async function createPaymentNote(
-  app:    App,
-  master: MasterBill,
-  dueDate: string,
-  year:   number,
-  month:  number
+  app:             App,
+  master:          MasterBill,
+  dueDate:         string,
+  year:            number,
+  month:           number,
+  paymentTemplate: string
 ): Promise<PaymentNote> {
-  const path = paymentNotePath(master.fileName, year, month);
+  const path = paymentNotePath(master.fileName, year, month, paymentTemplate);
   await ensureFolders(app, path);
 
   const monthName = new Date(year, month, 1).toLocaleString("en-US", { month: "long" });
-  const body = `Payment record for ${master.bill_company} — ${monthName} ${year}.\n`;
-  const content = buildPaymentContent(
+  const body      = `Payment record for ${master.bill_company} — ${monthName} ${year}.\n`;
+  const content   = buildPaymentContent(
     master.fileName, master.bill_company, master.bill_type,
     dueDate, master.bill_amount_due, undefined, undefined, "unpaid", body
   );
@@ -178,26 +212,28 @@ async function createPaymentNote(
   await app.vault.create(path, content);
 
   return {
-    bill_name:      master.fileName,
-    bill_company:   master.bill_company,
-    bill_type:      master.bill_type,
-    bill_due_date:  dueDate,
+    bill_name:       master.fileName,
+    bill_company:    master.bill_company,
+    bill_type:       master.bill_type,
+    bill_due_date:   dueDate,
     bill_amount_due: master.bill_amount_due,
-    bill_status:    "unpaid",
-    filePath:       path,
+    bill_status:     "unpaid",
+    filePath:        path,
   };
 }
 
-// Synthetic PaymentNote from master when no file exists yet (this-month display)
-function syntheticPayment(master: MasterBill, dueDate: string, year: number, month: number): PaymentNote {
+// Synthetic PaymentNote from master when no file exists yet (this-month display).
+function syntheticPayment(
+  master: MasterBill, dueDate: string, year: number, month: number, paymentTemplate: string
+): PaymentNote {
   return {
-    bill_name:      master.fileName,
-    bill_company:   master.bill_company,
-    bill_type:      master.bill_type,
-    bill_due_date:  dueDate,
+    bill_name:       master.fileName,
+    bill_company:    master.bill_company,
+    bill_type:       master.bill_type,
+    bill_due_date:   dueDate,
     bill_amount_due: master.bill_amount_due,
-    bill_status:    "unpaid",
-    filePath:       paymentNotePath(master.fileName, year, month),
+    bill_status:     "unpaid",
+    filePath:        paymentNotePath(master.fileName, year, month, paymentTemplate),
   };
 }
 
@@ -218,7 +254,7 @@ function fmtMoney(n: number | undefined): string {
 
 function todayIso(): string {
   const d = new Date();
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`;
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 }
 
 function isOverdue(p: PaymentNote): boolean {
@@ -233,7 +269,7 @@ class RecordPaymentModal extends Modal {
   constructor(
     app: App,
     private payment: PaymentNote,
-    private onSave: (amountPaid: number) => void
+    private onSave:  (amountPaid: number) => void
   ) {
     super(app);
   }
@@ -274,9 +310,7 @@ class RecordPaymentModal extends Modal {
     this.input.focus();
     this.input.select();
 
-    const btnRow = contentEl.createEl("div", {
-      attr: { style: "display:flex;gap:8px;" },
-    });
+    const btnRow  = contentEl.createEl("div", { attr: { style: "display:flex;gap:8px;" } });
     const saveBtn   = btnRow.createEl("button", { text: "Save",   attr: { style: "flex:1;padding:8px;cursor:pointer;" } });
     const cancelBtn = btnRow.createEl("button", { text: "Cancel", attr: { style: "flex:1;padding:8px;cursor:pointer;" } });
 
@@ -300,15 +334,17 @@ class RecordPaymentModal extends Modal {
 
 // ─── Save Payment ─────────────────────────────────────────────────────────────
 
-async function savePayment(app: App, payment: PaymentNote, amountPaid: number): Promise<void> {
+async function savePayment(
+  app: App, payment: PaymentNote, amountPaid: number, masterFolder: string
+): Promise<void> {
   const today = todayIso();
 
   // Re-read master for source-of-truth values
-  const masterFile = app.vault.getMarkdownFiles().find(f =>
-    f.path.startsWith(BILLS_FOLDER + "/") &&
-    !f.path.startsWith(PAYMENTS_BASE + "/") &&
-    f.basename === `Bill-${payment.bill_name}`
-  );
+  const masterFile = app.vault.getMarkdownFiles().find(f => {
+    if (!f.path.startsWith(masterFolder + "/")) return false;
+    const rel = f.path.slice(masterFolder.length + 1);
+    return !rel.includes("/") && f.basename === `Bill-${payment.bill_name}`;
+  });
   const masterFm = masterFile
     ? (app.metadataCache.getFileCache(masterFile)?.frontmatter ?? {})
     : {};
@@ -320,26 +356,26 @@ async function savePayment(app: App, payment: PaymentNote, amountPaid: number): 
   const existingFile = app.vault.getAbstractFileByPath(payment.filePath);
 
   if (existingFile instanceof TFile) {
-    const existing = await app.vault.read(existingFile);
+    const existing  = await app.vault.read(existingFile);
     const bodyMatch = existing.match(/^---[\s\S]*?---\n+([\s\S]*)$/);
-    const body = bodyMatch ? bodyMatch[1] : `Payment record for ${payment.bill_company}.\n`;
-    const content = buildPaymentContent(
-      payment.bill_name, payment.bill_company, payment.bill_type,
-      payment.bill_due_date, amountDue, amountPaid, today, "paid", body
+    const body      = bodyMatch ? bodyMatch[1] : `Payment record for ${payment.bill_company}.\n`;
+    await app.vault.modify(
+      existingFile,
+      buildPaymentContent(payment.bill_name, payment.bill_company, payment.bill_type,
+        payment.bill_due_date, amountDue, amountPaid, today, "paid", body)
     );
-    await app.vault.modify(existingFile, content);
   } else {
     await ensureFolders(app, payment.filePath);
-    const dueParts = payment.bill_due_date.match(/^(\d{4})-(\d{2})-(\d{2})$/);
-    const dYear  = dueParts ? parseInt(dueParts[1]) : new Date().getFullYear();
-    const dMonth = dueParts ? parseInt(dueParts[2]) - 1 : new Date().getMonth();
+    const dueParts  = payment.bill_due_date.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+    const dYear     = dueParts ? parseInt(dueParts[1]) : new Date().getFullYear();
+    const dMonth    = dueParts ? parseInt(dueParts[2]) - 1 : new Date().getMonth();
     const monthName = new Date(dYear, dMonth, 1).toLocaleString("en-US", { month: "long" });
-    const body = `Payment record for ${payment.bill_company} — ${monthName} ${dYear}.\n`;
-    const content = buildPaymentContent(
-      payment.bill_name, payment.bill_company, payment.bill_type,
-      payment.bill_due_date, amountDue, amountPaid, today, "paid", body
+    const body      = `Payment record for ${payment.bill_company} — ${monthName} ${dYear}.\n`;
+    await app.vault.create(
+      payment.filePath,
+      buildPaymentContent(payment.bill_name, payment.bill_company, payment.bill_type,
+        payment.bill_due_date, amountDue, amountPaid, today, "paid", body)
     );
-    await app.vault.create(payment.filePath, content);
   }
 
   new Notice(`✓ Payment recorded for ${payment.bill_name}`);
@@ -351,6 +387,7 @@ function renderBillRow(
   app:            App,
   tbody:          HTMLElement,
   payment:        PaymentNote,
+  masterFolder:   string,
   onPaymentSaved: () => void
 ): void {
   const paid    = payment.bill_status === "paid";
@@ -359,17 +396,16 @@ function renderBillRow(
   const tr = tbody.createEl("tr");
   if (overdue) tr.addClass("tracker-pro-bills-overdue");
 
-  // Checkbox cell
   const checkTd  = tr.createEl("td", { cls: "tracker-pro-bills-check" });
   const checkbox = checkTd.createEl("input", { attr: { type: "checkbox" } });
   checkbox.checked  = paid;
-  checkbox.disabled = paid; // checked boxes are non-interactive
+  checkbox.disabled = paid;
 
   if (!paid) {
     checkbox.addEventListener("change", () => {
-      checkbox.checked = false; // revert; re-render handles final state
+      checkbox.checked = false;
       new RecordPaymentModal(app, payment, async (amountPaid) => {
-        await savePayment(app, payment, amountPaid);
+        await savePayment(app, payment, amountPaid, masterFolder);
         onPaymentSaved();
       }).open();
     });
@@ -377,8 +413,8 @@ function renderBillRow(
 
   tr.createEl("td", { text: payment.bill_name,    cls: "tracker-pro-bills-name" });
   tr.createEl("td", { text: payment.bill_company, cls: "tracker-pro-bills-company" });
-  tr.createEl("td", { text: fmtDate(payment.bill_due_date),   cls: "tracker-pro-bills-due" });
-  tr.createEl("td", { text: fmtMoney(payment.bill_amount_due), cls: "tracker-pro-bills-amount" });
+  tr.createEl("td", { text: fmtDate(payment.bill_due_date),    cls: "tracker-pro-bills-due" });
+  tr.createEl("td", { text: fmtMoney(payment.bill_amount_due),  cls: "tracker-pro-bills-amount" });
   tr.createEl("td", { text: fmtMoney(payment.bill_amount_paid), cls: "tracker-pro-bills-amount" });
   tr.createEl("td", { text: payment.bill_paid_date ? fmtDate(payment.bill_paid_date) : "—", cls: "tracker-pro-bills-date" });
 }
@@ -390,6 +426,7 @@ function renderSection(
   wrapper:        HTMLElement,
   heading:        string,
   payments:       PaymentNote[],
+  masterFolder:   string,
   onPaymentSaved: () => void
 ): void {
   if (payments.length === 0) return;
@@ -399,14 +436,13 @@ function renderSection(
   const table = wrapper.createEl("table", { cls: "tracker-pro-table tracker-pro-bills-table" });
   const thead = table.createEl("thead");
   const hr    = thead.createEl("tr");
-
   for (const col of ["", "Bill", "Company", "Due Date", "Amount Due", "Amount Paid", "Paid Date"]) {
     hr.createEl("th", { text: col });
   }
 
   const tbody = table.createEl("tbody");
   for (const p of payments) {
-    renderBillRow(app, tbody, p, onPaymentSaved);
+    renderBillRow(app, tbody, p, masterFolder, onPaymentSaved);
   }
 }
 
@@ -415,24 +451,25 @@ function renderSection(
 export async function renderBillsChart(
   container: HTMLElement,
   app:       App,
-  config:    TrackerConfig
+  config:    TrackerConfig,
+  settings?: TrackerSettings
 ): Promise<void> {
+  const { masterFolder, paymentTemplate } = getBillPaths(settings);
+
   async function render(): Promise<void> {
     container.empty();
     container.addClass("tracker-pro-container");
 
-    const now        = new Date();
-    const thisYear   = now.getFullYear();
-    const thisMonth  = now.getMonth();                                          // 0-indexed
-    const nextMonth  = thisMonth === 11 ? 0 : thisMonth + 1;
-    const nextYear   = thisMonth === 11 ? thisYear + 1 : thisYear;
+    const now       = new Date();
+    const thisYear  = now.getFullYear();
+    const thisMonth = now.getMonth();
+    const nextMonth = thisMonth === 11 ? 0  : thisMonth + 1;
+    const nextYear  = thisMonth === 11 ? thisYear + 1 : thisYear;
 
     const typeFilter = config.bill_type?.toLowerCase();
 
-    let masters = readMasterBills(app);
-    if (typeFilter) {
-      masters = masters.filter(m => m.bill_type.toLowerCase() === typeFilter);
-    }
+    let masters = readMasterBills(app, masterFolder);
+    if (typeFilter) masters = masters.filter(m => m.bill_type.toLowerCase() === typeFilter);
     masters.sort((a, b) => a.fileName.localeCompare(b.fileName));
 
     const thisMonthPayments: PaymentNote[] = [];
@@ -441,35 +478,34 @@ export async function renderBillsChart(
     for (const master of masters) {
       const thisDue = calculateDueDateForMonth(master.bill_due_date, master.bill_frequency, thisYear, thisMonth);
       if (thisDue) {
-        const note = readPaymentNote(app, master.fileName, thisYear, thisMonth)
-          ?? syntheticPayment(master, thisDue, thisYear, thisMonth);
-        thisMonthPayments.push(note);
+        thisMonthPayments.push(
+          readPaymentNote(app, master.fileName, thisYear, thisMonth, paymentTemplate)
+          ?? syntheticPayment(master, thisDue, thisYear, thisMonth, paymentTemplate)
+        );
       }
 
       const nextDue = calculateDueDateForMonth(master.bill_due_date, master.bill_frequency, nextYear, nextMonth);
       if (nextDue) {
-        const note = readPaymentNote(app, master.fileName, nextYear, nextMonth)
-          ?? await createPaymentNote(app, master, nextDue, nextYear, nextMonth);
-        nextMonthPayments.push(note);
+        nextMonthPayments.push(
+          readPaymentNote(app, master.fileName, nextYear, nextMonth, paymentTemplate)
+          ?? await createPaymentNote(app, master, nextDue, nextYear, nextMonth, paymentTemplate)
+        );
       }
     }
 
-    const wrapper = container.createEl("div", { cls: "tracker-pro-bills-wrapper" });
+    const wrapper  = container.createEl("div", { cls: "tracker-pro-bills-wrapper" });
+    if (config.title) wrapper.createEl("div", { cls: "tracker-pro-table-title", text: config.title });
 
-    if (config.title) {
-      wrapper.createEl("div", { cls: "tracker-pro-table-title", text: config.title });
-    }
+    const thisMon = new Date(thisYear, thisMonth, 1).toLocaleString("en-US", { month: "long" });
+    const nextMon = new Date(nextYear,  nextMonth,  1).toLocaleString("en-US", { month: "long" });
 
-    const thisMon  = new Date(thisYear, thisMonth, 1).toLocaleString("en-US", { month: "long" });
-    const nextMon  = new Date(nextYear, nextMonth, 1).toLocaleString("en-US", { month: "long" });
-
-    renderSection(app, wrapper, `This Month — ${thisMon} ${thisYear}`,  thisMonthPayments, render);
-    renderSection(app, wrapper, `Next Month — ${nextMon} ${nextYear}`, nextMonthPayments, render);
+    renderSection(app, wrapper, `This Month — ${thisMon} ${thisYear}`,  thisMonthPayments, masterFolder, render);
+    renderSection(app, wrapper, `Next Month — ${nextMon} ${nextYear}`, nextMonthPayments, masterFolder, render);
 
     if (thisMonthPayments.length === 0 && nextMonthPayments.length === 0) {
       const empty = wrapper.createEl("div", { cls: "tracker-pro-empty" });
       empty.createEl("span", { text: "📋 No bills found" });
-      empty.createEl("small", { text: "No active master notes found in Data/Bills/" });
+      empty.createEl("small", { text: `No active master notes found in ${masterFolder}/` });
     }
   }
 
@@ -478,23 +514,25 @@ export async function renderBillsChart(
 
 // ─── Generate Monthly Bills Command ──────────────────────────────────────────
 
-export async function generateMonthlyBills(app: App): Promise<void> {
+export async function generateMonthlyBills(app: App, settings?: TrackerSettings): Promise<void> {
+  const { masterFolder, paymentTemplate } = getBillPaths(settings);
+
   const now       = new Date();
   const year      = now.getFullYear();
   const month     = now.getMonth();
   const monthName = now.toLocaleString("en-US", { month: "long" });
 
-  const masters = readMasterBills(app);
+  const masters = readMasterBills(app, masterFolder);
   let created = 0;
 
   for (const master of masters) {
     const dueDate = calculateDueDateForMonth(master.bill_due_date, master.bill_frequency, year, month);
     if (!dueDate) continue;
 
-    const path = paymentNotePath(master.fileName, year, month);
-    if (app.vault.getAbstractFileByPath(path) instanceof TFile) continue; // already exists
+    const path = paymentNotePath(master.fileName, year, month, paymentTemplate);
+    if (app.vault.getAbstractFileByPath(path) instanceof TFile) continue;
 
-    await createPaymentNote(app, master, dueDate, year, month);
+    await createPaymentNote(app, master, dueDate, year, month, paymentTemplate);
     created++;
   }
 

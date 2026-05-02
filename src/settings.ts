@@ -12,6 +12,10 @@ export interface TrackerSettings {
     mealLogFilename: string;
     foodFolder: string;
     recipeFolder: string;
+
+    // ── Bills ─────────────────────────────────────────────────────────────────
+    billsMasterFolder:  string;
+    billsPaymentFolder: string;
 }
 
 export const DEFAULT_SETTINGS: TrackerSettings = {
@@ -25,6 +29,10 @@ export const DEFAULT_SETTINGS: TrackerSettings = {
     mealLogFilename: "{{DATE:YYYY-MM-DD}}",
     foodFolder:      "Food/Database",
     recipeFolder:    "Recipes",
+
+    // ── Bills ─────────────────────────────────────────────────────────────────
+    billsMasterFolder:  "Data/Bills",
+    billsPaymentFolder: "Data/Bills/Payments/BP-{YYYY}/BP-{YYYY-MM}",
 };
 
 export class TrackerSettingTab extends PluginSettingTab {
@@ -161,6 +169,49 @@ export class TrackerSettingTab extends PluginSettingTab {
                     .setValue(this.plugin.settings.recipeFolder)
                     .onChange(async (value) => {
                         this.plugin.settings.recipeFolder = value.trim();
+                        await this.plugin.saveSettings();
+                    })
+            );
+
+        // ── Bills ─────────────────────────────────────────────────────────────
+
+        containerEl.createEl("h2", { text: "Bills" });
+
+        containerEl.createEl("p", {
+            text: "Path templates support date variables: {YYYY}, {YY}, {MMMM}, {MMM}, {MM}, {M}. " +
+                  "Variables are resolved to the target billing period at runtime.",
+            attr: { style: "font-size:0.85em;color:var(--text-muted);margin:0 0 12px;" },
+        });
+
+        new Setting(containerEl)
+            .setName("Master bills folder")
+            .setDesc(
+                "Folder where your master bill definition notes are stored. " +
+                "Each note should be named Bill-{Name}.md with bill_active, bill_due_date, bill_frequency, and bill_type fields."
+            )
+            .addText((text) =>
+                text
+                    .setPlaceholder("Data/Bills")
+                    .setValue(this.plugin.settings.billsMasterFolder)
+                    .onChange(async (value) => {
+                        this.plugin.settings.billsMasterFolder = value.trim();
+                        await this.plugin.saveSettings();
+                    })
+            );
+
+        new Setting(containerEl)
+            .setName("Payment notes folder")
+            .setDesc(
+                "Folder path template where monthly payment notes are stored. " +
+                "Supports date variables for the billing period. The filename is always BP-{Bill Name}-{YYYY-MM}.md.\n" +
+                "Example: Data/Bills/Payments/BP-{YYYY}/BP-{YYYY-MM}"
+            )
+            .addText((text) =>
+                text
+                    .setPlaceholder("Data/Bills/Payments/BP-{YYYY}/BP-{YYYY-MM}")
+                    .setValue(this.plugin.settings.billsPaymentFolder)
+                    .onChange(async (value) => {
+                        this.plugin.settings.billsPaymentFolder = value.trim();
                         await this.plugin.saveSettings();
                     })
             );

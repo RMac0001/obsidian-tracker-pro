@@ -1,5 +1,6 @@
 import { App } from "obsidian";
 import { TrackerConfig, ParseError } from "./types";
+import { TrackerSettings } from "./settings";
 import { collectRawEntries, buildSeriesData, buildOHLCData, buildFrequencyData } from "./dataCollector";
 import { aggregateAllSeries } from "./aggregator";
 import { renderLineChart, renderBarChart } from "./charts/lineBarChart";
@@ -42,7 +43,8 @@ function renderEmpty(container: HTMLElement, config: TrackerConfig): void {
 export async function renderTracker(
   app: App,
   container: HTMLElement,
-  config: TrackerConfig
+  config: TrackerConfig,
+  settings?: TrackerSettings
 ): Promise<void> {
   container.empty();
   container.addClass("tracker-pro-container");
@@ -141,7 +143,7 @@ export async function renderTracker(
 
   // ── Bills ──────────────────────────────────────────────────────────────────
   if (config.type === "bills") {
-    await renderBillsChart(container, app, config);
+    await renderBillsChart(container, app, config, settings);
     return;
   }
 

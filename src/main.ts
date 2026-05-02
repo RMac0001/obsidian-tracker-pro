@@ -41,7 +41,7 @@ export default class Tracker extends Plugin {
         this.addCommand({
             id: "generate-monthly-bills",
             name: "Generate Monthly Bills",
-            callback: () => generateMonthlyBills(this.app),
+            callback: () => generateMonthlyBills(this.app, this.settings),
         });
 
         // ── Tracker code block processor ──────────────────────────────────────
@@ -71,7 +71,7 @@ export default class Tracker extends Plugin {
                 }
 
                 try {
-                    await renderTracker(this.app, container, config);
+                    await renderTracker(this.app, container, config, this.settings);
                 } catch (e) {
                     renderErrors(container, [{ message: String(e) }]);
                 }
