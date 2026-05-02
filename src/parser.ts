@@ -5,7 +5,7 @@ import { TrackerConfig, ChartType, AggregateType, ParseError } from "./types";
 
 const VALID_CHART_TYPES: ChartType[] = [
   "line", "bar", "pie", "donut", "heatmap",
-  "scatter", "radar", "gauge", "candlestick", "calendar", "summary", "table", "daily-table",
+  "scatter", "radar", "gauge", "candlestick", "calendar", "summary", "table", "daily-table", "bills",
 ];
 
 const VALID_AGGREGATES: AggregateType[] = [
@@ -82,15 +82,15 @@ function validateConfig(
     });
   }
 
-  // data source
-  if (!raw.folder && !raw.file && !raw.files) {
+  // data source (bills manages its own vault paths — no folder config needed)
+  if (raw.type !== "bills" && !raw.folder && !raw.file && !raw.files) {
     errors.push({
       message: "Must specify at least one of: folder, file, or files",
     });
   }
 
-  // properties (not required for summary, table, or daily-table)
-  if (raw.type !== "summary" && raw.type !== "table" && raw.type !== "daily-table" && raw.source !== "fileMeta") {
+  // properties (not required for summary, table, daily-table, or bills)
+  if (raw.type !== "summary" && raw.type !== "table" && raw.type !== "daily-table" && raw.type !== "bills" && raw.source !== "fileMeta") {
     if (!raw.properties) {
       errors.push({ message: "Missing required field: properties" });
     } else if (raw.type === "candlestick") {

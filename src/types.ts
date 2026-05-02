@@ -13,7 +13,8 @@ export type ChartType =
   | "calendar"
   | "summary"
   | "table"
-  | "daily-table";
+  | "daily-table"
+  | "bills";
 
 // ─── Aggregation ─────────────────────────────────────────────────────────────
 
@@ -113,6 +114,33 @@ export interface TrackerConfig {
   totalRow?: string;            // label for per-day total row (omit to hide)
   showEmptyRows?: boolean;      // show rows with zero values (default: true)
   dateFormat?: string;          // moment.js format for the date column (default: MM/DD/YY)
+
+  // Bills chart
+  bill_type?: string;           // optional filter — show only bills of this type
+}
+
+// ─── Bills Interfaces ─────────────────────────────────────────────────────────
+
+export interface MasterBill {
+  fileName:        string;   // e.g. "Hydro" (stripped from "Bill-Hydro")
+  bill_active:     boolean;
+  bill_amount_due?: number;
+  bill_company:    string;
+  bill_due_date:   string;   // ISO anchor date
+  bill_frequency:  "monthly" | "quarterly" | "annual";
+  bill_type:       string;
+}
+
+export interface PaymentNote {
+  bill_name:        string;
+  bill_company:     string;
+  bill_type:        string;
+  bill_due_date:    string;
+  bill_amount_due?: number;
+  bill_amount_paid?: number;
+  bill_paid_date?:  string;
+  bill_status:      "unpaid" | "paid";
+  filePath:         string;  // runtime only — never written to the note
 }
 
 // ─── Internal Data Structures ─────────────────────────────────────────────────

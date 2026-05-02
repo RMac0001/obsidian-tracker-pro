@@ -7,6 +7,7 @@ import {
     TrackerSettingTab,
 } from "./settings";
 import { logMeal, clearMeal, editMealLog } from "./mealLogger";
+import { generateMonthlyBills } from "./charts/billsChart";
 
 export default class Tracker extends Plugin {
     settings: TrackerSettings;
@@ -34,6 +35,13 @@ export default class Tracker extends Plugin {
             id: "edit-meal-log",
             name: "Edit today's meal log",
             callback: () => editMealLog(this.app, this.settings),
+        });
+
+        // ── Bill Tracker commands ─────────────────────────────────────────────
+        this.addCommand({
+            id: "generate-monthly-bills",
+            name: "Generate Monthly Bills",
+            callback: () => generateMonthlyBills(this.app),
         });
 
         // ── Tracker code block processor ──────────────────────────────────────

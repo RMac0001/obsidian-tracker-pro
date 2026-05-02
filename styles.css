@@ -153,4 +153,49 @@
   font-weight: bold;
 }
 
+/* ─── Bills Chart ──────────────────────────────────────────────────────────── */
+
+.tracker-pro-bills-wrapper {
+  padding: 8px 0;
+  overflow-x: auto;
+}
+
+.tracker-pro-bills-section-header {
+  font-size: 0.8em;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-muted);
+  padding: 14px 0 6px;
+  border-bottom: 2px solid var(--background-modifier-border);
+  margin-bottom: 2px;
+}
+
+.tracker-pro-bills-section-header:first-child {
+  padding-top: 4px;
+}
+
+.tracker-pro-bills-table .tracker-pro-bills-check {
+  width: 32px;
+  text-align: center !important;
+  padding: 6px 4px;
+}
+
+.tracker-pro-bills-table .tracker-pro-bills-check input[type="checkbox"] {
+  cursor: pointer;
+  width: 15px;
+  height: 15px;
+}
+
+.tracker-pro-bills-table .tracker-pro-bills-check input[type="checkbox"]:disabled {
+  cursor: default;
+  opacity: 0.6;
+}
+
+/* Overdue: entire row in bold red */
+.tracker-pro-bills-overdue td {
+  color: var(--color-red, #e74c3c) !important;
+  font-weight: 600;
+}
+
 

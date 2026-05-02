@@ -13,6 +13,7 @@ import { renderCandlestickChart } from "./charts/candlestickChart";
 import { renderSummaryChart } from "./charts/summaryChart";
 import { renderTableChart } from "./charts/tableChart";
 import { renderDailyTable } from "./charts/dailyTableChart";
+import { renderBillsChart } from "./charts/billsChart";
 
 // ─── Error Display ────────────────────────────────────────────────────────────
 
@@ -47,7 +48,7 @@ export async function renderTracker(
   container.addClass("tracker-pro-container");
 
   // Apply size (charts only — tables and summaries size to their content)
-  if (config.height && config.type !== "summary" && config.type !== "table" && config.type !== "daily-table") container.style.height = config.height + "px";
+  if (config.height && config.type !== "summary" && config.type !== "table" && config.type !== "daily-table" && config.type !== "bills") container.style.height = config.height + "px";
   if (config.width)  container.style.width  = config.width;
 
   // ── Candlestick: own data path ─────────────────────────────────────────────
@@ -135,6 +136,12 @@ export async function renderTracker(
   if (config.type === "daily-table") {
     const entries = await collectRawEntries(app, config);
     renderDailyTable(container, entries, config);
+    return;
+  }
+
+  // ── Bills ──────────────────────────────────────────────────────────────────
+  if (config.type === "bills") {
+    await renderBillsChart(container, app, config);
     return;
   }
 
