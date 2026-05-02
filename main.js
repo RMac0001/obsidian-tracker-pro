@@ -19794,17 +19794,17 @@ function readMasterBills(app, masterFolder) {
         return !rel.includes("/") && f.basename.startsWith("Bill-");
     })
         .map(f => {
-        var _a, _b, _c, _d, _e;
+        var _a, _b, _c, _d, _e, _f;
         const fm = (_b = (_a = app.metadataCache.getFileCache(f)) === null || _a === void 0 ? void 0 : _a.frontmatter) !== null && _b !== void 0 ? _b : {};
-        const freq = fm.bill_frequency;
+        const freq = String((_c = fm.bill_frequency) !== null && _c !== void 0 ? _c : "").toLowerCase();
         return {
             fileName: f.basename.slice("Bill-".length),
             bill_active: parseBool(fm.bill_active),
             bill_amount_due: fm.bill_amount_due != null ? Number(fm.bill_amount_due) : undefined,
-            bill_company: String((_c = fm.bill_company) !== null && _c !== void 0 ? _c : ""),
-            bill_due_date: String((_d = fm.bill_due_date) !== null && _d !== void 0 ? _d : ""),
+            bill_company: String((_d = fm.bill_company) !== null && _d !== void 0 ? _d : ""),
+            bill_due_date: String((_e = fm.bill_due_date) !== null && _e !== void 0 ? _e : ""),
             bill_frequency: (["monthly", "quarterly", "annual"].includes(freq) ? freq : "monthly"),
-            bill_type: String((_e = fm.bill_type) !== null && _e !== void 0 ? _e : ""),
+            bill_type: String((_f = fm.bill_type) !== null && _f !== void 0 ? _f : ""),
         };
     })
         .filter(b => b.bill_active);

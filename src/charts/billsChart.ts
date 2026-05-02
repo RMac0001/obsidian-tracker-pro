@@ -117,7 +117,7 @@ function readMasterBills(app: App, masterFolder: string): MasterBill[] {
     })
     .map(f => {
       const fm   = app.metadataCache.getFileCache(f)?.frontmatter ?? {};
-      const freq = fm.bill_frequency;
+      const freq = String(fm.bill_frequency ?? "").toLowerCase();
       return {
         fileName:        f.basename.slice("Bill-".length),
         bill_active:     parseBool(fm.bill_active),
