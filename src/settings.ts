@@ -178,8 +178,8 @@ export class TrackerSettingTab extends PluginSettingTab {
         containerEl.createEl("h2", { text: "Bills" });
 
         containerEl.createEl("p", {
-            text: "Path templates support date variables: {YYYY}, {YY}, {MMMM}, {MMM}, {MM}, {M}. " +
-                  "Variables are resolved to the target billing period at runtime.",
+            text: "Path templates support {{DATE:FORMAT}} tokens — the same syntax as the Meal Logger. " +
+                  "FORMAT is any moment.js format string, e.g. {{DATE:YYYY}}, {{DATE:MM}}, {{DATE:MMMM}}.",
             attr: { style: "font-size:0.85em;color:var(--text-muted);margin:0 0 12px;" },
         });
 

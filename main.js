@@ -20069,8 +20069,11 @@ async function renderBillsChart(container, app, config, settings) {
             }
         }
         const wrapper = container.createEl("div", { cls: "tracker-pro-bills-wrapper" });
+        const header = wrapper.createEl("div", { cls: "tracker-pro-bills-header" });
         if (config.title)
-            wrapper.createEl("div", { cls: "tracker-pro-table-title", text: config.title });
+            header.createEl("div", { cls: "tracker-pro-table-title", text: config.title });
+        const refreshBtn = header.createEl("button", { cls: "tracker-pro-bills-refresh", text: "↻ Refresh" });
+        refreshBtn.addEventListener("click", () => render());
         const thisMon = new Date(thisYear, thisMonth, 1).toLocaleString("en-US", { month: "long" });
         const nextMon = new Date(nextYear, nextMonth, 1).toLocaleString("en-US", { month: "long" });
         renderSection(app, wrapper, `This Month — ${thisMon} ${thisYear}`, thisMonthPayments, masterFolder, render);
@@ -20376,8 +20379,8 @@ class TrackerSettingTab extends obsidian.PluginSettingTab {
         // ── Bills ─────────────────────────────────────────────────────────────
         containerEl.createEl("h2", { text: "Bills" });
         containerEl.createEl("p", {
-            text: "Path templates support date variables: {YYYY}, {YY}, {MMMM}, {MMM}, {MM}, {M}. " +
-                "Variables are resolved to the target billing period at runtime.",
+            text: "Path templates support {{DATE:FORMAT}} tokens — the same syntax as the Meal Logger. " +
+                "FORMAT is any moment.js format string, e.g. {{DATE:YYYY}}, {{DATE:MM}}, {{DATE:MMMM}}.",
             attr: { style: "font-size:0.85em;color:var(--text-muted);margin:0 0 12px;" },
         });
         new obsidian.Setting(containerEl)

@@ -475,7 +475,11 @@ export async function renderBillsChart(
     }
 
     const wrapper  = container.createEl("div", { cls: "tracker-pro-bills-wrapper" });
-    if (config.title) wrapper.createEl("div", { cls: "tracker-pro-table-title", text: config.title });
+
+    const header = wrapper.createEl("div", { cls: "tracker-pro-bills-header" });
+    if (config.title) header.createEl("div", { cls: "tracker-pro-table-title", text: config.title });
+    const refreshBtn = header.createEl("button", { cls: "tracker-pro-bills-refresh", text: "↻ Refresh" });
+    refreshBtn.addEventListener("click", () => render());
 
     const thisMon = new Date(thisYear, thisMonth, 1).toLocaleString("en-US", { month: "long" });
     const nextMon = new Date(nextYear,  nextMonth,  1).toLocaleString("en-US", { month: "long" });

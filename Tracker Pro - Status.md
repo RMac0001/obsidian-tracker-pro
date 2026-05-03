@@ -1,6 +1,6 @@
 # Tracker Pro — Status
 
-## What was done (v1.1.1 → v1.2.1)
+## What was done (v1.1.1 → v1.2.2)
 
 ---
 
@@ -215,6 +215,13 @@ bill_type: Utility   # optional — omit to show all active bills
 
 **`Generate Monthly Bills` command:**
 - Scans all active master notes and creates any missing payment notes for the current month
+
+---
+
+### v1.2.2 — Bills Settings Fix and Refresh Button
+
+- Fixed the Bills settings section header which still showed the old `{YYYY}`, `{MM}` variable syntax instead of `{{DATE:FORMAT}}`
+- Added a **↻ Refresh** button to the bills chart so the view can be manually reloaded after recording a payment (useful when the metadata cache hasn't updated yet)
 
 ---
 

@@ -1,6 +1,6 @@
 {
   "name": "obsidian-tracker-pro",
-  "version": "1.2.1",
+  "version": "1.2.2",
   "description": "Track and visualize YAML frontmatter data with rich chart types",
   "main": "main.js",
   "scripts": {
