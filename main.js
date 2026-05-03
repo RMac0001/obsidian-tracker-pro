@@ -20095,11 +20095,39 @@ function renderSection(app, wrapper, heading, payments, masterFolder, visibleCol
 }
 // ─── Main Renderer ─────────────────────────────────────────────────────────────
 async function renderBillsChart(container, app, config, settings) {
+    var _a;
     const { masterFolder, paymentTemplate } = getBillPaths(settings);
-    // State persists across re-renders
-    const visibleCols = new Set(BILL_COLS.map(c => c.key));
-    let sortKey = null;
-    let sortDir = "asc";
+    // State persists across navigation via localStorage, scoped by bill_type filter.
+    const stateKey = `tracker-pro-bills-${(_a = config.bill_type) !== null && _a !== void 0 ? _a : "all"}`;
+    function loadState() {
+        try {
+            const raw = localStorage.getItem(stateKey);
+            if (raw) {
+                const s = JSON.parse(raw);
+                return {
+                    visibleCols: new Set(Array.isArray(s.visibleCols) ? s.visibleCols : BILL_COLS.map(c => c.key)),
+                    sortKey: typeof s.sortKey === "string" ? s.sortKey : null,
+                    sortDir: s.sortDir === "desc" ? "desc" : "asc",
+                };
+            }
+        }
+        catch ( /* corrupt or unavailable */_a) { /* corrupt or unavailable */ }
+        return { visibleCols: new Set(BILL_COLS.map(c => c.key)), sortKey: null, sortDir: "asc" };
+    }
+    function saveState() {
+        try {
+            localStorage.setItem(stateKey, JSON.stringify({
+                visibleCols: [...visibleCols],
+                sortKey,
+                sortDir,
+            }));
+        }
+        catch ( /* storage unavailable */_a) { /* storage unavailable */ }
+    }
+    const initial = loadState();
+    const visibleCols = initial.visibleCols;
+    let sortKey = initial.sortKey;
+    let sortDir = initial.sortDir;
     function onHeaderClick(key) {
         if (sortKey === key) {
             if (sortDir === "asc") {
@@ -20114,6 +20142,7 @@ async function renderBillsChart(container, app, config, settings) {
             sortKey = key;
             sortDir = "asc";
         }
+        saveState();
         render();
     }
     async function render() {
@@ -20163,6 +20192,7 @@ async function renderBillsChart(container, app, config, settings) {
                     visibleCols.add(col.key);
                 else
                     visibleCols.delete(col.key);
+                saveState();
                 render();
             });
         }

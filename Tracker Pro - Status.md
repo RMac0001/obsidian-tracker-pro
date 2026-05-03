@@ -1,6 +1,6 @@
 # Tracker Pro — Status
 
-## What was done (v1.1.1 → v1.2.4)
+## What was done (v1.1.1 → v1.2.5)
 
 ---
 
@@ -215,6 +215,12 @@ bill_type: Utility   # optional — omit to show all active bills
 
 **`Generate Monthly Bills` command:**
 - Scans all active master notes and creates any missing payment notes for the current month
+
+---
+
+### v1.2.5 — Persist Bills Sort and Column Visibility
+
+Sort column, sort direction, and hidden columns are now saved to `localStorage` and restored when navigating back to the note. State is scoped per `bill_type` filter, so different bills charts can have independent preferences.
 
 ---
 

@@ -506,10 +506,38 @@ export async function renderBillsChart(
 ): Promise<void> {
   const { masterFolder, paymentTemplate } = getBillPaths(settings);
 
-  // State persists across re-renders
-  const visibleCols = new Set(BILL_COLS.map(c => c.key));
-  let sortKey: string | null = null;
-  let sortDir: "asc" | "desc" = "asc";
+  // State persists across navigation via localStorage, scoped by bill_type filter.
+  const stateKey = `tracker-pro-bills-${config.bill_type ?? "all"}`;
+
+  function loadState(): { visibleCols: Set<string>; sortKey: string | null; sortDir: "asc" | "desc" } {
+    try {
+      const raw = localStorage.getItem(stateKey);
+      if (raw) {
+        const s = JSON.parse(raw);
+        return {
+          visibleCols: new Set(Array.isArray(s.visibleCols) ? s.visibleCols : BILL_COLS.map(c => c.key)),
+          sortKey:     typeof s.sortKey === "string" ? s.sortKey : null,
+          sortDir:     s.sortDir === "desc" ? "desc" : "asc",
+        };
+      }
+    } catch { /* corrupt or unavailable */ }
+    return { visibleCols: new Set(BILL_COLS.map(c => c.key)), sortKey: null, sortDir: "asc" };
+  }
+
+  function saveState(): void {
+    try {
+      localStorage.setItem(stateKey, JSON.stringify({
+        visibleCols: [...visibleCols],
+        sortKey,
+        sortDir,
+      }));
+    } catch { /* storage unavailable */ }
+  }
+
+  const initial = loadState();
+  const visibleCols = initial.visibleCols;
+  let sortKey: string | null = initial.sortKey;
+  let sortDir: "asc" | "desc" = initial.sortDir;
 
   function onHeaderClick(key: string): void {
     if (sortKey === key) {
@@ -519,6 +547,7 @@ export async function renderBillsChart(
       sortKey = key;
       sortDir = "asc";
     }
+    saveState();
     render();
   }
 
@@ -581,6 +610,7 @@ export async function renderBillsChart(
       cb.addEventListener("change", () => {
         if (cb.checked) visibleCols.add(col.key);
         else visibleCols.delete(col.key);
+        saveState();
         render();
       });
     }
