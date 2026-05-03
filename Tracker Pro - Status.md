@@ -1,6 +1,6 @@
 # Tracker Pro — Status
 
-## What was done (v1.1.1 → v1.2.5)
+## What was done (v1.1.1 → v1.2.6)
 
 ---
 
@@ -215,6 +215,14 @@ bill_type: Utility   # optional — omit to show all active bills
 
 **`Generate Monthly Bills` command:**
 - Scans all active master notes and creates any missing payment notes for the current month
+
+---
+
+### v1.2.6 — Fix Duplicate Payment Notes on Sync
+
+The chart was auto-creating next-month payment notes on every render. When both mobile and desktop rendered before Obsidian Sync propagated the file, each device created the same note independently — producing sync conflict duplicates.
+
+Fixed by removing auto-creation from the renderer entirely. Next-month bills now display from master note data (same as this month) until a payment note actually exists. The **Generate Monthly Bills** command remains the correct way to pre-create payment notes in bulk; paying a bill via the checkbox also creates the file on first use.
 
 ---
 

@@ -20168,7 +20168,7 @@ async function renderBillsChart(container, app, config, settings) {
             }
             const nextDue = calculateDueDateForMonth(master.bill_due_date, master.bill_frequency, nextYear, nextMonth);
             if (nextDue) {
-                nextMonthPayments.push((_c = readPaymentNote(app, master.fileName, nextYear, nextMonth, paymentTemplate)) !== null && _c !== void 0 ? _c : await createPaymentNote(app, master, nextDue, nextYear, nextMonth, paymentTemplate));
+                nextMonthPayments.push((_c = readPaymentNote(app, master.fileName, nextYear, nextMonth, paymentTemplate)) !== null && _c !== void 0 ? _c : syntheticPayment(master, nextDue, nextYear, nextMonth, paymentTemplate));
             }
         }
         const wrapper = container.createEl("div", { cls: "tracker-pro-bills-wrapper" });

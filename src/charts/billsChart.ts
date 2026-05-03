@@ -583,7 +583,7 @@ export async function renderBillsChart(
       if (nextDue) {
         nextMonthPayments.push(
           readPaymentNote(app, master.fileName, nextYear, nextMonth, paymentTemplate)
-          ?? await createPaymentNote(app, master, nextDue, nextYear, nextMonth, paymentTemplate)
+          ?? syntheticPayment(master, nextDue, nextYear, nextMonth, paymentTemplate)
         );
       }
     }
