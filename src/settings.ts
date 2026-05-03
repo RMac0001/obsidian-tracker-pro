@@ -32,7 +32,7 @@ export const DEFAULT_SETTINGS: TrackerSettings = {
 
     // ── Bills ─────────────────────────────────────────────────────────────────
     billsMasterFolder:  "Data/Bills",
-    billsPaymentFolder: "Data/Bills/Payments/BP-{YYYY}/BP-{YYYY-MM}",
+    billsPaymentFolder: "Data/Bills/Payments/BP-{{DATE:YYYY}}/BP-{{DATE:YYYY-MM}}",
 };
 
 export class TrackerSettingTab extends PluginSettingTab {
@@ -203,12 +203,13 @@ export class TrackerSettingTab extends PluginSettingTab {
             .setName("Payment notes folder")
             .setDesc(
                 "Folder path template where monthly payment notes are stored. " +
-                "Supports date variables for the billing period. The filename is always BP-{Bill Name}-{YYYY-MM}.md.\n" +
-                "Example: Data/Bills/Payments/BP-{YYYY}/BP-{YYYY-MM}"
+                "Supports {{DATE:FORMAT}} tokens (e.g. {{DATE:YYYY}}, {{DATE:MM}}, {{DATE:MMMM}}). " +
+                "The filename is always BP-{Bill Name}-YYYY-MM.md.\n" +
+                "Example: Data/Bills/Payments/BP-{{DATE:YYYY}}/BP-{{DATE:YYYY-MM}}"
             )
             .addText((text) =>
                 text
-                    .setPlaceholder("Data/Bills/Payments/BP-{YYYY}/BP-{YYYY-MM}")
+                    .setPlaceholder("Data/Bills/Payments/BP-{{DATE:YYYY}}/BP-{{DATE:YYYY-MM}}")
                     .setValue(this.plugin.settings.billsPaymentFolder)
                     .onChange(async (value) => {
                         this.plugin.settings.billsPaymentFolder = value.trim();

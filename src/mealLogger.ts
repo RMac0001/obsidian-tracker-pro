@@ -7,6 +7,7 @@ import {
     normalizePath,
 } from "obsidian";
 import { TrackerSettings } from "./settings";
+import { resolveDateTemplate } from "./utils";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -37,12 +38,6 @@ const MEAL_TYPES: MealType[] = ["Breakfast", "Lunch", "Dinner", "Snacks"];
 const MACROS = ["cal", "protein", "fat", "carbs"] as const;
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
-
-function resolveDateTemplate(template: string): string {
-    return template.replace(/\{\{DATE:([^}]+)\}\}/g, (_, fmt) =>
-        (window as any).moment().format(fmt)
-    );
-}
 
 function mealKey(mealType: MealType): MealKey {
     return mealType.toLowerCase() as MealKey;

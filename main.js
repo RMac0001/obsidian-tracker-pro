@@ -19717,28 +19717,21 @@ function renderDailyTable(container, entries, config) {
     }
 }
 
+/**
+ * Resolves {{DATE:FORMAT}} tokens in a template string using moment.js.
+ * If a date is provided it is used; otherwise the current date is used.
+ * FORMAT is any moment.js format string (e.g. YYYY, MM, YYYY-MM, MMMM).
+ */
+function resolveDateTemplate(template, date) {
+    const m = date
+        ? window.moment(date)
+        : window.moment();
+    return template.replace(/\{\{DATE:([^}]+)\}\}/g, (_, fmt) => m.format(fmt));
+}
+
 // ─── Defaults ──────────────────────────────────────────────────────────────────
 const DEFAULT_MASTER_FOLDER = "Data/Bills";
-const DEFAULT_PAYMENT_FOLDER = "Data/Bills/Payments/BP-{YYYY}/BP-{YYYY-MM}";
-// ─── Path Resolution ───────────────────────────────────────────────────────────
-//
-// Supported variables: {YYYY} {YY} {MMMM} {MMM} {MM} {M}
-// Replace longest patterns first to avoid partial matches.
-function resolveBillPath(template, date) {
-    const yyyy = String(date.getFullYear());
-    const yy = yyyy.slice(-2);
-    const mm = String(date.getMonth() + 1).padStart(2, "0");
-    const mNum = String(date.getMonth() + 1);
-    const mmmm = date.toLocaleString("en-US", { month: "long" });
-    const mmm = date.toLocaleString("en-US", { month: "short" });
-    return template
-        .replace(/\{MMMM\}/g, mmmm)
-        .replace(/\{MMM\}/g, mmm)
-        .replace(/\{MM\}/g, mm)
-        .replace(/\{M\}/g, mNum)
-        .replace(/\{YYYY\}/g, yyyy)
-        .replace(/\{YY\}/g, yy);
-}
+const DEFAULT_PAYMENT_FOLDER = "Data/Bills/Payments/BP-{{DATE:YYYY}}/BP-{{DATE:YYYY-MM}}";
 function getBillPaths(settings) {
     var _a, _b;
     return {
@@ -19755,7 +19748,8 @@ function parseBool(val) {
     return false;
 }
 function paymentNotePath(billName, year, month, paymentTemplate) {
-    const folder = resolveBillPath(paymentTemplate, new Date(year, month, 1)).replace(/\/$/, "");
+    const date = new Date(year, month, 1);
+    const folder = resolveDateTemplate(paymentTemplate, date).replace(/\/$/, "");
     const ym = `${year}-${String(month + 1).padStart(2, "0")}`;
     return obsidian.normalizePath(`${folder}/BP-${billName}-${ym}.md`);
 }
@@ -20283,7 +20277,7 @@ const DEFAULT_SETTINGS = {
     recipeFolder: "Recipes",
     // ── Bills ─────────────────────────────────────────────────────────────────
     billsMasterFolder: "Data/Bills",
-    billsPaymentFolder: "Data/Bills/Payments/BP-{YYYY}/BP-{YYYY-MM}",
+    billsPaymentFolder: "Data/Bills/Payments/BP-{{DATE:YYYY}}/BP-{{DATE:YYYY-MM}}",
 };
 class TrackerSettingTab extends obsidian.PluginSettingTab {
     constructor(app, plugin) {
@@ -20400,10 +20394,11 @@ class TrackerSettingTab extends obsidian.PluginSettingTab {
         new obsidian.Setting(containerEl)
             .setName("Payment notes folder")
             .setDesc("Folder path template where monthly payment notes are stored. " +
-            "Supports date variables for the billing period. The filename is always BP-{Bill Name}-{YYYY-MM}.md.\n" +
-            "Example: Data/Bills/Payments/BP-{YYYY}/BP-{YYYY-MM}")
+            "Supports {{DATE:FORMAT}} tokens (e.g. {{DATE:YYYY}}, {{DATE:MM}}, {{DATE:MMMM}}). " +
+            "The filename is always BP-{Bill Name}-YYYY-MM.md.\n" +
+            "Example: Data/Bills/Payments/BP-{{DATE:YYYY}}/BP-{{DATE:YYYY-MM}}")
             .addText((text) => text
-            .setPlaceholder("Data/Bills/Payments/BP-{YYYY}/BP-{YYYY-MM}")
+            .setPlaceholder("Data/Bills/Payments/BP-{{DATE:YYYY}}/BP-{{DATE:YYYY-MM}}")
             .setValue(this.plugin.settings.billsPaymentFolder)
             .onChange(async (value) => {
             this.plugin.settings.billsPaymentFolder = value.trim();
@@ -20415,9 +20410,6 @@ class TrackerSettingTab extends obsidian.PluginSettingTab {
 const MEAL_TYPES = ["Breakfast", "Lunch", "Dinner", "Snacks"];
 const MACROS = ["cal", "protein", "fat", "carbs"];
 // ─── Helpers ──────────────────────────────────────────────────────────────────
-function resolveDateTemplate(template) {
-    return template.replace(/\{\{DATE:([^}]+)\}\}/g, (_, fmt) => window.moment().format(fmt));
-}
 function mealKey(mealType) {
     return mealType.toLowerCase();
 }

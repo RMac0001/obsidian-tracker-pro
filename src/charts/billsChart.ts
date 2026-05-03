@@ -1,11 +1,12 @@
 import { App, Modal, Notice, TFile, normalizePath } from "obsidian";
 import { TrackerConfig } from "../types";
 import { TrackerSettings } from "../settings";
+import { resolveDateTemplate } from "../utils";
 
 // ─── Defaults ──────────────────────────────────────────────────────────────────
 
 const DEFAULT_MASTER_FOLDER  = "Data/Bills";
-const DEFAULT_PAYMENT_FOLDER = "Data/Bills/Payments/BP-{YYYY}/BP-{YYYY-MM}";
+const DEFAULT_PAYMENT_FOLDER = "Data/Bills/Payments/BP-{{DATE:YYYY}}/BP-{{DATE:YYYY-MM}}";
 
 // ─── Internal Types ────────────────────────────────────────────────────────────
 
@@ -31,27 +32,6 @@ interface PaymentNote {
   filePath:          string; // runtime only — never written to the note
 }
 
-// ─── Path Resolution ───────────────────────────────────────────────────────────
-//
-// Supported variables: {YYYY} {YY} {MMMM} {MMM} {MM} {M}
-// Replace longest patterns first to avoid partial matches.
-
-export function resolveBillPath(template: string, date: Date): string {
-  const yyyy = String(date.getFullYear());
-  const yy   = yyyy.slice(-2);
-  const mm   = String(date.getMonth() + 1).padStart(2, "0");
-  const mNum = String(date.getMonth() + 1);
-  const mmmm = date.toLocaleString("en-US", { month: "long" });
-  const mmm  = date.toLocaleString("en-US", { month: "short" });
-  return template
-    .replace(/\{MMMM\}/g, mmmm)
-    .replace(/\{MMM\}/g,  mmm)
-    .replace(/\{MM\}/g,   mm)
-    .replace(/\{M\}/g,    mNum)
-    .replace(/\{YYYY\}/g, yyyy)
-    .replace(/\{YY\}/g,   yy);
-}
-
 function getBillPaths(settings?: TrackerSettings): { masterFolder: string; paymentTemplate: string } {
   return {
     masterFolder:    (settings?.billsMasterFolder  ?? DEFAULT_MASTER_FOLDER).replace(/\/$/, ""),
@@ -68,7 +48,8 @@ function parseBool(val: unknown): boolean {
 }
 
 function paymentNotePath(billName: string, year: number, month: number, paymentTemplate: string): string {
-  const folder = resolveBillPath(paymentTemplate, new Date(year, month, 1)).replace(/\/$/, "");
+  const date   = new Date(year, month, 1);
+  const folder = resolveDateTemplate(paymentTemplate, date).replace(/\/$/, "");
   const ym     = `${year}-${String(month + 1).padStart(2, "0")}`;
   return normalizePath(`${folder}/BP-${billName}-${ym}.md`);
 }

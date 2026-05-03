@@ -876,18 +876,18 @@ obligations across one or more billing frequencies.
 | Path | Purpose |
 |---|---|
 | `Data/Bills/Bill-{Name}.md` | Master bill note (permanent, one per bill) |
-| `Data/Bills/Payments/BP-{YYYY}/BP-{YYYY-MM}/BP-{Name}-{YYYY-MM}.md` | Payment note (one per bill per month) |
+| `Data/Bills/Payments/BP-{{DATE:YYYY}}/BP-{{DATE:YYYY-MM}}/BP-{Name}-YYYY-MM.md` | Payment note (one per bill per month) |
 
-> Folder paths are configurable in **Settings → Bills**.
+> Folder paths are configurable in **Settings → Bills**. The payment folder supports `{{DATE:FORMAT}}` tokens — the same syntax used in the Meal Logger — where FORMAT is any moment.js format string (e.g. `{{DATE:YYYY}}`, `{{DATE:MM}}`, `{{DATE:MMMM}}`).
 
 **Master note frontmatter fields:**
 
 ```yaml
-bill_active: true
-bill_amount_due: 180        # optional — omit for variable bills
+bill_active: true             # checkbox property — true = active
+bill_amount_due: 180          # optional — omit for variable bills
 bill_company: Ottawa Hydro
-bill_due_date: 2026-03-15   # anchor date; future occurrences calculated from here
-bill_frequency: monthly     # monthly | quarterly | annual
+bill_due_date: 2026-03-15     # anchor date; future occurrences calculated from here
+bill_frequency: monthly       # monthly | quarterly | annual
 bill_type: Utility
 ```
 

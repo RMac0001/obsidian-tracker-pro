@@ -181,13 +181,12 @@ Data/Bills/
 
 **Master bill frontmatter fields:**
 ```yaml
-bill_name: Internet
+bill_active: true               # checkbox property — true = active
+bill_amount_due: 89.99          # optional for variable bills
 bill_company: Xfinity
-bill_type: Utility
 bill_due_date: 2024-01-15       # anchor date — day-of-month + billing start
 bill_frequency: monthly         # monthly / quarterly / annually
-bill_amount_due: 89.99          # optional for variable bills
-bill_status: active             # active / inactive
+bill_type: Utility
 ```
 
 **Payment note frontmatter fields** (alphabetical, auto-written):
@@ -221,21 +220,11 @@ bill_type: Utility   # optional — omit to show all active bills
 
 ### v1.2.1 — Configurable Bill Folder Paths
 
-The hardcoded bill paths were replaced with two plugin settings, letting users store bills anywhere in their vault.
+The hardcoded bill paths were replaced with two plugin settings, letting users store bills anywhere in their vault. The payment folder template uses the same `{{DATE:FORMAT}}` token syntax as the Meal Logger, with FORMAT being any moment.js format string.
 
 **Two new settings fields:**
 - `Bills master folder` — e.g. `Data/Bills` (default)
-- `Bills payment folder template` — e.g. `Data/Bills/Payments/BP-{YYYY}/BP-{YYYY}-{MM}` (default)
-
-**Supported variables in the payment folder template:**
-| Variable | Example |
-|----------|---------|
-| `{MMMM}` | May |
-| `{MMM}` | May |
-| `{MM}` | 05 |
-| `{M}` | 5 |
-| `{YYYY}` | 2026 |
-| `{YY}` | 26 |
+- `Bills payment folder template` — e.g. `Data/Bills/Payments/BP-{{DATE:YYYY}}/BP-{{DATE:YYYY-MM}}` (default)
 
 ---
 
