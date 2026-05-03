@@ -1,6 +1,6 @@
 # Tracker Pro — Status
 
-## What was done (v1.1.1 → v1.2.2)
+## What was done (v1.1.1 → v1.2.3)
 
 ---
 
@@ -215,6 +215,14 @@ bill_type: Utility   # optional — omit to show all active bills
 
 **`Generate Monthly Bills` command:**
 - Scans all active master notes and creates any missing payment notes for the current month
+
+---
+
+### v1.2.3 — Bills Table Master Note Linking
+
+The Bill column now renders as an Obsidian internal link to the master bill note. Clicking the bill name opens `Data/Bills/Bill-{Name}.md` directly.
+
+Priority order if columns are ever hidden: Bill name link first, Company link second, no link if both hidden. Currently both columns are always shown so the Bill column always carries the link.
 
 ---
 

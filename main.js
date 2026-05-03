@@ -19997,7 +19997,15 @@ async function savePayment(app, payment, amountPaid, masterFolder) {
     new obsidian.Notice(`✓ Payment recorded for ${payment.bill_name}`);
 }
 // ─── Row Renderer ─────────────────────────────────────────────────────────────
-function renderBillRow(app, tbody, payment, masterFolder, onPaymentSaved) {
+function renderMasterLink(td, displayText, billName, masterFolder) {
+    const path = obsidian.normalizePath(`${masterFolder}/Bill-${billName}.md`);
+    const a = td.createEl("a", { cls: "internal-link", text: displayText });
+    a.setAttribute("href", path);
+    a.setAttribute("data-href", path);
+    a.setAttribute("target", "_blank");
+    a.setAttribute("rel", "noopener noreferrer");
+}
+function renderBillRow(app, tbody, payment, masterFolder, linkColumn, onPaymentSaved) {
     const paid = payment.bill_status === "paid";
     const overdue = isOverdue(payment);
     const tr = tbody.createEl("tr");
@@ -20016,17 +20024,27 @@ function renderBillRow(app, tbody, payment, masterFolder, onPaymentSaved) {
             }).open();
         });
     }
-    tr.createEl("td", { text: payment.bill_name, cls: "tracker-pro-bills-name" });
-    tr.createEl("td", { text: payment.bill_company, cls: "tracker-pro-bills-company" });
+    const nameTd = tr.createEl("td", { cls: "tracker-pro-bills-name" });
+    if (linkColumn === "name")
+        renderMasterLink(nameTd, payment.bill_name, payment.bill_name, masterFolder);
+    else
+        nameTd.setText(payment.bill_name);
+    const companyTd = tr.createEl("td", { cls: "tracker-pro-bills-company" });
+    if (linkColumn === "company")
+        renderMasterLink(companyTd, payment.bill_company, payment.bill_name, masterFolder);
+    else
+        companyTd.setText(payment.bill_company);
     tr.createEl("td", { text: fmtDate(payment.bill_due_date), cls: "tracker-pro-bills-due" });
     tr.createEl("td", { text: fmtMoney(payment.bill_amount_due), cls: "tracker-pro-bills-amount" });
     tr.createEl("td", { text: fmtMoney(payment.bill_amount_paid), cls: "tracker-pro-bills-amount" });
     tr.createEl("td", { text: payment.bill_paid_date ? fmtDate(payment.bill_paid_date) : "—", cls: "tracker-pro-bills-date" });
 }
 // ─── Section Renderer ─────────────────────────────────────────────────────────
-function renderSection(app, wrapper, heading, payments, masterFolder, onPaymentSaved) {
+function renderSection(app, wrapper, heading, payments, masterFolder, nameVisible, companyVisible, onPaymentSaved) {
     if (payments.length === 0)
         return;
+    // Priority: link bill_name column first, company second, neither if both hidden.
+    const linkColumn = nameVisible ? "name" : companyVisible ? "company" : null;
     wrapper.createEl("div", { cls: "tracker-pro-bills-section-header", text: heading });
     const table = wrapper.createEl("table", { cls: "tracker-pro-table tracker-pro-bills-table" });
     const thead = table.createEl("thead");
@@ -20036,7 +20054,7 @@ function renderSection(app, wrapper, heading, payments, masterFolder, onPaymentS
     }
     const tbody = table.createEl("tbody");
     for (const p of payments) {
-        renderBillRow(app, tbody, p, masterFolder, onPaymentSaved);
+        renderBillRow(app, tbody, p, masterFolder, linkColumn, onPaymentSaved);
     }
 }
 // ─── Main Renderer ─────────────────────────────────────────────────────────────
@@ -20076,8 +20094,11 @@ async function renderBillsChart(container, app, config, settings) {
         refreshBtn.addEventListener("click", () => render());
         const thisMon = new Date(thisYear, thisMonth, 1).toLocaleString("en-US", { month: "long" });
         const nextMon = new Date(nextYear, nextMonth, 1).toLocaleString("en-US", { month: "long" });
-        renderSection(app, wrapper, `This Month — ${thisMon} ${thisYear}`, thisMonthPayments, masterFolder, render);
-        renderSection(app, wrapper, `Next Month — ${nextMon} ${nextYear}`, nextMonthPayments, masterFolder, render);
+        // Both columns are currently always visible; priority logic lives in renderSection.
+        const nameVisible = true;
+        const companyVisible = true;
+        renderSection(app, wrapper, `This Month — ${thisMon} ${thisYear}`, thisMonthPayments, masterFolder, nameVisible, companyVisible, render);
+        renderSection(app, wrapper, `Next Month — ${nextMon} ${nextYear}`, nextMonthPayments, masterFolder, nameVisible, companyVisible, render);
         if (thisMonthPayments.length === 0 && nextMonthPayments.length === 0) {
             const empty = wrapper.createEl("div", { cls: "tracker-pro-empty" });
             empty.createEl("span", { text: "📋 No bills found" });

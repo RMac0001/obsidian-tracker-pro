@@ -907,7 +907,7 @@ sorted alphabetically by name.
 | Column | Description |
 |---|---|
 | ☐ | Checkbox — checked when `bill_status: paid` |
-| Bill | `bill_name` (derived from master filename) |
+| Bill | `bill_name` — rendered as a link to the master note |
 | Company | `bill_company` |
 | Due Date | Formatted as `May 15` |
 | Amount Due | `bill_amount_due` or `—` if blank |

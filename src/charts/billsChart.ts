@@ -364,11 +364,21 @@ async function savePayment(
 
 // ─── Row Renderer ─────────────────────────────────────────────────────────────
 
+function renderMasterLink(td: HTMLElement, displayText: string, billName: string, masterFolder: string): void {
+  const path = normalizePath(`${masterFolder}/Bill-${billName}.md`);
+  const a = td.createEl("a", { cls: "internal-link", text: displayText });
+  a.setAttribute("href", path);
+  a.setAttribute("data-href", path);
+  a.setAttribute("target", "_blank");
+  a.setAttribute("rel", "noopener noreferrer");
+}
+
 function renderBillRow(
   app:            App,
   tbody:          HTMLElement,
   payment:        PaymentNote,
   masterFolder:   string,
+  linkColumn:     "name" | "company" | null,
   onPaymentSaved: () => void
 ): void {
   const paid    = payment.bill_status === "paid";
@@ -392,8 +402,13 @@ function renderBillRow(
     });
   }
 
-  tr.createEl("td", { text: payment.bill_name,    cls: "tracker-pro-bills-name" });
-  tr.createEl("td", { text: payment.bill_company, cls: "tracker-pro-bills-company" });
+  const nameTd = tr.createEl("td", { cls: "tracker-pro-bills-name" });
+  if (linkColumn === "name") renderMasterLink(nameTd, payment.bill_name, payment.bill_name, masterFolder);
+  else nameTd.setText(payment.bill_name);
+
+  const companyTd = tr.createEl("td", { cls: "tracker-pro-bills-company" });
+  if (linkColumn === "company") renderMasterLink(companyTd, payment.bill_company, payment.bill_name, masterFolder);
+  else companyTd.setText(payment.bill_company);
   tr.createEl("td", { text: fmtDate(payment.bill_due_date),    cls: "tracker-pro-bills-due" });
   tr.createEl("td", { text: fmtMoney(payment.bill_amount_due),  cls: "tracker-pro-bills-amount" });
   tr.createEl("td", { text: fmtMoney(payment.bill_amount_paid), cls: "tracker-pro-bills-amount" });
@@ -408,9 +423,15 @@ function renderSection(
   heading:        string,
   payments:       PaymentNote[],
   masterFolder:   string,
+  nameVisible:    boolean,
+  companyVisible: boolean,
   onPaymentSaved: () => void
 ): void {
   if (payments.length === 0) return;
+
+  // Priority: link bill_name column first, company second, neither if both hidden.
+  const linkColumn: "name" | "company" | null =
+    nameVisible ? "name" : companyVisible ? "company" : null;
 
   wrapper.createEl("div", { cls: "tracker-pro-bills-section-header", text: heading });
 
@@ -423,7 +444,7 @@ function renderSection(
 
   const tbody = table.createEl("tbody");
   for (const p of payments) {
-    renderBillRow(app, tbody, p, masterFolder, onPaymentSaved);
+    renderBillRow(app, tbody, p, masterFolder, linkColumn, onPaymentSaved);
   }
 }
 
@@ -484,8 +505,12 @@ export async function renderBillsChart(
     const thisMon = new Date(thisYear, thisMonth, 1).toLocaleString("en-US", { month: "long" });
     const nextMon = new Date(nextYear,  nextMonth,  1).toLocaleString("en-US", { month: "long" });
 
-    renderSection(app, wrapper, `This Month — ${thisMon} ${thisYear}`,  thisMonthPayments, masterFolder, render);
-    renderSection(app, wrapper, `Next Month — ${nextMon} ${nextYear}`, nextMonthPayments, masterFolder, render);
+    // Both columns are currently always visible; priority logic lives in renderSection.
+    const nameVisible    = true;
+    const companyVisible = true;
+
+    renderSection(app, wrapper, `This Month — ${thisMon} ${thisYear}`,  thisMonthPayments, masterFolder, nameVisible, companyVisible, render);
+    renderSection(app, wrapper, `Next Month — ${nextMon} ${nextYear}`, nextMonthPayments, masterFolder, nameVisible, companyVisible, render);
 
     if (thisMonthPayments.length === 0 && nextMonthPayments.length === 0) {
       const empty = wrapper.createEl("div", { cls: "tracker-pro-empty" });
