@@ -907,12 +907,14 @@ sorted alphabetically by name.
 | Column | Description |
 |---|---|
 | ☐ | Checkbox — checked when `bill_status: paid` |
-| Bill | `bill_name` — rendered as a link to the master note |
+| Bill | `bill_name` — rendered as a link to the master note. Click the header to sort. |
 | Company | `bill_company` |
 | Due Date | Formatted as `May 15` |
 | Amount Due | `bill_amount_due` or `—` if blank |
 | Amount Paid | `bill_amount_paid` or `—` |
 | Paid Date | `bill_paid_date` formatted as `May 12` or `—` |
+
+All data columns are sortable by clicking the header (↑ asc → ↓ desc → clear). A **Columns ▾** button lets you hide any column; the master-note link shifts to the Company column if Bill is hidden.
 
 **Visual states:**
 

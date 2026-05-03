@@ -172,6 +172,17 @@
   margin: 0;
 }
 
+.tracker-pro-bills-controls {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.tracker-pro-bills-cols-wrap {
+  position: relative;
+}
+
+.tracker-pro-bills-cols-btn,
 .tracker-pro-bills-refresh {
   font-size: 0.8em;
   padding: 2px 10px;
@@ -182,9 +193,56 @@
   color: var(--text-muted);
 }
 
+.tracker-pro-bills-cols-btn:hover,
 .tracker-pro-bills-refresh:hover {
   color: var(--text-normal);
   border-color: var(--text-muted);
+}
+
+.tracker-pro-bills-cols-panel {
+  position: absolute;
+  right: 0;
+  top: calc(100% + 4px);
+  z-index: 100;
+  background: var(--background-primary);
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 6px;
+  padding: 6px 0;
+  min-width: 140px;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+}
+
+.tracker-pro-bills-col-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 14px;
+  cursor: pointer;
+  font-size: 0.9em;
+  color: var(--text-normal);
+}
+
+.tracker-pro-bills-col-item:hover {
+  background: var(--background-modifier-hover);
+}
+
+.tracker-pro-bills-sortable {
+  cursor: pointer;
+  user-select: none;
+  white-space: nowrap;
+}
+
+.tracker-pro-bills-sortable:hover {
+  color: var(--text-accent);
+}
+
+.tracker-pro-bills-sorted {
+  color: var(--text-accent);
+}
+
+.tracker-pro-bills-sort-icon {
+  font-size: 0.85em;
+  opacity: 0.8;
 }
 
 .tracker-pro-bills-section-header {

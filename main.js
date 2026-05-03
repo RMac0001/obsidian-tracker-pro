@@ -19732,6 +19732,14 @@ function resolveDateTemplate(template, date) {
 // ─── Defaults ──────────────────────────────────────────────────────────────────
 const DEFAULT_MASTER_FOLDER = "Data/Bills";
 const DEFAULT_PAYMENT_FOLDER = "Data/Bills/Payments/BP-{{DATE:YYYY}}/BP-{{DATE:YYYY-MM}}";
+const BILL_COLS = [
+    { key: "name", label: "Bill", sortVal: p => p.bill_name },
+    { key: "company", label: "Company", sortVal: p => p.bill_company },
+    { key: "due", label: "Due Date", sortVal: p => p.bill_due_date },
+    { key: "amount_due", label: "Amount Due", sortVal: p => { var _a; return (_a = p.bill_amount_due) !== null && _a !== void 0 ? _a : -1; } },
+    { key: "amount_paid", label: "Amount Paid", sortVal: p => { var _a; return (_a = p.bill_amount_paid) !== null && _a !== void 0 ? _a : -1; } },
+    { key: "paid_date", label: "Paid Date", sortVal: p => { var _a; return (_a = p.bill_paid_date) !== null && _a !== void 0 ? _a : ""; } },
+];
 function getBillPaths(settings) {
     var _a, _b;
     return {
@@ -19753,15 +19761,12 @@ function paymentNotePath(billName, year, month, paymentTemplate) {
     const ym = `${year}-${String(month + 1).padStart(2, "0")}`;
     return obsidian.normalizePath(`${folder}/BP-${billName}-${ym}.md`);
 }
-// Advance from the anchor date by the frequency step until the target year/month is reached.
-// Returns the ISO due date for that month, or null if the bill does not occur that month.
-function calculateDueDateForMonth(anchor, frequency, targetYear, targetMon // 0-indexed (Jan=0)
-) {
+function calculateDueDateForMonth(anchor, frequency, targetYear, targetMon) {
     const parts = anchor.match(/^(\d{4})-(\d{2})-(\d{2})$/);
     if (!parts)
         return null;
     const anchorYear = parseInt(parts[1]);
-    const anchorMon = parseInt(parts[2]) - 1; // 0-indexed
+    const anchorMon = parseInt(parts[2]) - 1;
     const anchorDay = parseInt(parts[3]);
     const step = frequency === "monthly" ? 1 : frequency === "quarterly" ? 3 : 12;
     let y = anchorYear;
@@ -19778,7 +19783,6 @@ function calculateDueDateForMonth(anchor, frequency, targetYear, targetMon // 0-
     return `${targetYear}-${String(targetMon + 1).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
 }
 // ─── Vault Reads ───────────────────────────────────────────────────────────────
-// Master notes are direct children of masterFolder (not in any subfolder).
 function readMasterBills(app, masterFolder) {
     return app.vault.getMarkdownFiles()
         .filter(f => {
@@ -19868,7 +19872,6 @@ async function createPaymentNote(app, master, dueDate, year, month, paymentTempl
         filePath: path,
     };
 }
-// Synthetic PaymentNote from master when no file exists yet (this-month display).
 function syntheticPayment(master, dueDate, year, month, paymentTemplate) {
     return {
         bill_name: master.fileName,
@@ -19880,7 +19883,7 @@ function syntheticPayment(master, dueDate, year, month, paymentTemplate) {
         filePath: paymentNotePath(master.fileName, year, month, paymentTemplate),
     };
 }
-// ─── Date Formatting ───────────────────────────────────────────────────────────
+// ─── Date / Money Formatting ───────────────────────────────────────────────────
 function fmtDate(iso) {
     if (!iso)
         return "—";
@@ -19965,7 +19968,6 @@ class RecordPaymentModal extends obsidian.Modal {
 async function savePayment(app, payment, amountPaid, masterFolder) {
     var _a, _b;
     const today = todayIso();
-    // Re-read master for source-of-truth values
     const masterFile = app.vault.getMarkdownFiles().find(f => {
         if (!f.path.startsWith(masterFolder + "/"))
             return false;
@@ -20005,7 +20007,7 @@ function renderMasterLink(td, displayText, billName, masterFolder) {
     a.setAttribute("target", "_blank");
     a.setAttribute("rel", "noopener noreferrer");
 }
-function renderBillRow(app, tbody, payment, masterFolder, linkColumn, onPaymentSaved) {
+function renderBillRow(app, tbody, payment, masterFolder, visibleCols, linkColumn, onPaymentSaved) {
     const paid = payment.bill_status === "paid";
     const overdue = isOverdue(payment);
     const tr = tbody.createEl("tr");
@@ -20024,42 +20026,96 @@ function renderBillRow(app, tbody, payment, masterFolder, linkColumn, onPaymentS
             }).open();
         });
     }
-    const nameTd = tr.createEl("td", { cls: "tracker-pro-bills-name" });
-    if (linkColumn === "name")
-        renderMasterLink(nameTd, payment.bill_name, payment.bill_name, masterFolder);
-    else
-        nameTd.setText(payment.bill_name);
-    const companyTd = tr.createEl("td", { cls: "tracker-pro-bills-company" });
-    if (linkColumn === "company")
-        renderMasterLink(companyTd, payment.bill_company, payment.bill_name, masterFolder);
-    else
-        companyTd.setText(payment.bill_company);
-    tr.createEl("td", { text: fmtDate(payment.bill_due_date), cls: "tracker-pro-bills-due" });
-    tr.createEl("td", { text: fmtMoney(payment.bill_amount_due), cls: "tracker-pro-bills-amount" });
-    tr.createEl("td", { text: fmtMoney(payment.bill_amount_paid), cls: "tracker-pro-bills-amount" });
-    tr.createEl("td", { text: payment.bill_paid_date ? fmtDate(payment.bill_paid_date) : "—", cls: "tracker-pro-bills-date" });
+    if (visibleCols.has("name")) {
+        const td = tr.createEl("td", { cls: "tracker-pro-bills-name" });
+        if (linkColumn === "name")
+            renderMasterLink(td, payment.bill_name, payment.bill_name, masterFolder);
+        else
+            td.setText(payment.bill_name);
+    }
+    if (visibleCols.has("company")) {
+        const td = tr.createEl("td", { cls: "tracker-pro-bills-company" });
+        if (linkColumn === "company")
+            renderMasterLink(td, payment.bill_company, payment.bill_name, masterFolder);
+        else
+            td.setText(payment.bill_company);
+    }
+    if (visibleCols.has("due")) {
+        tr.createEl("td", { text: fmtDate(payment.bill_due_date), cls: "tracker-pro-bills-due" });
+    }
+    if (visibleCols.has("amount_due")) {
+        tr.createEl("td", { text: fmtMoney(payment.bill_amount_due), cls: "tracker-pro-bills-amount" });
+    }
+    if (visibleCols.has("amount_paid")) {
+        tr.createEl("td", { text: fmtMoney(payment.bill_amount_paid), cls: "tracker-pro-bills-amount" });
+    }
+    if (visibleCols.has("paid_date")) {
+        tr.createEl("td", { text: payment.bill_paid_date ? fmtDate(payment.bill_paid_date) : "—", cls: "tracker-pro-bills-date" });
+    }
 }
 // ─── Section Renderer ─────────────────────────────────────────────────────────
-function renderSection(app, wrapper, heading, payments, masterFolder, nameVisible, companyVisible, onPaymentSaved) {
+function renderSection(app, wrapper, heading, payments, masterFolder, visibleCols, sortKey, sortDir, onHeaderClick, onPaymentSaved) {
     if (payments.length === 0)
         return;
-    // Priority: link bill_name column first, company second, neither if both hidden.
-    const linkColumn = nameVisible ? "name" : companyVisible ? "company" : null;
+    const linkColumn = visibleCols.has("name") ? "name" : visibleCols.has("company") ? "company" : null;
+    const sorted = sortKey
+        ? [...payments].sort((a, b) => {
+            const col = BILL_COLS.find(c => c.key === sortKey);
+            const av = col.sortVal(a);
+            const bv = col.sortVal(b);
+            if (av === bv)
+                return 0;
+            const cmp = av < bv ? -1 : 1;
+            return sortDir === "asc" ? cmp : -cmp;
+        })
+        : payments;
     wrapper.createEl("div", { cls: "tracker-pro-bills-section-header", text: heading });
     const table = wrapper.createEl("table", { cls: "tracker-pro-table tracker-pro-bills-table" });
     const thead = table.createEl("thead");
     const hr = thead.createEl("tr");
-    for (const col of ["", "Bill", "Company", "Due Date", "Amount Due", "Amount Paid", "Paid Date"]) {
-        hr.createEl("th", { text: col });
+    hr.createEl("th"); // checkbox column — always visible, never sorted
+    for (const col of BILL_COLS) {
+        if (!visibleCols.has(col.key))
+            continue;
+        const th = hr.createEl("th", { cls: "tracker-pro-bills-sortable" });
+        th.createEl("span", { text: col.label });
+        if (sortKey === col.key) {
+            th.createEl("span", {
+                text: sortDir === "asc" ? " ↑" : " ↓",
+                cls: "tracker-pro-bills-sort-icon",
+            });
+            th.addClass("tracker-pro-bills-sorted");
+        }
+        th.addEventListener("click", () => onHeaderClick(col.key));
     }
     const tbody = table.createEl("tbody");
-    for (const p of payments) {
-        renderBillRow(app, tbody, p, masterFolder, linkColumn, onPaymentSaved);
+    for (const p of sorted) {
+        renderBillRow(app, tbody, p, masterFolder, visibleCols, linkColumn, onPaymentSaved);
     }
 }
 // ─── Main Renderer ─────────────────────────────────────────────────────────────
 async function renderBillsChart(container, app, config, settings) {
     const { masterFolder, paymentTemplate } = getBillPaths(settings);
+    // State persists across re-renders
+    const visibleCols = new Set(BILL_COLS.map(c => c.key));
+    let sortKey = null;
+    let sortDir = "asc";
+    function onHeaderClick(key) {
+        if (sortKey === key) {
+            if (sortDir === "asc") {
+                sortDir = "desc";
+            }
+            else {
+                sortKey = null;
+                sortDir = "asc";
+            }
+        }
+        else {
+            sortKey = key;
+            sortDir = "asc";
+        }
+        render();
+    }
     async function render() {
         var _a, _b, _c;
         container.empty();
@@ -20087,18 +20143,48 @@ async function renderBillsChart(container, app, config, settings) {
             }
         }
         const wrapper = container.createEl("div", { cls: "tracker-pro-bills-wrapper" });
-        const header = wrapper.createEl("div", { cls: "tracker-pro-bills-header" });
+        // ── Header ────────────────────────────────────────────────────────────────
+        const headerEl = wrapper.createEl("div", { cls: "tracker-pro-bills-header" });
         if (config.title)
-            header.createEl("div", { cls: "tracker-pro-table-title", text: config.title });
-        const refreshBtn = header.createEl("button", { cls: "tracker-pro-bills-refresh", text: "↻ Refresh" });
+            headerEl.createEl("div", { cls: "tracker-pro-table-title", text: config.title });
+        const controls = headerEl.createEl("div", { cls: "tracker-pro-bills-controls" });
+        // Columns dropdown
+        const colsWrap = controls.createEl("div", { cls: "tracker-pro-bills-cols-wrap" });
+        const colsBtn = colsWrap.createEl("button", { cls: "tracker-pro-bills-cols-btn", text: "Columns ▾" });
+        const colsPanel = colsWrap.createEl("div", { cls: "tracker-pro-bills-cols-panel" });
+        colsPanel.style.display = "none";
+        for (const col of BILL_COLS) {
+            const item = colsPanel.createEl("label", { cls: "tracker-pro-bills-col-item" });
+            const cb = item.createEl("input", { attr: { type: "checkbox" } });
+            cb.checked = visibleCols.has(col.key);
+            item.appendText(col.label);
+            cb.addEventListener("change", () => {
+                if (cb.checked)
+                    visibleCols.add(col.key);
+                else
+                    visibleCols.delete(col.key);
+                render();
+            });
+        }
+        colsBtn.addEventListener("click", (e) => {
+            e.stopPropagation();
+            colsPanel.style.display = colsPanel.style.display === "none" ? "block" : "none";
+        });
+        colsPanel.addEventListener("click", (e) => e.stopPropagation());
+        // Close panel when clicking anywhere outside the columns widget
+        wrapper.addEventListener("click", (e) => {
+            if (!colsWrap.contains(e.target)) {
+                colsPanel.style.display = "none";
+            }
+        });
+        // Refresh button
+        const refreshBtn = controls.createEl("button", { cls: "tracker-pro-bills-refresh", text: "↻ Refresh" });
         refreshBtn.addEventListener("click", () => render());
+        // ── Sections ──────────────────────────────────────────────────────────────
         const thisMon = new Date(thisYear, thisMonth, 1).toLocaleString("en-US", { month: "long" });
         const nextMon = new Date(nextYear, nextMonth, 1).toLocaleString("en-US", { month: "long" });
-        // Both columns are currently always visible; priority logic lives in renderSection.
-        const nameVisible = true;
-        const companyVisible = true;
-        renderSection(app, wrapper, `This Month — ${thisMon} ${thisYear}`, thisMonthPayments, masterFolder, nameVisible, companyVisible, render);
-        renderSection(app, wrapper, `Next Month — ${nextMon} ${nextYear}`, nextMonthPayments, masterFolder, nameVisible, companyVisible, render);
+        renderSection(app, wrapper, `This Month — ${thisMon} ${thisYear}`, thisMonthPayments, masterFolder, visibleCols, sortKey, sortDir, onHeaderClick, render);
+        renderSection(app, wrapper, `Next Month — ${nextMon} ${nextYear}`, nextMonthPayments, masterFolder, visibleCols, sortKey, sortDir, onHeaderClick, render);
         if (thisMonthPayments.length === 0 && nextMonthPayments.length === 0) {
             const empty = wrapper.createEl("div", { cls: "tracker-pro-empty" });
             empty.createEl("span", { text: "📋 No bills found" });

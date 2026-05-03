@@ -1,6 +1,6 @@
 # Tracker Pro — Status
 
-## What was done (v1.1.1 → v1.2.3)
+## What was done (v1.1.1 → v1.2.4)
 
 ---
 
@@ -215,6 +215,16 @@ bill_type: Utility   # optional — omit to show all active bills
 
 **`Generate Monthly Bills` command:**
 - Scans all active master notes and creates any missing payment notes for the current month
+
+---
+
+### v1.2.4 — Bills Table Column Sorting and Hiding
+
+**Column sorting:** click any column header to sort ascending (↑), click again for descending (↓), click a third time to clear. The active sort column header is highlighted.
+
+**Column hiding:** a **Columns ▾** dropdown in the top-right of the chart lets you toggle any column on or off. Both settings persist across re-renders (refresh, checkbox, etc.) until the note is reloaded.
+
+The master note link priority (Bill name → Company → none) updates automatically as columns are hidden.
 
 ---
 
