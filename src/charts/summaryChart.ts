@@ -60,14 +60,21 @@ function calcCurrentBreak(days: number[]): number {
   return Math.round((todayMs - lastDay) / DAY_MS);
 }
 
-function calcMaxBreak(days: number[], currentBreak: number): number {
-  // Seed with currentBreak so an ongoing break is always a candidate for longest
-  if (days.length < 2) return currentBreak;
+function calcMaxBreak(days: number[], currentBreak: number, rangeStartMs: number): number {
+  if (days.length === 0) return currentBreak;
+
   let max = currentBreak;
+
+  // Gap from range start to first active day
+  const leadGap = Math.round((days[0] - rangeStartMs) / DAY_MS);
+  if (leadGap > max) max = leadGap;
+
+  // Gaps between consecutive active days
   for (let i = 1; i < days.length; i++) {
     const gap = Math.round((days[i] - days[i - 1]) / DAY_MS) - 1;
     if (gap > max) max = gap;
   }
+
   return max;
 }
 
@@ -127,13 +134,22 @@ export function renderSummaryChart(
   const active  = getActiveDays(series);
   const days    = getSortedDays(active);
 
-  // currentBreak must be computed before maxBreak so it can be passed in
+  // Range start: minimum pt.date across all series (collector clips to range start,
+  // so null-value points are still emitted for every day in the range).
+  let rangeStartMs = days.length > 0 ? days[0] : toDateOnly(new Date());
+  for (const s of series) {
+    for (const pt of s.points) {
+      const d = toDateOnly(pt.date);
+      if (d < rangeStartMs) rangeStartMs = d;
+    }
+  }
+
   const currentBreak = calcCurrentBreak(days);
 
   const vars: Record<string, string | number> = {
     maxStreak:     calcMaxStreak(days),
     currentStreak: calcCurrentStreak(days),
-    maxBreaks:     calcMaxBreak(days, currentBreak),
+    maxBreaks:     calcMaxBreak(days, currentBreak, rangeStartMs),
     currentBreaks: currentBreak,
     totalDays:     calcTotalDays(days),
     sum:           calcSum(series),

@@ -19164,11 +19164,15 @@ function calcCurrentBreak(days) {
         return 0; // active today
     return Math.round((todayMs - lastDay) / DAY_MS);
 }
-function calcMaxBreak(days, currentBreak) {
-    // Seed with currentBreak so an ongoing break is always a candidate for longest
-    if (days.length < 2)
+function calcMaxBreak(days, currentBreak, rangeStartMs) {
+    if (days.length === 0)
         return currentBreak;
     let max = currentBreak;
+    // Gap from range start to first active day
+    const leadGap = Math.round((days[0] - rangeStartMs) / DAY_MS);
+    if (leadGap > max)
+        max = leadGap;
+    // Gaps between consecutive active days
     for (let i = 1; i < days.length; i++) {
         const gap = Math.round((days[i] - days[i - 1]) / DAY_MS) - 1;
         if (gap > max)
@@ -19226,12 +19230,21 @@ function renderSummaryChart(container, series, config) {
     const template = (_a = summaryConfig === null || summaryConfig === void 0 ? void 0 : summaryConfig.template) !== null && _a !== void 0 ? _a : "Total: {{sum()}} days active";
     const active = getActiveDays(series);
     const days = getSortedDays(active);
-    // currentBreak must be computed before maxBreak so it can be passed in
+    // Range start: minimum pt.date across all series (collector clips to range start,
+    // so null-value points are still emitted for every day in the range).
+    let rangeStartMs = days.length > 0 ? days[0] : toDateOnly(new Date());
+    for (const s of series) {
+        for (const pt of s.points) {
+            const d = toDateOnly(pt.date);
+            if (d < rangeStartMs)
+                rangeStartMs = d;
+        }
+    }
     const currentBreak = calcCurrentBreak(days);
     const vars = {
         maxStreak: calcMaxStreak(days),
         currentStreak: calcCurrentStreak(days),
-        maxBreaks: calcMaxBreak(days, currentBreak),
+        maxBreaks: calcMaxBreak(days, currentBreak, rangeStartMs),
         currentBreaks: currentBreak,
         totalDays: calcTotalDays(days),
         sum: calcSum(series),

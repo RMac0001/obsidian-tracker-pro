@@ -1,6 +1,6 @@
 # Tracker Pro — Status
 
-## What was done (v1.1.1 → v1.2.6)
+## What was done (v1.1.1 → v1.2.7)
 
 ---
 
@@ -215,6 +215,14 @@ bill_type: Utility   # optional — omit to show all active bills
 
 **`Generate Monthly Bills` command:**
 - Scans all active master notes and creates any missing payment notes for the current month
+
+---
+
+### v1.2.7 — Fix `maxBreaks()` Ignoring Range Start
+
+`calcMaxBreak` was only looking at gaps between existing entries, so a gap from the range start date to the first entry was never considered. For example, a `this-year` range with no entries until April would report a much smaller longest break than the actual ~98-day gap from January.
+
+Fixed by passing `rangeStartMs` (derived from the minimum `pt.date` across all series, which the data collector clips to the range start) into `calcMaxBreak` and including the lead gap as a candidate before scanning between entries.
 
 ---
 
