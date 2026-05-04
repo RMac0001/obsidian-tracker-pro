@@ -19230,16 +19230,8 @@ function renderSummaryChart(container, series, config) {
     const template = (_a = summaryConfig === null || summaryConfig === void 0 ? void 0 : summaryConfig.template) !== null && _a !== void 0 ? _a : "Total: {{sum()}} days active";
     const active = getActiveDays(series);
     const days = getSortedDays(active);
-    // Range start: minimum pt.date across all series (collector clips to range start,
-    // so null-value points are still emitted for every day in the range).
-    let rangeStartMs = days.length > 0 ? days[0] : toDateOnly(new Date());
-    for (const s of series) {
-        for (const pt of s.points) {
-            const d = toDateOnly(pt.date);
-            if (d < rangeStartMs)
-                rangeStartMs = d;
-        }
-    }
+    const { start } = resolveStartEnd(config);
+    const rangeStartMs = toDateOnly(start);
     const currentBreak = calcCurrentBreak(days);
     const vars = {
         maxStreak: calcMaxStreak(days),

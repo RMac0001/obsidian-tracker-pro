@@ -1,4 +1,5 @@
 import { SeriesData, TrackerConfig } from "../types";
+import { resolveStartEnd } from "../parser";
 
 // ─── Streak / Break Calculations ──────────────────────────────────────────────
 
@@ -134,15 +135,8 @@ export function renderSummaryChart(
   const active  = getActiveDays(series);
   const days    = getSortedDays(active);
 
-  // Range start: minimum pt.date across all series (collector clips to range start,
-  // so null-value points are still emitted for every day in the range).
-  let rangeStartMs = days.length > 0 ? days[0] : toDateOnly(new Date());
-  for (const s of series) {
-    for (const pt of s.points) {
-      const d = toDateOnly(pt.date);
-      if (d < rangeStartMs) rangeStartMs = d;
-    }
-  }
+  const { start } = resolveStartEnd(config);
+  const rangeStartMs = toDateOnly(start);
 
   const currentBreak = calcCurrentBreak(days);
 
