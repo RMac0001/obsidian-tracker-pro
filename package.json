@@ -18,7 +18,7 @@
     "obsidian": "latest",
     "rollup": "^3.0.0",
     "tslib": "^2.6.0",
-    "typescript": "^5.0.0"
+    "typescript": "^6.0.3"
   },
   "dependencies": {
     "chart.js": "^4.4.0",
