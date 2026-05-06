@@ -20212,9 +20212,6 @@ async function renderBillsChart(container, app, config, settings) {
                 colsPanel.style.display = "none";
             }
         });
-        // Refresh button
-        const refreshBtn = controls.createEl("button", { cls: "tracker-pro-bills-refresh", text: "↻ Refresh" });
-        refreshBtn.addEventListener("click", () => render());
         // ── Sections ──────────────────────────────────────────────────────────────
         const thisMon = new Date(thisYear, thisMonth, 1).toLocaleString("en-US", { month: "long" });
         const nextMon = new Date(nextYear, nextMonth, 1).toLocaleString("en-US", { month: "long" });
@@ -21008,6 +21005,29 @@ async function logMeal(app, settings) {
     }
 }
 
+function isRelevantFile(changedPath, config) {
+    if (config.folder) {
+        const folder = config.folder.replace(/^\//, "").replace(/\/$/, "");
+        if (changedPath.startsWith(folder + "/") || changedPath === folder) {
+            return true;
+        }
+    }
+    if (config.file) {
+        const normalized = config.file.replace(/^\//, "") +
+            (config.file.endsWith(".md") ? "" : ".md");
+        if (changedPath === normalized)
+            return true;
+    }
+    if (config.files) {
+        for (const fp of config.files) {
+            const normalized = fp.replace(/^\//, "") +
+                (fp.endsWith(".md") ? "" : ".md");
+            if (changedPath === normalized)
+                return true;
+        }
+    }
+    return false;
+}
 class Tracker extends obsidian.Plugin {
     async onload() {
         console.log("loading tracker-pro plugin");
@@ -21036,8 +21056,7 @@ class Tracker extends obsidian.Plugin {
             callback: () => generateMonthlyBills(this.app, this.settings),
         });
         // ── Tracker code block processor ──────────────────────────────────────
-        this.registerMarkdownCodeBlockProcessor("tracker-pro", async (source, el, _ctx) => {
-            const container = el.createDiv({ cls: "tracker-pro-root" });
+        this.registerMarkdownCodeBlockProcessor("tracker-pro", async (source, el, ctx) => {
             let src = source;
             if (this.settings.folder &&
                 this.settings.folder !== "/" &&
@@ -21045,6 +21064,7 @@ class Tracker extends obsidian.Plugin {
                 src = `folder: "${this.settings.folder}"\n` + src;
             }
             const { config, errors } = parseTrackerConfig(src);
+            const container = el.createDiv({ cls: "tracker-pro-root" });
             if (errors.length > 0 || !config) {
                 renderErrors(container, errors.length > 0 ? errors : [{ message: "Unknown parse error" }]);
                 return;
@@ -21052,12 +21072,23 @@ class Tracker extends obsidian.Plugin {
             if (!config.dateProperty && this.settings.dateProperty) {
                 config.dateProperty = this.settings.dateProperty;
             }
-            try {
-                await renderTracker(this.app, container, config, this.settings);
-            }
-            catch (e) {
-                renderErrors(container, [{ message: String(e) }]);
-            }
+            const render = async () => {
+                container.empty();
+                try {
+                    await renderTracker(this.app, container, config, this.settings);
+                }
+                catch (e) {
+                    renderErrors(container, [{ message: String(e) }]);
+                }
+            };
+            await render();
+            const child = new obsidian.MarkdownRenderChild(container);
+            child.registerEvent(this.app.metadataCache.on("changed", (file) => {
+                if (isRelevantFile(file.path, config)) {
+                    render();
+                }
+            }));
+            ctx.addChild(child);
         });
     }
     async loadSettings() {
