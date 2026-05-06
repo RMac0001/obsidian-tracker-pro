@@ -2940,6 +2940,8 @@ function validateConfig(raw) {
         }
     }
     const config = raw;
+    if (raw.showSource !== undefined)
+        config.showSource = Boolean(raw.showSource);
     // Apply defaults
     if (!config.aggregate)
         config.aggregate = "daily";
@@ -19672,6 +19674,8 @@ function renderDailyTable(container, entries, config) {
         headerRow.createEl("th", { text: "Meal" });
     for (const col of columns)
         headerRow.createEl("th", { text: col.label });
+    if (config.showSource)
+        headerRow.createEl("th", { text: "Source" });
     if (entries.length === 0)
         return;
     const tbody = table.createEl("tbody");
@@ -19687,6 +19691,7 @@ function renderDailyTable(container, entries, config) {
             for (const row of visible) {
                 const tr = tbody.createEl("tr");
                 // Date cell — only on the first visible row of each date group
+                const isFirstRow = firstRow;
                 const dateTd = tr.createEl("td", { cls: "tracker-pro-daily-date" });
                 if (firstRow) {
                     dateTd.setText(dateStr);
@@ -19695,6 +19700,12 @@ function renderDailyTable(container, entries, config) {
                 tr.createEl("td", { text: row.label, cls: "tracker-pro-daily-meal" });
                 for (const col of columns) {
                     tr.createEl("td", { text: evalCellExpr(col.value, row.key, fm) });
+                }
+                if (config.showSource && isFirstRow) {
+                    tr.createEl("td", { text: entry.filePath, cls: "tracker-pro-daily-source" });
+                }
+                else if (config.showSource) {
+                    tr.createEl("td");
                 }
             }
             // Per-day total row
@@ -19709,6 +19720,8 @@ function renderDailyTable(container, entries, config) {
                 for (const col of columns) {
                     tr.createEl("td", { text: evalCellExpr(col.value, "total", fm) });
                 }
+                if (config.showSource)
+                    tr.createEl("td");
             }
         }
         else {
@@ -19717,6 +19730,9 @@ function renderDailyTable(container, entries, config) {
             tr.createEl("td", { text: dateStr, cls: "tracker-pro-daily-date" });
             for (const col of columns) {
                 tr.createEl("td", { text: evalCellExpr(col.value, "total", fm) });
+            }
+            if (config.showSource) {
+                tr.createEl("td", { text: entry.filePath, cls: "tracker-pro-daily-source" });
             }
         }
     }

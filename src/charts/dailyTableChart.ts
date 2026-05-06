@@ -185,6 +185,7 @@ export function renderDailyTable(
   headerRow.createEl("th", { text: "Date" });
   if (isExpanded) headerRow.createEl("th", { text: "Meal" });
   for (const col of columns) headerRow.createEl("th", { text: col.label });
+  if (config.showSource) headerRow.createEl("th", { text: "Source" });
 
   if (entries.length === 0) return;
 
@@ -206,12 +207,18 @@ export function renderDailyTable(
         const tr = tbody.createEl("tr");
 
         // Date cell — only on the first visible row of each date group
+        const isFirstRow = firstRow;
         const dateTd = tr.createEl("td", { cls: "tracker-pro-daily-date" });
         if (firstRow) { dateTd.setText(dateStr); firstRow = false; }
 
         tr.createEl("td", { text: row.label, cls: "tracker-pro-daily-meal" });
         for (const col of columns) {
           tr.createEl("td", { text: evalCellExpr(col.value, row.key, fm) });
+        }
+        if (config.showSource && isFirstRow) {
+          tr.createEl("td", { text: entry.filePath, cls: "tracker-pro-daily-source" });
+        } else if (config.showSource) {
+          tr.createEl("td");
         }
       }
 
@@ -225,6 +232,7 @@ export function renderDailyTable(
         for (const col of columns) {
           tr.createEl("td", { text: evalCellExpr(col.value, "total", fm) });
         }
+        if (config.showSource) tr.createEl("td");
       }
 
     } else {
@@ -233,6 +241,9 @@ export function renderDailyTable(
       tr.createEl("td", { text: dateStr, cls: "tracker-pro-daily-date" });
       for (const col of columns) {
         tr.createEl("td", { text: evalCellExpr(col.value, "total", fm) });
+      }
+      if (config.showSource) {
+        tr.createEl("td", { text: entry.filePath, cls: "tracker-pro-daily-source" });
       }
     }
   }

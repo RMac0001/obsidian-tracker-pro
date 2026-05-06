@@ -123,6 +123,8 @@ function validateConfig(
 
   const config = raw as unknown as TrackerConfig;
 
+  if (raw.showSource !== undefined) config.showSource = Boolean(raw.showSource);
+
   // Apply defaults
   if (!config.aggregate) config.aggregate = "daily";
   if (!config.period) config.period = 7;
