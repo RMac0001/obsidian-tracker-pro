@@ -1,6 +1,6 @@
 # Tracker Pro — Status
 
-## What was done (v1.1.1 → v1.2.7)
+## What was done (v1.1.1 → v1.2.8)
 
 ---
 
@@ -215,6 +215,19 @@ bill_type: Utility   # optional — omit to show all active bills
 
 **`Generate Monthly Bills` command:**
 - Scans all active master notes and creates any missing payment notes for the current month
+
+---
+
+### v1.2.8 — Auto-Refresh on File Change
+
+`tracker-pro` code blocks now automatically re-render whenever a file in their
+configured data source changes. Uses `metadataCache.on("changed")` (fires after
+frontmatter is re-parsed, not just after disk write) scoped to a
+`MarkdownRenderChild` for proper lifecycle management — listeners are cleaned up
+when the block leaves the DOM.
+
+The ↻ Refresh button has been removed from the bills chart as it is no longer
+needed.
 
 ---
 

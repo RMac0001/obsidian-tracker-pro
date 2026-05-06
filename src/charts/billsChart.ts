@@ -628,10 +628,6 @@ export async function renderBillsChart(
       }
     });
 
-    // Refresh button
-    const refreshBtn = controls.createEl("button", { cls: "tracker-pro-bills-refresh", text: "↻ Refresh" });
-    refreshBtn.addEventListener("click", () => render());
-
     // ── Sections ──────────────────────────────────────────────────────────────
     const thisMon = new Date(thisYear, thisMonth, 1).toLocaleString("en-US", { month: "long" });
     const nextMon = new Date(nextYear,  nextMonth,  1).toLocaleString("en-US", { month: "long" });
