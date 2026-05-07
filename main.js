@@ -19221,6 +19221,16 @@ function calcMax(series) {
     }
     return max === -Infinity ? 0 : max;
 }
+function calcMin(series) {
+    let min = Infinity;
+    for (const s of series) {
+        for (const pt of s.points) {
+            if (pt.value !== null && pt.value < min)
+                min = pt.value;
+        }
+    }
+    return min === Infinity ? 0 : min;
+}
 // ─── Template Engine ──────────────────────────────────────────────────────────
 function applyTemplate(template, vars) {
     return template.replace(/\{\{(\w+)\(\)\}\}/g, (_, name) => {
@@ -19246,6 +19256,7 @@ function renderSummaryChart(container, series, config) {
         sum: calcSum(series),
         mean: calcMean(series),
         max: calcMax(series),
+        min: calcMin(series),
     };
     const rendered = applyTemplate(template, vars)
         .split("\n")
