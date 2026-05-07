@@ -21568,11 +21568,26 @@ class EditMealLogModal extends obsidian.Modal {
 function editMealLog(app, settings) {
     const todayPath = resolveTodayPath(settings);
     const todayFile = app.vault.getAbstractFileByPath(todayPath);
-    if (!(todayFile instanceof obsidian.TFile)) {
-        new obsidian.Notice("No food log found for today.");
+    if (todayFile instanceof obsidian.TFile) {
+        new EditMealLogModal(app, settings, todayFile).open();
         return;
     }
-    new EditMealLogModal(app, settings, todayFile).open();
+    // No log for today — create a blank one then open the modal
+    (async () => {
+        await ensureFolders(app, todayPath);
+        const fm = buildUpdatedFrontmatter({}, "Breakfast", [], settings);
+        // Zero out Breakfast too (buildUpdatedFrontmatter only zeroes the given meal)
+        for (const meal of MEAL_TYPES) {
+            const k = mealKey(meal);
+            fm[`cal_${k}`] = 0;
+            fm[`protein_${k}`] = 0;
+            fm[`fat_${k}`] = 0;
+            fm[`carbs_${k}`] = 0;
+        }
+        const content = buildNewNoteContent("Breakfast", [], fm);
+        const newFile = await app.vault.create(todayPath, content);
+        new EditMealLogModal(app, settings, newFile).open();
+    })();
 }
 // ─── Main Entry Point ─────────────────────────────────────────────────────────
 async function logMeal(app, settings) {
