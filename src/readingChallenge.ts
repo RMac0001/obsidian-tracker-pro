@@ -15,6 +15,10 @@ interface BookData {
 
 type GoalMap = Record<string | number, number>;
 
+type YearControl =
+    | { type: "button"; onClick: () => void }
+    | { type: "select"; years: number[]; onChange: (year: number) => void };
+
 // ─── Data Readers ─────────────────────────────────────────────────────────────
 
 function readGoals(app: App, settings: TrackerSettings): GoalMap {
@@ -148,21 +152,15 @@ export class ReadingChallengeModal extends Modal {
         contentEl.empty();
         contentEl.addClass("tracker-pro-reading-challenge");
 
-        renderChallenge(
-            contentEl,
-            this.app,
-            this.year,
-            books,
-            goal,
-            goals,
-            allBooks,
-            () => {
+        renderChallenge(contentEl, this.app, this.year, books, goal, goals, allBooks, {
+            type: "button",
+            onClick: () => {
                 this.close();
                 new YearSelectorModal(this.app, this.settings, (y) => {
                     new ReadingChallengeModal(this.app, this.settings, y).open();
                 }).open();
-            }
-        );
+            },
+        });
     }
 
     onClose(): void { this.contentEl.empty(); }
@@ -199,7 +197,7 @@ function renderChallenge(
     goal: number | null,
     allGoals: GoalMap,
     allBooks: Map<number, BookData[]>,
-    onChangeYear?: () => void
+    yearControl?: YearControl
 ): void {
     const currentYear = new Date().getFullYear();
     const booksRead   = books.length;
@@ -217,12 +215,20 @@ function renderChallenge(
     const heroText = hero.createEl("div", { cls: "tracker-pro-rc-hero-text" });
     const heroTop  = heroText.createEl("div", { cls: "tracker-pro-rc-hero-top" });
     heroTop.createEl("span", { text: "Reading Challenge", cls: "tracker-pro-rc-title" });
-    if (onChangeYear) {
+    if (yearControl?.type === "button") {
         const changeBtn = heroTop.createEl("button", {
             text: "Change Year ▾",
             cls: "tracker-pro-rc-change-year",
         });
-        changeBtn.onclick = onChangeYear;
+        changeBtn.onclick = yearControl.onClick;
+    } else if (yearControl?.type === "select") {
+        const select = heroTop.createEl("select", { cls: "tracker-pro-rc-year-select" });
+        for (const y of yearControl.years) {
+            const opt = select.createEl("option", { text: String(y) });
+            opt.value = String(y);
+            if (y === year) opt.selected = true;
+        }
+        select.addEventListener("change", () => yearControl.onChange(parseInt(select.value)));
     }
 
     const subtitle = motivationalText(booksRead, goal, year);
@@ -338,14 +344,21 @@ export function renderReadingChallengeBlock(
     settings: TrackerSettings,
     config: TrackerConfig
 ): void {
-    const year     = config.year ?? new Date().getFullYear();
     const goals    = readGoals(app, settings);
     const allBooks = readAllBooks(app, settings);
-    const books    = allBooks.get(year) ?? [];
-    const goal     = (goals[year] as number) ?? null;
+    const years    = getAvailableYears(goals);
 
-    el.addClass("tracker-pro-reading-challenge");
-    renderChallenge(el, app, year, books, goal, goals, allBooks);
+    const render = (year: number) => {
+        el.empty();
+        el.addClass("tracker-pro-reading-challenge");
+        const books = allBooks.get(year) ?? [];
+        const goal  = (goals[year] as number) ?? null;
+        renderChallenge(el, app, year, books, goal, goals, allBooks,
+            { type: "select", years, onChange: render }
+        );
+    };
+
+    render(config.year ?? new Date().getFullYear());
 }
 
 // ─── Command Entry Point ──────────────────────────────────────────────────────

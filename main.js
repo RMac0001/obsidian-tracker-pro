@@ -20391,11 +20391,14 @@ class ReadingChallengeModal extends obsidian.Modal {
         const { contentEl } = this;
         contentEl.empty();
         contentEl.addClass("tracker-pro-reading-challenge");
-        renderChallenge(contentEl, this.app, this.year, books, goal, goals, allBooks, () => {
-            this.close();
-            new YearSelectorModal(this.app, this.settings, (y) => {
-                new ReadingChallengeModal(this.app, this.settings, y).open();
-            }).open();
+        renderChallenge(contentEl, this.app, this.year, books, goal, goals, allBooks, {
+            type: "button",
+            onClick: () => {
+                this.close();
+                new YearSelectorModal(this.app, this.settings, (y) => {
+                    new ReadingChallengeModal(this.app, this.settings, y).open();
+                }).open();
+            },
         });
     }
     onClose() { this.contentEl.empty(); }
@@ -20423,7 +20426,7 @@ function motivationalText(booksRead, goal, year) {
     return `Press on! Read ${behind} book${behind !== 1 ? "s" : ""} to get back on track.`;
 }
 // ─── Renderer ─────────────────────────────────────────────────────────────────
-function renderChallenge(el, app, year, books, goal, allGoals, allBooks, onChangeYear) {
+function renderChallenge(el, app, year, books, goal, allGoals, allBooks, yearControl) {
     var _a;
     const currentYear = new Date().getFullYear();
     const booksRead = books.length;
@@ -20438,12 +20441,22 @@ function renderChallenge(el, app, year, books, goal, allGoals, allBooks, onChang
     const heroText = hero.createEl("div", { cls: "tracker-pro-rc-hero-text" });
     const heroTop = heroText.createEl("div", { cls: "tracker-pro-rc-hero-top" });
     heroTop.createEl("span", { text: "Reading Challenge", cls: "tracker-pro-rc-title" });
-    if (onChangeYear) {
+    if ((yearControl === null || yearControl === void 0 ? void 0 : yearControl.type) === "button") {
         const changeBtn = heroTop.createEl("button", {
             text: "Change Year ▾",
             cls: "tracker-pro-rc-change-year",
         });
-        changeBtn.onclick = onChangeYear;
+        changeBtn.onclick = yearControl.onClick;
+    }
+    else if ((yearControl === null || yearControl === void 0 ? void 0 : yearControl.type) === "select") {
+        const select = heroTop.createEl("select", { cls: "tracker-pro-rc-year-select" });
+        for (const y of yearControl.years) {
+            const opt = select.createEl("option", { text: String(y) });
+            opt.value = String(y);
+            if (y === year)
+                opt.selected = true;
+        }
+        select.addEventListener("change", () => yearControl.onChange(parseInt(select.value)));
     }
     const subtitle = motivationalText(booksRead, goal, year);
     if (subtitle) {
@@ -20540,14 +20553,19 @@ function renderChallenge(el, app, year, books, goal, allGoals, allBooks, onChang
 }
 // ─── Inline Block Renderer ────────────────────────────────────────────────────
 function renderReadingChallengeBlock(el, app, settings, config) {
-    var _a, _b, _c;
-    const year = (_a = config.year) !== null && _a !== void 0 ? _a : new Date().getFullYear();
+    var _a;
     const goals = readGoals(app, settings);
     const allBooks = readAllBooks(app, settings);
-    const books = (_b = allBooks.get(year)) !== null && _b !== void 0 ? _b : [];
-    const goal = (_c = goals[year]) !== null && _c !== void 0 ? _c : null;
-    el.addClass("tracker-pro-reading-challenge");
-    renderChallenge(el, app, year, books, goal, goals, allBooks);
+    const years = getAvailableYears(goals);
+    const render = (year) => {
+        var _a, _b;
+        el.empty();
+        el.addClass("tracker-pro-reading-challenge");
+        const books = (_a = allBooks.get(year)) !== null && _a !== void 0 ? _a : [];
+        const goal = (_b = goals[year]) !== null && _b !== void 0 ? _b : null;
+        renderChallenge(el, app, year, books, goal, goals, allBooks, { type: "select", years, onChange: render });
+    };
+    render((_a = config.year) !== null && _a !== void 0 ? _a : new Date().getFullYear());
 }
 // ─── Command Entry Point ──────────────────────────────────────────────────────
 function openReadingChallenge(app, settings) {

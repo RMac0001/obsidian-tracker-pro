@@ -454,6 +454,22 @@
   border-color: var(--text-muted);
 }
 
+.tracker-pro-rc-year-select {
+  flex-shrink: 0;
+  font-size: 0.85em;
+  padding: 3px 6px;
+  border-radius: 4px;
+  background: var(--background-secondary);
+  border: 1px solid var(--background-modifier-border);
+  color: var(--text-muted);
+  cursor: pointer;
+}
+
+.tracker-pro-rc-year-select:hover {
+  color: var(--text-normal);
+  border-color: var(--text-muted);
+}
+
 .tracker-pro-rc-subtitle {
   font-size: 0.88em;
   color: var(--text-muted);
