@@ -20366,62 +20366,6 @@ function daysLeft(year) {
     const endOfYear = new Date(year, 11, 31);
     return Math.max(0, Math.floor((endOfYear.getTime() - today.getTime()) / 86400000));
 }
-// ─── Year Selector Modal ──────────────────────────────────────────────────────
-class YearSelectorModal extends obsidian.Modal {
-    constructor(app, settings, onSelect) {
-        super(app);
-        this.settings = settings;
-        this.onSelect = onSelect;
-    }
-    onOpen() {
-        const goals = readGoals(this.app, this.settings);
-        const years = getAvailableYears(goals);
-        const { contentEl } = this;
-        contentEl.empty();
-        contentEl.createEl("h3", { text: "Select Year" });
-        const list = contentEl.createEl("div", { cls: "tracker-pro-rc-year-list" });
-        for (const year of years) {
-            const btn = list.createEl("button", {
-                text: String(year),
-                cls: "tracker-pro-rc-year-btn",
-            });
-            btn.onclick = () => {
-                this.close();
-                this.onSelect(year);
-            };
-        }
-    }
-    onClose() { this.contentEl.empty(); }
-}
-// ─── Reading Challenge Modal ──────────────────────────────────────────────────
-class ReadingChallengeModal extends obsidian.Modal {
-    constructor(app, settings, year) {
-        super(app);
-        this.settings = settings;
-        this.year = year;
-        this.modalEl.addClass("tracker-pro-rc-modal");
-    }
-    onOpen() {
-        var _a, _b;
-        const goals = readGoals(this.app, this.settings);
-        const allBooks = readAllBooks(this.app, this.settings);
-        const books = (_a = allBooks.get(this.year)) !== null && _a !== void 0 ? _a : [];
-        const goal = (_b = goals[this.year]) !== null && _b !== void 0 ? _b : null;
-        const { contentEl } = this;
-        contentEl.empty();
-        contentEl.addClass("tracker-pro-reading-challenge");
-        renderChallenge(contentEl, this.app, this.year, books, goal, {
-            type: "button",
-            onClick: () => {
-                this.close();
-                new YearSelectorModal(this.app, this.settings, (y) => {
-                    new ReadingChallengeModal(this.app, this.settings, y).open();
-                }).open();
-            },
-        });
-    }
-    onClose() { this.contentEl.empty(); }
-}
 // ─── Motivational Text ────────────────────────────────────────────────────────
 function motivationalText(booksRead, goal, year) {
     const currentYear = new Date().getFullYear();
@@ -20459,14 +20403,7 @@ function renderChallenge(el, app, year, books, goal, yearControl) {
     const heroText = hero.createEl("div", { cls: "tracker-pro-rc-hero-text" });
     const heroTop = heroText.createEl("div", { cls: "tracker-pro-rc-hero-top" });
     heroTop.createEl("span", { text: "Reading Challenge", cls: "tracker-pro-rc-title" });
-    if ((yearControl === null || yearControl === void 0 ? void 0 : yearControl.type) === "button") {
-        const changeBtn = heroTop.createEl("button", {
-            text: "Change Year ▾",
-            cls: "tracker-pro-rc-change-year",
-        });
-        changeBtn.onclick = yearControl.onClick;
-    }
-    else if ((yearControl === null || yearControl === void 0 ? void 0 : yearControl.type) === "select") {
+    if (yearControl) {
         const select = heroTop.createEl("select", { cls: "tracker-pro-rc-year-select" });
         for (const y of yearControl.years) {
             const opt = select.createEl("option", { text: String(y) });
@@ -20551,15 +20488,9 @@ function renderReadingChallengeBlock(el, app, settings, config) {
         el.addClass("tracker-pro-reading-challenge");
         const books = (_a = allBooks.get(year)) !== null && _a !== void 0 ? _a : [];
         const goal = (_b = goals[year]) !== null && _b !== void 0 ? _b : null;
-        renderChallenge(el, app, year, books, goal, { type: "select", years, onChange: render });
+        renderChallenge(el, app, year, books, goal, { years, onChange: render });
     };
     render((_a = config.year) !== null && _a !== void 0 ? _a : new Date().getFullYear());
-}
-// ─── Command Entry Point ──────────────────────────────────────────────────────
-function openReadingChallenge(app, settings) {
-    new YearSelectorModal(app, settings, (year) => {
-        new ReadingChallengeModal(app, settings, year).open();
-    }).open();
 }
 
 // ─── Error Display ────────────────────────────────────────────────────────────
@@ -21768,12 +21699,6 @@ class Tracker extends obsidian.Plugin {
             id: "generate-monthly-bills",
             name: "Generate Monthly Bills",
             callback: () => generateMonthlyBills(this.app, this.settings),
-        });
-        // ── Reading Challenge ─────────────────────────────────────────────────
-        this.addCommand({
-            id: "reading-challenge",
-            name: "Tracker Pro: Reading Challenge",
-            callback: () => openReadingChallenge(this.app, this.settings),
         });
         // ── Tracker code block processor ──────────────────────────────────────
         this.registerMarkdownCodeBlockProcessor("tracker-pro", async (source, el, ctx) => {

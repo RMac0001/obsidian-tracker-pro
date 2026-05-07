@@ -607,6 +607,7 @@ it copies the rendered stats to the clipboard as plain text, one stat per line.
 | `{{sum()}}` | Sum of all values across all series and all days |
 | `{{mean()}}` | Average value per data point (active days only) |
 | `{{max()}}` | Highest single value in the range |
+| `{{min()}}` | Lowest single value in the range |
 
 **Using `properties` with `summary`**
 

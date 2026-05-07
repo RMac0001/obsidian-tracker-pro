@@ -1,6 +1,20 @@
 # Tracker Pro — Status
 
-## What was done (v1.1.1 → v1.3.1)
+## What was done (v1.1.1 → v1.3.2)
+
+---
+
+### v1.3.2 — Summary `min()` + Reading Challenge inline
+
+**`min()` template variable for summary charts**
+- Adds `{{min()}}` alongside the existing `{{max()}}`, `{{mean()}}`, and `{{sum()}}` variables
+- Returns the lowest non-null value across all series points in the date range
+
+**Reading Challenge converted to inline block**
+- `type: reading-challenge` now renders directly in a note as a `tracker-pro` code block — no command or modal needed
+- Year selector is a `<select>` dropdown in the hero that re-renders in place
+- Removed the **Tracker Pro: Reading Challenge** command (superseded by the inline block)
+- Goals file uses `reading_goal_YYYY: N` number properties (one per year) instead of a nested map
 
 ---
 
