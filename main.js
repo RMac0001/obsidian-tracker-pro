@@ -20293,7 +20293,7 @@ function readGoals(app, settings) {
         return {};
     const goals = {};
     for (const key of Object.keys(fm)) {
-        const match = key.match(/^goal_(\d{4})$/);
+        const match = key.match(/^reading_goal_(\d{4})$/);
         if (match && typeof fm[key] === "number") {
             goals[parseInt(match[1])] = fm[key];
         }

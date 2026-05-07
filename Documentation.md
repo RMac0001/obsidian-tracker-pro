@@ -964,12 +964,12 @@ your annual book reading progress. Run it from the command palette.
 ### Vault Setup
 
 **Goals file** — a single note (default `Data/Reading Goals.md`) with one
-`goal_YYYY` number property per year:
+`reading_goal_YYYY` number property per year:
 
 ```yaml
-goal_2024: 24
-goal_2025: 20
-goal_2026: 12
+reading_goal_2024: 24
+reading_goal_2025: 20
+reading_goal_2026: 12
 ```
 
 Each property is a standard Obsidian **number** type. Add a new line for each year you want to track.
