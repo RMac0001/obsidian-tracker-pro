@@ -221,19 +221,34 @@ bill_type: Utility   # optional — omit to show all active bills
 ### v1.3.1 — Reading Challenge
 
 New **Tracker Pro: Reading Challenge** command. Opens a year selector then renders an
-interactive reading progress modal showing:
+interactive reading progress modal with a Goodreads-style layout.
 
-- Progress bar (books read / annual goal, using `--color-accent`)
-- Days remaining in the year (or "Completed" for past years)
-- Numbered book list with author and optional series line; clicking a title opens the note
-- Historical summary table for all years in the goal file (✅ Met / ❌ Missed / In progress)
+**Hero section**
+- Colored square badge tile on the left — year in large bold white text with a 📖 icon below; uses `--color-accent`
+- To the right: **Reading Challenge** title + **Change Year ▾** button on the same row
+- Motivational subtitle adapts to your situation:
+  - On track → "You're on track! Keep reading."
+  - Behind → "Press on! Read N book(s) to get back on track."
+  - Past year met → "Challenge complete! You met your goal."
+  - Past year missed → "You read N of G books."
+  - Future year → "Goal: G book(s)"
 
-Annual goals live in a single note (`Data/Reading Goals.md` by default) with a `goals:` map
-(`2026: 12`). Books are discovered from a configured folder + filename prefix, counted by
-`read_complete` date. A **Change Year ▾** button in the modal header re-opens the year
-selector without re-running the command.
+**Progress section**
+- Bold stats line: `N of G books read | D days left` (or "Completed" for past years)
+- Pill-shaped progress bar with the percentage label outside to the right: `[████░░░░] 25%`
 
-Three new settings: **Book notes folder**, **Book note prefix**, **Reading goal file**.
+**Book list** — numbered, sorted by finish date
+- Clickable title (opens the note), author to the right
+- Optional series line below (e.g. `The Stormlight Archive #1`)
+
+**Historical summary table** — one row per year in the goal file
+- Columns: Year / Goal / Read / Result (✅ Met / ❌ Missed / In progress)
+
+**Vault setup:**
+- Goals: a single note (default `Data/Reading Goals.md`) with a `goals:` frontmatter map, e.g. `2026: 12`
+- Books: any note in the configured folder whose basename starts with the configured prefix and has `read_complete: YYYY-MM-DD` in frontmatter
+
+**Three new settings:** Book notes folder · Book note prefix · Reading goal file
 
 ---
 
