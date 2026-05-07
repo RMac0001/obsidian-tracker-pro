@@ -20019,6 +20019,19 @@ async function savePayment(app, payment, amountPaid, masterFolder) {
     }
     new obsidian.Notice(`✓ Payment recorded for ${payment.bill_name}`);
 }
+// ─── Cache Helper ─────────────────────────────────────────────────────────────
+function waitForCacheUpdate(app, filePath) {
+    return new Promise(resolve => {
+        const timeoutId = setTimeout(resolve, 1000);
+        const ref = app.metadataCache.on("changed", (changedFile) => {
+            if (changedFile.path === filePath) {
+                clearTimeout(timeoutId);
+                app.metadataCache.offref(ref);
+                resolve();
+            }
+        });
+    });
+}
 // ─── Row Renderer ─────────────────────────────────────────────────────────────
 function renderMasterLink(td, displayText, billName, masterFolder) {
     const path = obsidian.normalizePath(`${masterFolder}/Bill-${billName}.md`);
@@ -20043,6 +20056,7 @@ function renderBillRow(app, tbody, payment, masterFolder, visibleCols, linkColum
             checkbox.checked = false;
             new RecordPaymentModal(app, payment, async (amountPaid) => {
                 await savePayment(app, payment, amountPaid, masterFolder);
+                await waitForCacheUpdate(app, payment.filePath);
                 onPaymentSaved();
             }).open();
         });

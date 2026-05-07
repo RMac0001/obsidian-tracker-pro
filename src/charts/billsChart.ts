@@ -374,6 +374,21 @@ async function savePayment(
   new Notice(`✓ Payment recorded for ${payment.bill_name}`);
 }
 
+// ─── Cache Helper ─────────────────────────────────────────────────────────────
+
+function waitForCacheUpdate(app: App, filePath: string): Promise<void> {
+  return new Promise<void>(resolve => {
+    const timeoutId = setTimeout(resolve, 1000);
+    const ref = app.metadataCache.on("changed", (changedFile) => {
+      if (changedFile.path === filePath) {
+        clearTimeout(timeoutId);
+        app.metadataCache.offref(ref);
+        resolve();
+      }
+    });
+  });
+}
+
 // ─── Row Renderer ─────────────────────────────────────────────────────────────
 
 function renderMasterLink(td: HTMLElement, displayText: string, billName: string, masterFolder: string): void {
@@ -410,6 +425,7 @@ function renderBillRow(
       checkbox.checked = false;
       new RecordPaymentModal(app, payment, async (amountPaid) => {
         await savePayment(app, payment, amountPaid, masterFolder);
+        await waitForCacheUpdate(app, payment.filePath);
         onPaymentSaved();
       }).open();
     });

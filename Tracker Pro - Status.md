@@ -1,6 +1,6 @@
 # Tracker Pro — Status
 
-## What was done (v1.1.1 → v1.2.8)
+## What was done (v1.1.1 → v1.3.0)
 
 ---
 
@@ -215,6 +215,15 @@ bill_type: Utility   # optional — omit to show all active bills
 
 **`Generate Monthly Bills` command:**
 - Scans all active master notes and creates any missing payment notes for the current month
+
+---
+
+### v1.3.0 — Auto-Refresh Cache Fix
+
+Fixed the bills chart not updating after recording a payment.
+The chart now waits for Obsidian's metadata cache to process the
+saved payment note before re-rendering, so the paid status,
+amount, and date appear immediately without navigating away.
 
 ---
 
