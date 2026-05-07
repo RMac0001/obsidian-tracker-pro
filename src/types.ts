@@ -14,7 +14,8 @@ export type ChartType =
   | "summary"
   | "table"
   | "daily-table"
-  | "bills";
+  | "bills"
+  | "reading-challenge";
 
 // ─── Aggregation ─────────────────────────────────────────────────────────────
 
@@ -118,6 +119,9 @@ export interface TrackerConfig {
 
   // Bills chart
   bill_type?: string;           // optional filter — show only bills of this type
+
+  // Reading Challenge chart
+  year?: number;                // which year to display (default: current year)
 }
 
 // ─── Bills Interfaces ─────────────────────────────────────────────────────────

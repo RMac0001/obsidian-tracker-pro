@@ -2834,7 +2834,7 @@ var load                = loader.load;
 // ─── Valid Values ─────────────────────────────────────────────────────────────
 const VALID_CHART_TYPES = [
     "line", "bar", "pie", "donut", "heatmap",
-    "scatter", "radar", "gauge", "candlestick", "calendar", "summary", "table", "daily-table", "bills",
+    "scatter", "radar", "gauge", "candlestick", "calendar", "summary", "table", "daily-table", "bills", "reading-challenge",
 ];
 const VALID_AGGREGATES = [
     "daily", "weekly", "monthly", "cumulative", "moving-average",
@@ -2902,14 +2902,14 @@ function validateConfig(raw) {
             message: `Unknown chart type "${raw.type}". Valid types: ${VALID_CHART_TYPES.join(", ")}`,
         });
     }
-    // data source (bills manages its own vault paths — no folder config needed)
-    if (raw.type !== "bills" && !raw.folder && !raw.file && !raw.files) {
+    // data source (bills and reading-challenge manage their own vault paths)
+    if (raw.type !== "bills" && raw.type !== "reading-challenge" && !raw.folder && !raw.file && !raw.files) {
         errors.push({
             message: "Must specify at least one of: folder, file, or files",
         });
     }
-    // properties (not required for summary, table, daily-table, or bills)
-    if (raw.type !== "summary" && raw.type !== "table" && raw.type !== "daily-table" && raw.type !== "bills" && raw.source !== "fileMeta") {
+    // properties (not required for summary, table, daily-table, bills, or reading-challenge)
+    if (raw.type !== "summary" && raw.type !== "table" && raw.type !== "daily-table" && raw.type !== "bills" && raw.type !== "reading-challenge" && raw.source !== "fileMeta") {
         if (!raw.properties) {
             errors.push({ message: "Missing required field: properties" });
         }
@@ -2942,6 +2942,8 @@ function validateConfig(raw) {
     const config = raw;
     if (raw.showSource !== undefined)
         config.showSource = Boolean(raw.showSource);
+    if (raw.year !== undefined)
+        config.year = Number(raw.year);
     // Apply defaults
     if (!config.aggregate)
         config.aggregate = "daily";
@@ -20277,6 +20279,276 @@ async function generateMonthlyBills(app, settings) {
     new obsidian.Notice(`Generated ${created} bill${created !== 1 ? "s" : ""} for ${monthName} ${year}`);
 }
 
+// ─── Data Readers ─────────────────────────────────────────────────────────────
+function readGoals(app, settings) {
+    var _a;
+    const path = obsidian.normalizePath(settings.readingGoalFile);
+    const file = app.vault.getAbstractFileByPath(path);
+    if (!(file instanceof obsidian.TFile)) {
+        console.warn(`Tracker Pro: reading goal file not found: ${path}`);
+        return {};
+    }
+    const fm = (_a = app.metadataCache.getFileCache(file)) === null || _a === void 0 ? void 0 : _a.frontmatter;
+    if (!(fm === null || fm === void 0 ? void 0 : fm.goals) || typeof fm.goals !== "object")
+        return {};
+    return fm.goals;
+}
+function readAllBooks(app, settings) {
+    var _a, _b, _c, _d, _e;
+    const folder = settings.bookNotesFolder.replace(/\/$/, "");
+    const prefix = settings.bookNotePrefix;
+    const byYear = new Map();
+    for (const f of app.vault.getMarkdownFiles()) {
+        if (!f.path.startsWith(folder + "/") || !f.basename.startsWith(prefix))
+            continue;
+        const fm = (_b = (_a = app.metadataCache.getFileCache(f)) === null || _a === void 0 ? void 0 : _a.frontmatter) !== null && _b !== void 0 ? _b : {};
+        const readComplete = String((_c = fm.read_complete) !== null && _c !== void 0 ? _c : "");
+        if (!readComplete.match(/^\d{4}-\d{2}-\d{2}$/))
+            continue;
+        const year = parseInt(readComplete.slice(0, 4));
+        let title = String((_d = fm.title) !== null && _d !== void 0 ? _d : "");
+        if (!title) {
+            title = f.basename.slice(prefix.length).replace(/-/g, " ");
+        }
+        const book = {
+            title,
+            author: String((_e = fm.author) !== null && _e !== void 0 ? _e : ""),
+            readComplete,
+            filePath: f.path,
+        };
+        if (fm.series)
+            book.series = String(fm.series);
+        if (fm.series_number != null)
+            book.seriesNumber = Number(fm.series_number);
+        if (!byYear.has(year))
+            byYear.set(year, []);
+        byYear.get(year).push(book);
+    }
+    for (const books of byYear.values()) {
+        books.sort((a, b) => a.readComplete.localeCompare(b.readComplete));
+    }
+    return byYear;
+}
+// ─── Helpers ──────────────────────────────────────────────────────────────────
+function getAvailableYears(goals) {
+    const currentYear = new Date().getFullYear();
+    const goalYears = Object.keys(goals).map(Number).filter((y) => !isNaN(y));
+    return Array.from(new Set([...goalYears, currentYear])).sort((a, b) => b - a);
+}
+function daysLeft(year) {
+    const today = new Date();
+    const endOfYear = new Date(year, 11, 31);
+    return Math.max(0, Math.floor((endOfYear.getTime() - today.getTime()) / 86400000));
+}
+// ─── Year Selector Modal ──────────────────────────────────────────────────────
+class YearSelectorModal extends obsidian.Modal {
+    constructor(app, settings, onSelect) {
+        super(app);
+        this.settings = settings;
+        this.onSelect = onSelect;
+    }
+    onOpen() {
+        const goals = readGoals(this.app, this.settings);
+        const years = getAvailableYears(goals);
+        const { contentEl } = this;
+        contentEl.empty();
+        contentEl.createEl("h3", { text: "Select Year" });
+        const list = contentEl.createEl("div", { cls: "tracker-pro-rc-year-list" });
+        for (const year of years) {
+            const btn = list.createEl("button", {
+                text: String(year),
+                cls: "tracker-pro-rc-year-btn",
+            });
+            btn.onclick = () => {
+                this.close();
+                this.onSelect(year);
+            };
+        }
+    }
+    onClose() { this.contentEl.empty(); }
+}
+// ─── Reading Challenge Modal ──────────────────────────────────────────────────
+class ReadingChallengeModal extends obsidian.Modal {
+    constructor(app, settings, year) {
+        super(app);
+        this.settings = settings;
+        this.year = year;
+        this.modalEl.addClass("tracker-pro-rc-modal");
+    }
+    onOpen() {
+        var _a, _b;
+        const goals = readGoals(this.app, this.settings);
+        const allBooks = readAllBooks(this.app, this.settings);
+        const books = (_a = allBooks.get(this.year)) !== null && _a !== void 0 ? _a : [];
+        const goal = (_b = goals[this.year]) !== null && _b !== void 0 ? _b : null;
+        const { contentEl } = this;
+        contentEl.empty();
+        contentEl.addClass("tracker-pro-reading-challenge");
+        renderChallenge(contentEl, this.app, this.year, books, goal, goals, allBooks, () => {
+            this.close();
+            new YearSelectorModal(this.app, this.settings, (y) => {
+                new ReadingChallengeModal(this.app, this.settings, y).open();
+            }).open();
+        });
+    }
+    onClose() { this.contentEl.empty(); }
+}
+// ─── Motivational Text ────────────────────────────────────────────────────────
+function motivationalText(booksRead, goal, year) {
+    const currentYear = new Date().getFullYear();
+    if (year < currentYear) {
+        if (goal == null)
+            return `${booksRead} book${booksRead !== 1 ? "s" : ""} read`;
+        if (booksRead >= goal)
+            return "Challenge complete! You met your goal.";
+        return `You read ${booksRead} of ${goal} books.`;
+    }
+    if (year > currentYear)
+        return goal != null ? `Goal: ${goal} book${goal !== 1 ? "s" : ""}` : "";
+    if (goal == null)
+        return "";
+    const today = new Date();
+    const dayOfYear = Math.floor((today.getTime() - new Date(year, 0, 1).getTime()) / 86400000) + 1;
+    const daysInYear = (year % 4 === 0 && (year % 100 !== 0 || year % 400 === 0)) ? 366 : 365;
+    const behind = Math.ceil(goal * (dayOfYear / daysInYear) - booksRead);
+    if (behind <= 0)
+        return "You're on track! Keep reading.";
+    return `Press on! Read ${behind} book${behind !== 1 ? "s" : ""} to get back on track.`;
+}
+// ─── Renderer ─────────────────────────────────────────────────────────────────
+function renderChallenge(el, app, year, books, goal, allGoals, allBooks, onChangeYear) {
+    var _a;
+    const currentYear = new Date().getFullYear();
+    const booksRead = books.length;
+    const isPast = year < currentYear;
+    // ── Hero ──────────────────────────────────────────────────────────────────
+    const hero = el.createEl("div", { cls: "tracker-pro-rc-hero" });
+    // Left: colored badge tile
+    const badge = hero.createEl("div", { cls: "tracker-pro-rc-badge" });
+    badge.createEl("div", { text: String(year), cls: "tracker-pro-rc-badge-year" });
+    badge.createEl("div", { text: "📖", cls: "tracker-pro-rc-badge-icon" });
+    // Right: title + subtitle + change-year button
+    const heroText = hero.createEl("div", { cls: "tracker-pro-rc-hero-text" });
+    const heroTop = heroText.createEl("div", { cls: "tracker-pro-rc-hero-top" });
+    heroTop.createEl("span", { text: "Reading Challenge", cls: "tracker-pro-rc-title" });
+    if (onChangeYear) {
+        const changeBtn = heroTop.createEl("button", {
+            text: "Change Year ▾",
+            cls: "tracker-pro-rc-change-year",
+        });
+        changeBtn.onclick = onChangeYear;
+    }
+    const subtitle = motivationalText(booksRead, goal, year);
+    if (subtitle) {
+        heroText.createEl("div", { text: subtitle, cls: "tracker-pro-rc-subtitle" });
+    }
+    // ── Progress ──────────────────────────────────────────────────────────────
+    const progress = el.createEl("div", { cls: "tracker-pro-rc-progress" });
+    const countLine = goal != null
+        ? `${booksRead} of ${goal} books read`
+        : `${booksRead} book${booksRead !== 1 ? "s" : ""} read`;
+    const remaining = daysLeft(year);
+    const timeLine = isPast
+        ? "Completed"
+        : `${remaining} day${remaining !== 1 ? "s" : ""} left`;
+    progress.createEl("div", {
+        text: `${countLine} | ${timeLine}`,
+        cls: "tracker-pro-rc-count",
+    });
+    if (goal != null && goal > 0) {
+        const pct = Math.min(100, Math.round(booksRead / goal * 100));
+        const barRow = progress.createEl("div", { cls: "tracker-pro-rc-bar-row" });
+        const barWrap = barRow.createEl("div", { cls: "tracker-pro-rc-bar-wrap" });
+        const barFill = barWrap.createEl("div", { cls: "tracker-pro-rc-bar-fill" });
+        barFill.style.width = `${pct}%`;
+        barRow.createEl("span", { text: `${pct}%`, cls: "tracker-pro-rc-pct" });
+    }
+    // ── Book List ─────────────────────────────────────────────────────────────
+    el.createEl("div", { text: "Books Read", cls: "tracker-pro-rc-section-title" });
+    el.createEl("hr", { cls: "tracker-pro-rc-divider" });
+    if (books.length === 0) {
+        el.createEl("div", { text: "No books read yet", cls: "tracker-pro-rc-empty" });
+    }
+    else {
+        const list = el.createEl("ol", { cls: "tracker-pro-rc-book-list" });
+        for (const book of books) {
+            const item = list.createEl("li", { cls: "tracker-pro-rc-book-item" });
+            const titleLine = item.createEl("div", { cls: "tracker-pro-rc-book-title-line" });
+            const titleLink = titleLine.createEl("a", {
+                text: book.title,
+                cls: "tracker-pro-rc-book-title internal-link",
+            });
+            titleLink.setAttribute("data-href", book.filePath);
+            titleLink.onclick = (e) => {
+                e.preventDefault();
+                app.workspace.openLinkText(book.filePath, "", false);
+            };
+            if (book.author) {
+                titleLine.createEl("span", {
+                    text: ` · ${book.author}`,
+                    cls: "tracker-pro-rc-book-author",
+                });
+            }
+            if (book.series) {
+                const seriesText = book.seriesNumber != null
+                    ? `${book.series} #${book.seriesNumber}`
+                    : book.series;
+                item.createEl("div", {
+                    text: seriesText,
+                    cls: "tracker-pro-rc-book-series",
+                });
+            }
+        }
+    }
+    // ── Historical Summary ────────────────────────────────────────────────────
+    const summaryYears = Object.keys(allGoals)
+        .map(Number)
+        .filter((y) => !isNaN(y))
+        .sort((a, b) => b - a);
+    if (summaryYears.length > 0) {
+        el.createEl("div", { text: "All Years", cls: "tracker-pro-rc-section-title" });
+        el.createEl("hr", { cls: "tracker-pro-rc-divider" });
+        const table = el.createEl("table", { cls: "tracker-pro-rc-summary-table" });
+        const hr = table.createEl("thead").createEl("tr");
+        for (const h of ["Year", "Goal", "Read", "Result"])
+            hr.createEl("th", { text: h });
+        const tbody = table.createEl("tbody");
+        for (const y of summaryYears) {
+            const g = allGoals[y];
+            const b = ((_a = allBooks.get(y)) !== null && _a !== void 0 ? _a : []).length;
+            let result;
+            if (y === currentYear)
+                result = "In progress";
+            else if (b >= g)
+                result = "✅ Met";
+            else
+                result = "❌ Missed";
+            const tr = tbody.createEl("tr");
+            tr.createEl("td", { text: String(y) });
+            tr.createEl("td", { text: g != null ? String(g) : "—" });
+            tr.createEl("td", { text: String(b) });
+            tr.createEl("td", { text: result });
+        }
+    }
+}
+// ─── Inline Block Renderer ────────────────────────────────────────────────────
+function renderReadingChallengeBlock(el, app, settings, config) {
+    var _a, _b, _c;
+    const year = (_a = config.year) !== null && _a !== void 0 ? _a : new Date().getFullYear();
+    const goals = readGoals(app, settings);
+    const allBooks = readAllBooks(app, settings);
+    const books = (_b = allBooks.get(year)) !== null && _b !== void 0 ? _b : [];
+    const goal = (_c = goals[year]) !== null && _c !== void 0 ? _c : null;
+    el.addClass("tracker-pro-reading-challenge");
+    renderChallenge(el, app, year, books, goal, goals, allBooks);
+}
+// ─── Command Entry Point ──────────────────────────────────────────────────────
+function openReadingChallenge(app, settings) {
+    new YearSelectorModal(app, settings, (year) => {
+        new ReadingChallengeModal(app, settings, year).open();
+    }).open();
+}
+
 // ─── Error Display ────────────────────────────────────────────────────────────
 function renderErrors(container, errors) {
     container.empty();
@@ -20405,6 +20677,12 @@ async function renderTracker(app, container, config, settings) {
     // ── Bills ──────────────────────────────────────────────────────────────────
     if (config.type === "bills") {
         await renderBillsChart(container, app, config, settings);
+        return;
+    }
+    // ── Reading Challenge ──────────────────────────────────────────────────────
+    if (config.type === "reading-challenge") {
+        if (settings)
+            renderReadingChallengeBlock(container, app, settings, config);
         return;
     }
     // ── Summary ───────────────────────────────────────────────────────────────
@@ -21419,264 +21697,16 @@ async function logMeal(app, settings) {
     }
 }
 
-// ─── Data Readers ─────────────────────────────────────────────────────────────
-function readGoals(app, settings) {
-    var _a;
-    const path = obsidian.normalizePath(settings.readingGoalFile);
-    const file = app.vault.getAbstractFileByPath(path);
-    if (!(file instanceof obsidian.TFile)) {
-        console.warn(`Tracker Pro: reading goal file not found: ${path}`);
-        return {};
+function isRelevantFile(changedPath, config, settings) {
+    if (config.type === "reading-challenge" && settings) {
+        const goalFile = obsidian.normalizePath(settings.readingGoalFile);
+        if (changedPath === goalFile)
+            return true;
+        const folder = settings.bookNotesFolder.replace(/\/$/, "");
+        if (changedPath.startsWith(folder + "/"))
+            return true;
+        return false;
     }
-    const fm = (_a = app.metadataCache.getFileCache(file)) === null || _a === void 0 ? void 0 : _a.frontmatter;
-    if (!(fm === null || fm === void 0 ? void 0 : fm.goals) || typeof fm.goals !== "object")
-        return {};
-    return fm.goals;
-}
-function readAllBooks(app, settings) {
-    var _a, _b, _c, _d, _e;
-    const folder = settings.bookNotesFolder.replace(/\/$/, "");
-    const prefix = settings.bookNotePrefix;
-    const byYear = new Map();
-    for (const f of app.vault.getMarkdownFiles()) {
-        if (!f.path.startsWith(folder + "/") || !f.basename.startsWith(prefix))
-            continue;
-        const fm = (_b = (_a = app.metadataCache.getFileCache(f)) === null || _a === void 0 ? void 0 : _a.frontmatter) !== null && _b !== void 0 ? _b : {};
-        const readComplete = String((_c = fm.read_complete) !== null && _c !== void 0 ? _c : "");
-        if (!readComplete.match(/^\d{4}-\d{2}-\d{2}$/))
-            continue;
-        const year = parseInt(readComplete.slice(0, 4));
-        let title = String((_d = fm.title) !== null && _d !== void 0 ? _d : "");
-        if (!title) {
-            title = f.basename.slice(prefix.length).replace(/-/g, " ");
-        }
-        const book = {
-            title,
-            author: String((_e = fm.author) !== null && _e !== void 0 ? _e : ""),
-            readComplete,
-            filePath: f.path,
-        };
-        if (fm.series)
-            book.series = String(fm.series);
-        if (fm.series_number != null)
-            book.seriesNumber = Number(fm.series_number);
-        if (!byYear.has(year))
-            byYear.set(year, []);
-        byYear.get(year).push(book);
-    }
-    for (const books of byYear.values()) {
-        books.sort((a, b) => a.readComplete.localeCompare(b.readComplete));
-    }
-    return byYear;
-}
-// ─── Helpers ──────────────────────────────────────────────────────────────────
-function getAvailableYears(goals) {
-    const currentYear = new Date().getFullYear();
-    const goalYears = Object.keys(goals).map(Number).filter((y) => !isNaN(y));
-    return Array.from(new Set([...goalYears, currentYear])).sort((a, b) => b - a);
-}
-function daysLeft(year) {
-    const today = new Date();
-    const endOfYear = new Date(year, 11, 31);
-    return Math.max(0, Math.floor((endOfYear.getTime() - today.getTime()) / 86400000));
-}
-// ─── Year Selector Modal ──────────────────────────────────────────────────────
-class YearSelectorModal extends obsidian.Modal {
-    constructor(app, settings, onSelect) {
-        super(app);
-        this.settings = settings;
-        this.onSelect = onSelect;
-    }
-    onOpen() {
-        const goals = readGoals(this.app, this.settings);
-        const years = getAvailableYears(goals);
-        const { contentEl } = this;
-        contentEl.empty();
-        contentEl.createEl("h3", { text: "Select Year" });
-        const list = contentEl.createEl("div", { cls: "tracker-pro-rc-year-list" });
-        for (const year of years) {
-            const btn = list.createEl("button", {
-                text: String(year),
-                cls: "tracker-pro-rc-year-btn",
-            });
-            btn.onclick = () => {
-                this.close();
-                this.onSelect(year);
-            };
-        }
-    }
-    onClose() { this.contentEl.empty(); }
-}
-// ─── Reading Challenge Modal ──────────────────────────────────────────────────
-class ReadingChallengeModal extends obsidian.Modal {
-    constructor(app, settings, year) {
-        super(app);
-        this.settings = settings;
-        this.year = year;
-        this.modalEl.addClass("tracker-pro-rc-modal");
-    }
-    onOpen() {
-        var _a, _b;
-        const goals = readGoals(this.app, this.settings);
-        const allBooks = readAllBooks(this.app, this.settings);
-        const books = (_a = allBooks.get(this.year)) !== null && _a !== void 0 ? _a : [];
-        const goal = (_b = goals[this.year]) !== null && _b !== void 0 ? _b : null;
-        const { contentEl } = this;
-        contentEl.empty();
-        contentEl.addClass("tracker-pro-reading-challenge");
-        renderChallenge(contentEl, this.app, this.year, books, goal, goals, allBooks, () => {
-            this.close();
-            new YearSelectorModal(this.app, this.settings, (y) => {
-                new ReadingChallengeModal(this.app, this.settings, y).open();
-            }).open();
-        });
-    }
-    onClose() { this.contentEl.empty(); }
-}
-// ─── Motivational Text ────────────────────────────────────────────────────────
-function motivationalText(booksRead, goal, year) {
-    const currentYear = new Date().getFullYear();
-    if (year < currentYear) {
-        if (goal == null)
-            return `${booksRead} book${booksRead !== 1 ? "s" : ""} read`;
-        if (booksRead >= goal)
-            return "Challenge complete! You met your goal.";
-        return `You read ${booksRead} of ${goal} books.`;
-    }
-    if (year > currentYear)
-        return goal != null ? `Goal: ${goal} book${goal !== 1 ? "s" : ""}` : "";
-    if (goal == null)
-        return "";
-    const today = new Date();
-    const dayOfYear = Math.floor((today.getTime() - new Date(year, 0, 1).getTime()) / 86400000) + 1;
-    const daysInYear = (year % 4 === 0 && (year % 100 !== 0 || year % 400 === 0)) ? 366 : 365;
-    const behind = Math.ceil(goal * (dayOfYear / daysInYear) - booksRead);
-    if (behind <= 0)
-        return "You're on track! Keep reading.";
-    return `Press on! Read ${behind} book${behind !== 1 ? "s" : ""} to get back on track.`;
-}
-// ─── Renderer ─────────────────────────────────────────────────────────────────
-function renderChallenge(el, app, year, books, goal, allGoals, allBooks, onChangeYear) {
-    var _a;
-    const currentYear = new Date().getFullYear();
-    const booksRead = books.length;
-    const isPast = year < currentYear;
-    // ── Hero ──────────────────────────────────────────────────────────────────
-    const hero = el.createEl("div", { cls: "tracker-pro-rc-hero" });
-    // Left: colored badge tile
-    const badge = hero.createEl("div", { cls: "tracker-pro-rc-badge" });
-    badge.createEl("div", { text: String(year), cls: "tracker-pro-rc-badge-year" });
-    badge.createEl("div", { text: "📖", cls: "tracker-pro-rc-badge-icon" });
-    // Right: title + subtitle + change-year button
-    const heroText = hero.createEl("div", { cls: "tracker-pro-rc-hero-text" });
-    const heroTop = heroText.createEl("div", { cls: "tracker-pro-rc-hero-top" });
-    heroTop.createEl("span", { text: "Reading Challenge", cls: "tracker-pro-rc-title" });
-    const changeBtn = heroTop.createEl("button", {
-        text: "Change Year ▾",
-        cls: "tracker-pro-rc-change-year",
-    });
-    changeBtn.onclick = onChangeYear;
-    const subtitle = motivationalText(booksRead, goal, year);
-    if (subtitle) {
-        heroText.createEl("div", { text: subtitle, cls: "tracker-pro-rc-subtitle" });
-    }
-    // ── Progress ──────────────────────────────────────────────────────────────
-    const progress = el.createEl("div", { cls: "tracker-pro-rc-progress" });
-    const countLine = goal != null
-        ? `${booksRead} of ${goal} books read`
-        : `${booksRead} book${booksRead !== 1 ? "s" : ""} read`;
-    const remaining = daysLeft(year);
-    const timeLine = isPast
-        ? "Completed"
-        : `${remaining} day${remaining !== 1 ? "s" : ""} left`;
-    progress.createEl("div", {
-        text: `${countLine} | ${timeLine}`,
-        cls: "tracker-pro-rc-count",
-    });
-    if (goal != null && goal > 0) {
-        const pct = Math.min(100, Math.round(booksRead / goal * 100));
-        const barRow = progress.createEl("div", { cls: "tracker-pro-rc-bar-row" });
-        const barWrap = barRow.createEl("div", { cls: "tracker-pro-rc-bar-wrap" });
-        const barFill = barWrap.createEl("div", { cls: "tracker-pro-rc-bar-fill" });
-        barFill.style.width = `${pct}%`;
-        barRow.createEl("span", { text: `${pct}%`, cls: "tracker-pro-rc-pct" });
-    }
-    // ── Book List ─────────────────────────────────────────────────────────────
-    el.createEl("div", { text: "Books Read", cls: "tracker-pro-rc-section-title" });
-    el.createEl("hr", { cls: "tracker-pro-rc-divider" });
-    if (books.length === 0) {
-        el.createEl("div", { text: "No books read yet", cls: "tracker-pro-rc-empty" });
-    }
-    else {
-        const list = el.createEl("ol", { cls: "tracker-pro-rc-book-list" });
-        for (const book of books) {
-            const item = list.createEl("li", { cls: "tracker-pro-rc-book-item" });
-            const titleLine = item.createEl("div", { cls: "tracker-pro-rc-book-title-line" });
-            const titleLink = titleLine.createEl("a", {
-                text: book.title,
-                cls: "tracker-pro-rc-book-title internal-link",
-            });
-            titleLink.setAttribute("data-href", book.filePath);
-            titleLink.onclick = (e) => {
-                e.preventDefault();
-                app.workspace.openLinkText(book.filePath, "", false);
-            };
-            if (book.author) {
-                titleLine.createEl("span", {
-                    text: ` · ${book.author}`,
-                    cls: "tracker-pro-rc-book-author",
-                });
-            }
-            if (book.series) {
-                const seriesText = book.seriesNumber != null
-                    ? `${book.series} #${book.seriesNumber}`
-                    : book.series;
-                item.createEl("div", {
-                    text: seriesText,
-                    cls: "tracker-pro-rc-book-series",
-                });
-            }
-        }
-    }
-    // ── Historical Summary ────────────────────────────────────────────────────
-    const summaryYears = Object.keys(allGoals)
-        .map(Number)
-        .filter((y) => !isNaN(y))
-        .sort((a, b) => b - a);
-    if (summaryYears.length > 0) {
-        el.createEl("div", { text: "All Years", cls: "tracker-pro-rc-section-title" });
-        el.createEl("hr", { cls: "tracker-pro-rc-divider" });
-        const table = el.createEl("table", { cls: "tracker-pro-rc-summary-table" });
-        const hr = table.createEl("thead").createEl("tr");
-        for (const h of ["Year", "Goal", "Read", "Result"])
-            hr.createEl("th", { text: h });
-        const tbody = table.createEl("tbody");
-        for (const y of summaryYears) {
-            const g = allGoals[y];
-            const b = ((_a = allBooks.get(y)) !== null && _a !== void 0 ? _a : []).length;
-            let result;
-            if (y === currentYear)
-                result = "In progress";
-            else if (b >= g)
-                result = "✅ Met";
-            else
-                result = "❌ Missed";
-            const tr = tbody.createEl("tr");
-            tr.createEl("td", { text: String(y) });
-            tr.createEl("td", { text: g != null ? String(g) : "—" });
-            tr.createEl("td", { text: String(b) });
-            tr.createEl("td", { text: result });
-        }
-    }
-}
-// ─── Entry Point ──────────────────────────────────────────────────────────────
-function openReadingChallenge(app, settings) {
-    new YearSelectorModal(app, settings, (year) => {
-        new ReadingChallengeModal(app, settings, year).open();
-    }).open();
-}
-
-function isRelevantFile(changedPath, config) {
     if (config.folder) {
         const folder = config.folder.replace(/^\//, "").replace(/\/$/, "");
         if (changedPath.startsWith(folder + "/") || changedPath === folder) {
@@ -21761,7 +21791,7 @@ class Tracker extends obsidian.Plugin {
             await render();
             const child = new obsidian.MarkdownRenderChild(container);
             child.registerEvent(this.app.metadataCache.on("changed", (file) => {
-                if (isRelevantFile(file.path, config)) {
+                if (isRelevantFile(file.path, config, this.settings)) {
                     render();
                 }
             }));

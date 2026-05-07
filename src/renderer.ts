@@ -15,6 +15,7 @@ import { renderSummaryChart } from "./charts/summaryChart";
 import { renderTableChart } from "./charts/tableChart";
 import { renderDailyTable } from "./charts/dailyTableChart";
 import { renderBillsChart } from "./charts/billsChart";
+import { renderReadingChallengeBlock } from "./readingChallenge";
 
 // ─── Error Display ────────────────────────────────────────────────────────────
 
@@ -144,6 +145,12 @@ export async function renderTracker(
   // ── Bills ──────────────────────────────────────────────────────────────────
   if (config.type === "bills") {
     await renderBillsChart(container, app, config, settings);
+    return;
+  }
+
+  // ── Reading Challenge ──────────────────────────────────────────────────────
+  if (config.type === "reading-challenge") {
+    if (settings) renderReadingChallengeBlock(container, app, settings, config);
     return;
   }
 

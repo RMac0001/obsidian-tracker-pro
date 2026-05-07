@@ -1,4 +1,4 @@
-import { Plugin, MarkdownRenderChild } from "obsidian";
+import { Plugin, MarkdownRenderChild, normalizePath } from "obsidian";
 import { parseTrackerConfig } from "./parser";
 import { renderTracker, renderErrors } from "./renderer";
 import {
@@ -11,7 +11,15 @@ import { generateMonthlyBills } from "./charts/billsChart";
 import { openReadingChallenge } from "./readingChallenge";
 import { TrackerConfig } from "./types";
 
-function isRelevantFile(changedPath: string, config: TrackerConfig): boolean {
+function isRelevantFile(changedPath: string, config: TrackerConfig, settings?: TrackerSettings): boolean {
+    if (config.type === "reading-challenge" && settings) {
+        const goalFile = normalizePath(settings.readingGoalFile);
+        if (changedPath === goalFile) return true;
+        const folder = settings.bookNotesFolder.replace(/\/$/, "");
+        if (changedPath.startsWith(folder + "/")) return true;
+        return false;
+    }
+
     if (config.folder) {
         const folder = config.folder.replace(/^\//, "").replace(/\/$/, "");
         if (changedPath.startsWith(folder + "/") || changedPath === folder) {
@@ -119,7 +127,7 @@ export default class Tracker extends Plugin {
 
                 child.registerEvent(
                     this.app.metadataCache.on("changed", (file) => {
-                        if (isRelevantFile(file.path, config)) {
+                        if (isRelevantFile(file.path, config, this.settings)) {
                             render();
                         }
                     })

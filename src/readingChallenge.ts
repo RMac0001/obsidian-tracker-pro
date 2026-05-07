@@ -1,5 +1,6 @@
 import { App, Modal, TFile, normalizePath } from "obsidian";
 import { TrackerSettings } from "./settings";
+import { TrackerConfig } from "./types";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -190,7 +191,7 @@ function renderChallenge(
     goal: number | null,
     allGoals: GoalMap,
     allBooks: Map<number, BookData[]>,
-    onChangeYear: () => void
+    onChangeYear?: () => void
 ): void {
     const currentYear = new Date().getFullYear();
     const booksRead   = books.length;
@@ -208,11 +209,13 @@ function renderChallenge(
     const heroText = hero.createEl("div", { cls: "tracker-pro-rc-hero-text" });
     const heroTop  = heroText.createEl("div", { cls: "tracker-pro-rc-hero-top" });
     heroTop.createEl("span", { text: "Reading Challenge", cls: "tracker-pro-rc-title" });
-    const changeBtn = heroTop.createEl("button", {
-        text: "Change Year ▾",
-        cls: "tracker-pro-rc-change-year",
-    });
-    changeBtn.onclick = onChangeYear;
+    if (onChangeYear) {
+        const changeBtn = heroTop.createEl("button", {
+            text: "Change Year ▾",
+            cls: "tracker-pro-rc-change-year",
+        });
+        changeBtn.onclick = onChangeYear;
+    }
 
     const subtitle = motivationalText(booksRead, goal, year);
     if (subtitle) {
@@ -319,7 +322,25 @@ function renderChallenge(
     }
 }
 
-// ─── Entry Point ──────────────────────────────────────────────────────────────
+// ─── Inline Block Renderer ────────────────────────────────────────────────────
+
+export function renderReadingChallengeBlock(
+    el: HTMLElement,
+    app: App,
+    settings: TrackerSettings,
+    config: TrackerConfig
+): void {
+    const year     = config.year ?? new Date().getFullYear();
+    const goals    = readGoals(app, settings);
+    const allBooks = readAllBooks(app, settings);
+    const books    = allBooks.get(year) ?? [];
+    const goal     = (goals[year] as number) ?? null;
+
+    el.addClass("tracker-pro-reading-challenge");
+    renderChallenge(el, app, year, books, goal, goals, allBooks);
+}
+
+// ─── Command Entry Point ──────────────────────────────────────────────────────
 
 export function openReadingChallenge(app: App, settings: TrackerSettings): void {
     new YearSelectorModal(app, settings, (year) => {
