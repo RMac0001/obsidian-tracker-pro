@@ -569,17 +569,22 @@ function multiplierFromDisplay(displayAmount: string, meta: FoodMeta, isFood: bo
 
 // ─── Recent Log Files ─────────────────────────────────────────────────────────
 
-function getMealLogBaseFolder(mealLogFolder: string): string {
-    const idx = mealLogFolder.indexOf("{{DATE:");
-    const base = idx !== -1 ? mealLogFolder.slice(0, idx) : mealLogFolder;
-    return base.replace(/\/$/, "");
+function getMealLogBaseFolder(settings: TrackerSettings): string {
+    const template   = settings.mealLogFolder;
+    const tokenCount = (template.match(/\{\{DATE:/g) ?? []).length;
+    if (tokenCount === 0) return template.replace(/\/$/, "");
+    const resolved   = resolveDateTemplate(template);
+    const parts      = resolved.split("/");
+    return parts.slice(0, Math.max(0, parts.length - tokenCount)).join("/");
 }
 
 function getRecentLogFiles(app: App, settings: TrackerSettings, limit: number): TFile[] {
-    const base = getMealLogBaseFolder(settings.mealLogFolder);
-    return app.vault
-        .getMarkdownFiles()
-        .filter((f) => f.path.startsWith(base + "/"))
+    const base = getMealLogBaseFolder(settings);
+    const files = app.vault.getMarkdownFiles();
+    const filtered = base
+        ? files.filter((f) => f.path.startsWith(base + "/"))
+        : files;
+    return filtered
         .sort((a, b) => b.stat.mtime - a.stat.mtime)
         .slice(0, limit);
 }

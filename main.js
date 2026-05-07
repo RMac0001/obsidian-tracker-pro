@@ -20982,16 +20982,23 @@ function multiplierFromDisplay(displayAmount, meta, isFood) {
     return isFood ? num / meta.servingSize : num;
 }
 // ─── Recent Log Files ─────────────────────────────────────────────────────────
-function getMealLogBaseFolder(mealLogFolder) {
-    const idx = mealLogFolder.indexOf("{{DATE:");
-    const base = idx !== -1 ? mealLogFolder.slice(0, idx) : mealLogFolder;
-    return base.replace(/\/$/, "");
+function getMealLogBaseFolder(settings) {
+    var _a;
+    const template = settings.mealLogFolder;
+    const tokenCount = ((_a = template.match(/\{\{DATE:/g)) !== null && _a !== void 0 ? _a : []).length;
+    if (tokenCount === 0)
+        return template.replace(/\/$/, "");
+    const resolved = resolveDateTemplate(template);
+    const parts = resolved.split("/");
+    return parts.slice(0, Math.max(0, parts.length - tokenCount)).join("/");
 }
 function getRecentLogFiles(app, settings, limit) {
-    const base = getMealLogBaseFolder(settings.mealLogFolder);
-    return app.vault
-        .getMarkdownFiles()
-        .filter((f) => f.path.startsWith(base + "/"))
+    const base = getMealLogBaseFolder(settings);
+    const files = app.vault.getMarkdownFiles();
+    const filtered = base
+        ? files.filter((f) => f.path.startsWith(base + "/"))
+        : files;
+    return filtered
         .sort((a, b) => b.stat.mtime - a.stat.mtime)
         .slice(0, limit);
 }
