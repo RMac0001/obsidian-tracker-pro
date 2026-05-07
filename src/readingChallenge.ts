@@ -58,9 +58,12 @@ function readAllBooks(app: App, settings: TrackerSettings): Map<number, BookData
 
         const year = parseInt(readComplete.slice(0, 4));
 
-        let title = String(fm.title ?? "");
+        let title = String(fm.title ?? "").trim();
         if (!title) {
-            title = f.basename.slice(prefix.length).replace(/-/g, " ");
+            title = f.basename.slice(prefix.length).replace(/-/g, " ").trim();
+        }
+        if (!title) {
+            title = f.basename;
         }
 
         const book: BookData = {

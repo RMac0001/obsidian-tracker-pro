@@ -20318,9 +20318,12 @@ function readAllBooks(app, settings) {
         if (!readComplete.match(/^\d{4}-\d{2}-\d{2}$/))
             continue;
         const year = parseInt(readComplete.slice(0, 4));
-        let title = String((_d = fm.title) !== null && _d !== void 0 ? _d : "");
+        let title = String((_d = fm.title) !== null && _d !== void 0 ? _d : "").trim();
         if (!title) {
-            title = f.basename.slice(prefix.length).replace(/-/g, " ");
+            title = f.basename.slice(prefix.length).replace(/-/g, " ").trim();
+        }
+        if (!title) {
+            title = f.basename;
         }
         const book = {
             title,
