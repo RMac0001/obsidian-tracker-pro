@@ -22,7 +22,9 @@ type YearControl =
 // ─── Data Readers ─────────────────────────────────────────────────────────────
 
 function readGoals(app: App, settings: TrackerSettings): GoalMap {
-    const path = normalizePath(settings.readingGoalFile);
+    let goalPath = settings.readingGoalFile;
+    if (!goalPath.endsWith(".md")) goalPath += ".md";
+    const path = normalizePath(goalPath);
     const file = app.vault.getAbstractFileByPath(path);
     if (!(file instanceof TFile)) {
         console.warn(`Tracker Pro: reading goal file not found: ${path}`);
@@ -34,8 +36,9 @@ function readGoals(app: App, settings: TrackerSettings): GoalMap {
     const goals: GoalMap = {};
     for (const key of Object.keys(fm)) {
         const match = key.match(/^reading_goal_(\d{4})$/);
-        if (match && typeof fm[key] === "number") {
-            goals[parseInt(match[1])] = fm[key] as number;
+        if (match) {
+            const num = typeof fm[key] === "number" ? fm[key] as number : parseInt(String(fm[key]));
+            if (!isNaN(num)) goals[parseInt(match[1])] = num;
         }
     }
     return goals;

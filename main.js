@@ -20282,7 +20282,10 @@ async function generateMonthlyBills(app, settings) {
 // ─── Data Readers ─────────────────────────────────────────────────────────────
 function readGoals(app, settings) {
     var _a;
-    const path = obsidian.normalizePath(settings.readingGoalFile);
+    let goalPath = settings.readingGoalFile;
+    if (!goalPath.endsWith(".md"))
+        goalPath += ".md";
+    const path = obsidian.normalizePath(goalPath);
     const file = app.vault.getAbstractFileByPath(path);
     if (!(file instanceof obsidian.TFile)) {
         console.warn(`Tracker Pro: reading goal file not found: ${path}`);
@@ -20294,8 +20297,10 @@ function readGoals(app, settings) {
     const goals = {};
     for (const key of Object.keys(fm)) {
         const match = key.match(/^reading_goal_(\d{4})$/);
-        if (match && typeof fm[key] === "number") {
-            goals[parseInt(match[1])] = fm[key];
+        if (match) {
+            const num = typeof fm[key] === "number" ? fm[key] : parseInt(String(fm[key]));
+            if (!isNaN(num))
+                goals[parseInt(match[1])] = num;
         }
     }
     return goals;
