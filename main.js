@@ -20289,9 +20289,16 @@ function readGoals(app, settings) {
         return {};
     }
     const fm = (_a = app.metadataCache.getFileCache(file)) === null || _a === void 0 ? void 0 : _a.frontmatter;
-    if (!(fm === null || fm === void 0 ? void 0 : fm.goals) || typeof fm.goals !== "object")
+    if (!fm)
         return {};
-    return fm.goals;
+    const goals = {};
+    for (const key of Object.keys(fm)) {
+        const match = key.match(/^goal_(\d{4})$/);
+        if (match && typeof fm[key] === "number") {
+            goals[parseInt(match[1])] = fm[key];
+        }
+    }
+    return goals;
 }
 function readAllBooks(app, settings) {
     var _a, _b, _c, _d, _e;

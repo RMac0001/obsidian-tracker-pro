@@ -245,7 +245,7 @@ interactive reading progress modal with a Goodreads-style layout.
 - Columns: Year / Goal / Read / Result (✅ Met / ❌ Missed / In progress)
 
 **Vault setup:**
-- Goals: a single note (default `Data/Reading Goals.md`) with a `goals:` frontmatter map, e.g. `2026: 12`
+- Goals: a single note (default `Data/Reading Goals.md`) with one `goal_YYYY` number property per year, e.g. `goal_2026: 12`
 - Books: any note in the configured folder whose basename starts with the configured prefix and has `read_complete: YYYY-MM-DD` in frontmatter
 
 **Three new settings:** Book notes folder · Book note prefix · Reading goal file

@@ -25,8 +25,16 @@ function readGoals(app: App, settings: TrackerSettings): GoalMap {
         return {};
     }
     const fm = app.metadataCache.getFileCache(file)?.frontmatter;
-    if (!fm?.goals || typeof fm.goals !== "object") return {};
-    return fm.goals as GoalMap;
+    if (!fm) return {};
+
+    const goals: GoalMap = {};
+    for (const key of Object.keys(fm)) {
+        const match = key.match(/^goal_(\d{4})$/);
+        if (match && typeof fm[key] === "number") {
+            goals[parseInt(match[1])] = fm[key] as number;
+        }
+    }
+    return goals;
 }
 
 function readAllBooks(app: App, settings: TrackerSettings): Map<number, BookData[]> {

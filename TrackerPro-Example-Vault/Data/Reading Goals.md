@@ -1,13 +1,12 @@
 ---
-goals:
-  2023: 18
-  2024: 24
-  2025: 20
-  2026: 12
+goal_2023: 18
+goal_2024: 24
+goal_2025: 20
+goal_2026: 12
 ---
 
 # Reading Goals
 
 Annual targets for the Reading Challenge tracker.
 
-Add a new `year: target` line under `goals:` for each year you want to track.
+Add a `goal_YYYY: N` number property for each year you want to track.
