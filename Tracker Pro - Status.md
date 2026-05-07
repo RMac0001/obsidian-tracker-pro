@@ -1,6 +1,14 @@
 # Tracker Pro — Status
 
-## What was done (v1.1.1 → v1.3.2)
+## What was done (v1.1.1 → v1.3.3)
+
+---
+
+### v1.3.3 — Edit Meal Log works without an existing log
+
+**Edit meal log — no log required**
+- Previously showed "No food log found for today" and aborted if today's log didn't exist yet
+- Now creates a blank log note automatically (zeroed frontmatter, all four meal sections) and opens the edit modal on it
 
 ---
 
