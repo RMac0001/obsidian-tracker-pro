@@ -31,10 +31,11 @@ and renders them as charts and summaries. It requires no Dataview dependency.
    - [table](#table)
    - [daily-table](#daily-table)
    - [bills](#bills)
-6. [Advanced Features](#advanced-features)
+6. [Reading Challenge](#reading-challenge)
+7. [Advanced Features](#advanced-features)
    - [source: fileMeta](#source-filemeta)
    - [dateAggregation](#dateaggregation)
-7. [Full Parameter Reference](#full-parameter-reference)
+8. [Full Parameter Reference](#full-parameter-reference)
 
 ---
 
@@ -57,6 +58,9 @@ Open **Settings → Tracker Pro** to configure defaults that apply to every bloc
 | **Default folder location** | Folder scanned for notes when no `folder` is set in the block. Defaults to `/` (entire vault). |
 | **Default date format** | Format used to parse dates in note filenames (e.g. `YYYY-MM-DD`). |
 | **Default date property** | Frontmatter key to read dates from instead of the filename. Leave empty to keep using the filename. Can be overridden per block with `dateProperty`. |
+| **Book notes folder** | Folder containing your book review notes (default: `Data/Book Reviews`). |
+| **Book note prefix** | Filename prefix that identifies book notes (default: `BR-`). Only notes whose basename starts with this prefix are counted. |
+| **Reading goal file** | Path to the note holding your annual reading goals (default: `Data/Reading Goals.md`). |
 
 ---
 
@@ -947,6 +951,90 @@ idempotent — it skips notes that already exist.
 frequency interval (1 / 3 / 12 months) until a date in the target month is
 found. If the anchor day exceeds the days in the target month, it is clamped
 (e.g. Jan 31 → Feb 28).
+
+---
+
+## Reading Challenge
+
+The **Tracker Pro: Reading Challenge** command opens an interactive modal showing
+your annual book reading progress. Run it from the command palette.
+
+---
+
+### Vault Setup
+
+**Goals file** — a single note (default `Data/Reading Goals.md`) with a `goals:`
+map in frontmatter:
+
+```yaml
+goals:
+  2024: 24
+  2025: 20
+  2026: 12
+```
+
+Each key is a year; each value is the target number of books for that year.
+
+**Book notes** — any `.md` file in your configured folder whose basename starts
+with the configured prefix and has a `read_complete: YYYY-MM-DD` frontmatter field:
+
+```yaml
+title: The Name of the Wind
+author: Patrick Rothfuss
+series: The Kingkiller Chronicle
+series_number: 1
+read_complete: 2026-03-14
+```
+
+| Field | Required | Description |
+|---|---|---|
+| `read_complete` | Yes | Date the book was finished (`YYYY-MM-DD`). Notes without this field are ignored. |
+| `title` | No | Display title. Falls back to the filename (prefix stripped, hyphens → spaces). |
+| `author` | No | Shown to the right of the title. |
+| `series` | No | Series name shown below the title. |
+| `series_number` | No | Appended to the series name (e.g. `The Stormlight Archive #1`). |
+
+---
+
+### Modal Layout
+
+**Hero section** — a colored square badge tile on the left showing the year and a 📖 icon.
+To the right: "Reading Challenge" title and a **Change Year ▾** button.
+A motivational subtitle beneath the title adapts to your progress:
+
+| Situation | Subtitle |
+|---|---|
+| Current year, on track | "You're on track! Keep reading." |
+| Current year, behind | "Press on! Read N book(s) to get back on track." |
+| Past year, goal met | "Challenge complete! You met your goal." |
+| Past year, goal missed | "You read N of G books." |
+| Future year with goal | "Goal: G book(s)" |
+| No goal set | (no subtitle) |
+
+**Progress section** — bold stats line showing `N of G books read | D days left`
+(or "Completed" for past years), followed by a pill-shaped progress bar with the
+percentage label outside to the right: `[████░░░░] 25%`
+
+**Book list** — numbered and sorted by `read_complete` date. Each entry shows:
+- Clickable title link — opens the note in Obsidian
+- Author to the right of the title
+- Series line below (if `series` is set)
+
+**All Years table** — one row per year found in the goals file:
+
+| Year | Goal | Read | Result |
+|---|---|---|---|
+| 2026 | 12 | 3 | In progress |
+| 2025 | 20 | 22 | ✅ Met |
+| 2024 | 24 | 18 | ❌ Missed |
+
+---
+
+### Changing Years
+
+The **Change Year ▾** button re-opens the year selector without dismissing and
+re-running the command. The selector lists all years that appear in the goals file
+plus the current year.
 
 ---
 
