@@ -290,3 +290,79 @@
 }
 
 
+
+/* ─── Edit Meal Log Modal ────────────────────────────────────────────────────── */
+
+.tracker-pro-edit-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 12px;
+}
+
+.tracker-pro-edit-title {
+  font-weight: 600;
+  font-size: 1em;
+}
+
+.tracker-pro-edit-switch {
+  font-size: 0.8em;
+  padding: 4px 10px;
+  cursor: pointer;
+  border-radius: 4px;
+  background: var(--background-secondary);
+  border: 1px solid var(--background-modifier-border);
+}
+
+.tracker-pro-edit-summary {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 4px;
+}
+
+.tracker-pro-edit-summary-item {
+  font-size: 0.8em;
+  padding: 2px 8px;
+  border-radius: 10px;
+  background: var(--background-secondary);
+  color: var(--text-muted);
+}
+
+.tracker-pro-edit-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 4px;
+}
+
+.tracker-pro-edit-action-btn {
+  text-align: left;
+  padding: 10px 12px;
+  border-radius: 6px;
+  cursor: pointer;
+  background: var(--background-secondary);
+  border: 1px solid var(--background-modifier-border);
+  font-size: 0.95em;
+}
+
+.tracker-pro-edit-action-btn:hover {
+  background: var(--background-modifier-hover);
+}
+
+.tracker-pro-edit-save {
+  display: block;
+  width: 100%;
+  margin-top: 14px;
+  padding: 10px;
+  cursor: pointer;
+  border-radius: 6px;
+  font-weight: 600;
+  background: var(--interactive-accent);
+  color: var(--text-on-accent);
+  border: none;
+}
+
+.tracker-pro-edit-save:hover {
+  background: var(--interactive-accent-hover);
+}

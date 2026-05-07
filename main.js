@@ -20643,19 +20643,23 @@ class FileSuggestModal extends obsidian.FuzzySuggestModal {
  * Recipes: asks "How many servings?"
  *          multiplier = amount
  *          default = 1
+ *
+ * Pass defaultValue to pre-fill a specific number (used by change-quantity).
+ * Pass buttonLabel to customise the submit button text.
  */
 class AmountModal extends obsidian.Modal {
-    constructor(app, itemName, meta, isFood, onSubmit) {
+    constructor(app, itemName, meta, isFood, onSubmit, defaultValue, buttonLabel = "Add to meal") {
         super(app);
         this.itemName = itemName;
         this.meta = meta;
         this.isFood = isFood;
         this.onSubmit = onSubmit;
+        this.defaultValue = defaultValue;
+        this.buttonLabel = buttonLabel;
     }
     onOpen() {
         const { contentEl } = this;
         contentEl.createEl("h3", { text: this.itemName });
-        // Context hint
         const hint = this.isFood
             ? `1 serving = ${this.meta.servingSize} ${this.meta.servingUnit}  ·  ${this.meta.nutrition.calories} cal per serving`
             : `${this.meta.nutrition.calories} cal per serving`;
@@ -20663,7 +20667,6 @@ class AmountModal extends obsidian.Modal {
             text: hint,
             attr: { style: "margin:4px 0 12px;color:var(--text-muted);font-size:0.85em;" },
         });
-        // Label
         const labelText = this.isFood
             ? `Amount (${this.meta.servingUnit})`
             : "Servings";
@@ -20682,12 +20685,13 @@ class AmountModal extends obsidian.Modal {
                     "color:var(--text-normal);margin:6px 0 12px;",
             },
         });
-        // Pre-fill: one serving worth of the unit for foods, 1 for recipes
-        this.input.value = this.isFood ? String(this.meta.servingSize) : "1";
+        this.input.value = this.defaultValue !== undefined
+            ? String(this.defaultValue)
+            : this.isFood ? String(this.meta.servingSize) : "1";
         this.input.focus();
         this.input.select();
         const btn = contentEl.createEl("button", {
-            text: "Add to meal",
+            text: this.buttonLabel,
             attr: { style: "width:100%;padding:8px;cursor:pointer;" },
         });
         btn.onclick = () => this.submit();
@@ -20737,7 +20741,7 @@ function buildUpdatedFrontmatter(existing, mealType, entries, settings) {
         if (!(`${macro}_total` in fm))
             fm[`${macro}_total`] = 0;
     }
-    // Accumulate into this meal (safe to call twice for the same meal type)
+    // Accumulate into this meal
     fm[`cal_${key}`] = round1((fm[`cal_${key}`] || 0) + mealNutrition.calories);
     fm[`protein_${key}`] = round1((fm[`protein_${key}`] || 0) + mealNutrition.protein);
     fm[`fat_${key}`] = round1((fm[`fat_${key}`] || 0) + mealNutrition.fat);
@@ -20854,14 +20858,6 @@ function zeroMealInFrontmatter(fm, mealType) {
     fm[`carbs_${key}`] = 0;
     recalcTotals(fm);
 }
-function subtractFromFrontmatter(fm, mealType, nutrition) {
-    const key = mealKey(mealType);
-    fm[`cal_${key}`] = round1((fm[`cal_${key}`] || 0) - nutrition.calories);
-    fm[`protein_${key}`] = round1((fm[`protein_${key}`] || 0) - nutrition.protein);
-    fm[`fat_${key}`] = round1((fm[`fat_${key}`] || 0) - nutrition.fat);
-    fm[`carbs_${key}`] = round1((fm[`carbs_${key}`] || 0) - nutrition.carbs);
-    recalcTotals(fm);
-}
 function recalcTotals(fm) {
     const allKeys = ["breakfast", "lunch", "dinner", "snacks"];
     fm.cal_total = round1(allKeys.reduce((s, m) => s + (fm[`cal_${m}`] || 0), 0));
@@ -20911,48 +20907,393 @@ function clearMeal(app, settings) {
         }).open();
     }).open();
 }
-// ─── Edit Today's Log ─────────────────────────────────────────────────────────
-function editMealLog(app, settings) {
-    new StringSuggestModal(app, MEAL_TYPES, "Which meal to edit?", async (mealTypeStr) => {
-        const mealType = mealTypeStr;
-        const filePath = resolveTodayPath(settings);
-        const file = app.vault.getAbstractFileByPath(filePath);
-        if (!(file instanceof obsidian.TFile)) {
-            new obsidian.Notice("No food log found for today.");
+// ─── Log Parsing ──────────────────────────────────────────────────────────────
+function extractBody(content) {
+    const lines = content.split("\n");
+    if (lines[0] !== "---")
+        return content;
+    for (let i = 1; i < lines.length; i++) {
+        if (lines[i] === "---")
+            return lines.slice(i + 1).join("\n");
+    }
+    return content;
+}
+function parseLogLine(line) {
+    const m = line.match(/^-\s+\[\[(.+?)\]\]\s+\((.+?)\)/);
+    if (!m)
+        return null;
+    return { name: m[1], displayAmount: m[2], rawLine: line };
+}
+function parseMealSections(body) {
+    const meals = new Map(MEAL_TYPES.map((mt) => [mt, []]));
+    const lines = body.split("\n");
+    let currentMeal = null;
+    for (const line of lines) {
+        const hm = line.match(/^##\s+(.+)/);
+        if (hm) {
+            const heading = hm[1].trim();
+            currentMeal = MEAL_TYPES.includes(heading) ? heading : null;
+            continue;
+        }
+        if (currentMeal && line.trimStart().startsWith("- ")) {
+            const parsed = parseLogLine(line);
+            if (parsed)
+                meals.get(currentMeal).push(parsed);
+        }
+    }
+    return meals;
+}
+function parseNotesLines(body) {
+    const lines = body.split("\n");
+    let inNotes = false;
+    const notes = [];
+    for (const line of lines) {
+        if (line.trim() === "## Notes") {
+            inNotes = true;
+            continue;
+        }
+        if (inNotes) {
+            if (line.startsWith("## "))
+                break;
+            notes.push(line);
+        }
+    }
+    while (notes.length && notes[notes.length - 1].trim() === "")
+        notes.pop();
+    return notes;
+}
+// ─── File Lookup ──────────────────────────────────────────────────────────────
+function findItemFile(app, name, settings) {
+    const allMd = app.vault.getMarkdownFiles();
+    const foodBase = settings.foodFolder.replace(/\/$/, "");
+    const recBase = settings.recipeFolder.replace(/\/$/, "");
+    const foodFile = allMd.find((f) => f.path.startsWith(foodBase + "/") && f.basename === name);
+    if (foodFile)
+        return { file: foodFile, isFood: true };
+    const recFile = allMd.find((f) => f.path.startsWith(recBase + "/") && f.basename === name);
+    if (recFile)
+        return { file: recFile, isFood: false };
+    return null;
+}
+function multiplierFromDisplay(displayAmount, meta, isFood) {
+    const num = parseFloat(displayAmount);
+    if (isNaN(num))
+        return 1;
+    return isFood ? num / meta.servingSize : num;
+}
+// ─── Recent Log Files ─────────────────────────────────────────────────────────
+function getMealLogBaseFolder(mealLogFolder) {
+    const idx = mealLogFolder.indexOf("{{DATE:");
+    const base = idx !== -1 ? mealLogFolder.slice(0, idx) : mealLogFolder;
+    return base.replace(/\/$/, "");
+}
+function getRecentLogFiles(app, settings, limit) {
+    const base = getMealLogBaseFolder(settings.mealLogFolder);
+    return app.vault
+        .getMarkdownFiles()
+        .filter((f) => f.path.startsWith(base + "/"))
+        .sort((a, b) => b.stat.mtime - a.stat.mtime)
+        .slice(0, limit);
+}
+// ─── Recalculate and Save ─────────────────────────────────────────────────────
+async function recalcAndSave(app, settings, file, meals, notesLines) {
+    var _a, _b;
+    const allKeys = ["breakfast", "lunch", "dinner", "snacks"];
+    const mealTotals = {
+        breakfast: { calories: 0, protein: 0, fat: 0, carbs: 0 },
+        lunch: { calories: 0, protein: 0, fat: 0, carbs: 0 },
+        dinner: { calories: 0, protein: 0, fat: 0, carbs: 0 },
+        snacks: { calories: 0, protein: 0, fat: 0, carbs: 0 },
+    };
+    const freshLines = new Map();
+    for (const mealType of MEAL_TYPES) {
+        const key = mealKey(mealType);
+        const entries = (_a = meals.get(mealType)) !== null && _a !== void 0 ? _a : [];
+        const lines = [];
+        for (const entry of entries) {
+            const found = findItemFile(app, entry.name, settings);
+            let nutrition;
+            if (found) {
+                // Re-pull fresh from source note
+                const meta = found.isFood
+                    ? getFoodMeta(app, found.file)
+                    : getRecipeMeta(app, found.file);
+                const multiplier = multiplierFromDisplay(entry.displayAmount, meta, found.isFood);
+                nutrition = {
+                    calories: meta.nutrition.calories * multiplier,
+                    protein: meta.nutrition.protein * multiplier,
+                    fat: meta.nutrition.fat * multiplier,
+                    carbs: meta.nutrition.carbs * multiplier,
+                };
+            }
+            else {
+                // Source note not found — fall back to stored values in the log line
+                const m = entry.rawLine.match(/— ([\d.]+) cal \| ([\d.]+)g protein \| ([\d.]+)g fat \| ([\d.]+)g carbs/);
+                nutrition = m
+                    ? { calories: parseFloat(m[1]), protein: parseFloat(m[2]), fat: parseFloat(m[3]), carbs: parseFloat(m[4]) }
+                    : { calories: 0, protein: 0, fat: 0, carbs: 0 };
+            }
+            mealTotals[key].calories += nutrition.calories;
+            mealTotals[key].protein += nutrition.protein;
+            mealTotals[key].fat += nutrition.fat;
+            mealTotals[key].carbs += nutrition.carbs;
+            lines.push(`- [[${entry.name}]] (${entry.displayAmount}) — ` +
+                `${round1(nutrition.calories)} cal | ` +
+                `${round1(nutrition.protein)}g protein | ` +
+                `${round1(nutrition.fat)}g fat | ` +
+                `${round1(nutrition.carbs)}g carbs`);
+        }
+        freshLines.set(mealType, lines);
+    }
+    // Update frontmatter in-place
+    await app.fileManager.processFrontMatter(file, (fm) => {
+        for (const m of allKeys) {
+            fm[`cal_${m}`] = round1(mealTotals[m].calories);
+            fm[`protein_${m}`] = round1(mealTotals[m].protein);
+            fm[`fat_${m}`] = round1(mealTotals[m].fat);
+            fm[`carbs_${m}`] = round1(mealTotals[m].carbs);
+        }
+        fm.cal_total = round1(allKeys.reduce((s, m) => s + mealTotals[m].calories, 0));
+        fm.protein_total = round1(allKeys.reduce((s, m) => s + mealTotals[m].protein, 0));
+        fm.fat_total = round1(allKeys.reduce((s, m) => s + mealTotals[m].fat, 0));
+        fm.carbs_total = round1(allKeys.reduce((s, m) => s + mealTotals[m].carbs, 0));
+    });
+    // Rebuild body (meal sections + Notes)
+    const d = new Date();
+    const dateStr = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+    let body = "";
+    for (const mealType of MEAL_TYPES) {
+        body += `## ${mealType}\n`;
+        const lines = (_b = freshLines.get(mealType)) !== null && _b !== void 0 ? _b : [];
+        if (lines.length > 0)
+            body += lines.join("\n") + "\n";
+        body += "\n";
+    }
+    body += `## Notes\n`;
+    if (notesLines.length > 0)
+        body += notesLines.join("\n") + "\n";
+    body += `- ${dateStr} — Log recalculated\n`;
+    // Extract the frontmatter block (already updated by processFrontMatter) and rewrite body
+    const updated = await app.vault.read(file);
+    const fmLines = updated.split("\n");
+    let fmEnd = -1;
+    if (fmLines[0] === "---") {
+        for (let i = 1; i < fmLines.length; i++) {
+            if (fmLines[i] === "---") {
+                fmEnd = i;
+                break;
+            }
+        }
+    }
+    const fmBlock = fmEnd !== -1 ? fmLines.slice(0, fmEnd + 1).join("\n") : "";
+    await app.vault.modify(file, fmBlock + "\n\n" + body);
+}
+// ─── Edit Meal Log Modal ──────────────────────────────────────────────────────
+class EditMealLogModal extends obsidian.Modal {
+    constructor(app, settings, file) {
+        super(app);
+        this.settings = settings;
+        this.file = file;
+        this.meals = new Map(MEAL_TYPES.map((mt) => [mt, []]));
+        this.notesLines = [];
+    }
+    onOpen() {
+        this.contentEl.setText("Loading…");
+        this.loadFile().then(() => this.render());
+    }
+    async loadFile() {
+        const content = await this.app.vault.read(this.file);
+        const body = extractBody(content);
+        this.meals = parseMealSections(body);
+        this.notesLines = parseNotesLines(body);
+    }
+    render() {
+        var _a;
+        const { contentEl } = this;
+        contentEl.empty();
+        // ── Header ────────────────────────────────────────────────────────────
+        const header = contentEl.createEl("div", { cls: "tracker-pro-edit-header" });
+        header.createEl("span", {
+            text: this.file.basename,
+            cls: "tracker-pro-edit-title",
+        });
+        const switchBtn = header.createEl("button", {
+            text: "Switch date",
+            cls: "tracker-pro-edit-switch",
+        });
+        switchBtn.onclick = () => this.switchDate();
+        // ── Item summary ──────────────────────────────────────────────────────
+        const summary = contentEl.createEl("div", { cls: "tracker-pro-edit-summary" });
+        let hasItems = false;
+        for (const mealType of MEAL_TYPES) {
+            const count = ((_a = this.meals.get(mealType)) !== null && _a !== void 0 ? _a : []).length;
+            if (count === 0)
+                continue;
+            hasItems = true;
+            summary.createEl("span", {
+                text: `${mealType}: ${count} item${count !== 1 ? "s" : ""}`,
+                cls: "tracker-pro-edit-summary-item",
+            });
+        }
+        if (!hasItems) {
+            summary.createEl("span", {
+                text: "No items logged yet",
+                attr: { style: "color:var(--text-muted);font-size:0.85em;" },
+            });
+        }
+        // ── Actions ───────────────────────────────────────────────────────────
+        contentEl.createEl("p", {
+            text: "What would you like to do?",
+            attr: { style: "margin:12px 0 8px;color:var(--text-muted);font-size:0.9em;" },
+        });
+        const actionList = contentEl.createEl("div", { cls: "tracker-pro-edit-actions" });
+        const actions = [
+            { label: "Change quantity on an item", fn: () => this.changeQuantity() },
+            { label: "Remove an item", fn: () => this.removeItem() },
+            { label: "Add an item to a meal", fn: () => this.addItem() },
+            { label: "Add a meal block", fn: () => this.addMealBlock() },
+        ];
+        for (const action of actions) {
+            const btn = actionList.createEl("button", {
+                text: action.label,
+                cls: "tracker-pro-edit-action-btn",
+            });
+            btn.onclick = () => action.fn();
+        }
+        // ── Save ──────────────────────────────────────────────────────────────
+        const saveBtn = contentEl.createEl("button", {
+            text: "Save and recalculate",
+            cls: "tracker-pro-edit-save",
+        });
+        saveBtn.onclick = () => this.save();
+    }
+    switchDate() {
+        const files = getRecentLogFiles(this.app, this.settings, 30);
+        if (files.length === 0) {
+            new obsidian.Notice("No log files found.");
             return;
         }
-        const content = await app.vault.read(file);
-        const lines = content.split("\n");
-        const { headerIdx, entryLines } = getMealSectionLines(lines, mealType);
-        if (headerIdx === -1) {
-            new obsidian.Notice(`No ${mealType} section found in today's log.`);
+        new FileSuggestModal(this.app, files, "Select a log to edit…", async (f) => {
+            this.file = f;
+            await this.loadFile();
+            this.render();
+        }).open();
+    }
+    changeQuantity() {
+        const mealsWithEntries = MEAL_TYPES.filter((mt) => { var _a; return ((_a = this.meals.get(mt)) !== null && _a !== void 0 ? _a : []).length > 0; });
+        if (mealsWithEntries.length === 0) {
+            new obsidian.Notice("No items to change.");
             return;
         }
-        if (entryLines.length === 0) {
-            new obsidian.Notice(`No items in ${mealType} to remove.`);
+        new StringSuggestModal(this.app, mealsWithEntries, "Which meal?", (mealTypeStr) => {
+            var _a;
+            const mealType = mealTypeStr;
+            const entries = (_a = this.meals.get(mealType)) !== null && _a !== void 0 ? _a : [];
+            const labels = entries.map((e) => `${e.name} (${e.displayAmount})`);
+            new StringSuggestModal(this.app, labels, "Change quantity on which item?", (label) => {
+                const idx = labels.indexOf(label);
+                const entry = entries[idx];
+                const found = findItemFile(this.app, entry.name, this.settings);
+                if (!found) {
+                    new obsidian.Notice(`Cannot find source file for "${entry.name}".`);
+                    this.render();
+                    return;
+                }
+                const meta = found.isFood
+                    ? getFoodMeta(this.app, found.file)
+                    : getRecipeMeta(this.app, found.file);
+                const currentAmount = parseFloat(entry.displayAmount);
+                new AmountModal(this.app, entry.name, meta, found.isFood, (_multiplier, displayAmount) => {
+                    entry.displayAmount = displayAmount;
+                    this.render();
+                }, isNaN(currentAmount) ? undefined : currentAmount, "Update").open();
+            }).open();
+        }).open();
+    }
+    removeItem() {
+        const mealsWithEntries = MEAL_TYPES.filter((mt) => { var _a; return ((_a = this.meals.get(mt)) !== null && _a !== void 0 ? _a : []).length > 0; });
+        if (mealsWithEntries.length === 0) {
+            new obsidian.Notice("No items to remove.");
             return;
         }
-        new StringSuggestModal(app, entryLines, `Remove which ${mealType} item?`, async (selectedLine) => {
-            const match = selectedLine.match(/— ([\d.]+) cal \| ([\d.]+)g protein \| ([\d.]+)g fat \| ([\d.]+)g carbs/);
-            if (!match) {
-                new obsidian.Notice("Could not parse nutrition from that line.");
+        new StringSuggestModal(this.app, mealsWithEntries, "Which meal?", (mealTypeStr) => {
+            const mealType = mealTypeStr;
+            const entries = this.meals.get(mealType);
+            const labels = entries.map((e) => `${e.name} (${e.displayAmount})`);
+            new StringSuggestModal(this.app, labels, "Remove which item?", (label) => {
+                const idx = labels.indexOf(label);
+                entries.splice(idx, 1);
+                this.render();
+            }).open();
+        }).open();
+    }
+    addItem() {
+        new StringSuggestModal(this.app, MEAL_TYPES, "Add to which meal?", (mealTypeStr) => this.searchAndAdd(mealTypeStr)).open();
+    }
+    addMealBlock() {
+        new StringSuggestModal(this.app, MEAL_TYPES, "Which meal type?", (mealTypeStr) => this.searchAndAdd(mealTypeStr)).open();
+    }
+    searchAndAdd(mealType) {
+        new StringSuggestModal(this.app, ["Search food database", "Search recipes"], "Food or recipe?", (choice) => {
+            const isFood = choice === "Search food database";
+            const folder = isFood ? this.settings.foodFolder : this.settings.recipeFolder;
+            const label = isFood ? "foods" : "recipes";
+            const files = this.app.vault
+                .getMarkdownFiles()
+                .filter((f) => f.path.startsWith(folder.replace(/\/$/, "") + "/"));
+            if (files.length === 0) {
+                new obsidian.Notice(`No files found in: ${folder}`);
                 return;
             }
-            const removed = {
-                calories: parseFloat(match[1]),
-                protein: parseFloat(match[2]),
-                fat: parseFloat(match[3]),
-                carbs: parseFloat(match[4]),
-            };
-            // Remove exactly the first occurrence of that line
-            const idx = lines.indexOf(selectedLine);
-            if (idx !== -1)
-                lines.splice(idx, 1);
-            await app.vault.modify(file, lines.join("\n"));
-            await app.fileManager.processFrontMatter(file, (fm) => subtractFromFrontmatter(fm, mealType, removed));
-            new obsidian.Notice(`✓ Item removed from ${mealType}`);
+            new FileSuggestModal(this.app, files, `Search ${label}…`, (file) => {
+                const meta = isFood
+                    ? getFoodMeta(this.app, file)
+                    : getRecipeMeta(this.app, file);
+                new AmountModal(this.app, file.basename, meta, isFood, (multiplier, displayAmount) => {
+                    const nutrition = {
+                        calories: meta.nutrition.calories * multiplier,
+                        protein: meta.nutrition.protein * multiplier,
+                        fat: meta.nutrition.fat * multiplier,
+                        carbs: meta.nutrition.carbs * multiplier,
+                    };
+                    const rawLine = `- [[${file.basename}]] (${displayAmount}) — ` +
+                        `${round1(nutrition.calories)} cal | ` +
+                        `${round1(nutrition.protein)}g protein | ` +
+                        `${round1(nutrition.fat)}g fat | ` +
+                        `${round1(nutrition.carbs)}g carbs`;
+                    this.meals.get(mealType).push({
+                        name: file.basename,
+                        displayAmount,
+                        rawLine,
+                    });
+                    new obsidian.Notice(`Added: ${file.basename}`);
+                    this.render();
+                }).open();
+            }).open();
         }).open();
-    }).open();
+    }
+    save() {
+        recalcAndSave(this.app, this.settings, this.file, this.meals, this.notesLines)
+            .then(() => {
+            new obsidian.Notice(`✓ ${this.file.basename} saved and recalculated`);
+            this.close();
+        })
+            .catch((e) => {
+            new obsidian.Notice(`Error saving: ${String(e)}`);
+            console.error(e);
+        });
+    }
+    onClose() { this.contentEl.empty(); }
+}
+// ─── Edit Meal Log ────────────────────────────────────────────────────────────
+function editMealLog(app, settings) {
+    const todayPath = resolveTodayPath(settings);
+    const todayFile = app.vault.getAbstractFileByPath(todayPath);
+    if (!(todayFile instanceof obsidian.TFile)) {
+        new obsidian.Notice("No food log found for today.");
+        return;
+    }
+    new EditMealLogModal(app, settings, todayFile).open();
 }
 // ─── Main Entry Point ─────────────────────────────────────────────────────────
 async function logMeal(app, settings) {
@@ -21062,7 +21403,7 @@ class Tracker extends obsidian.Plugin {
         });
         this.addCommand({
             id: "edit-meal-log",
-            name: "Edit today's meal log",
+            name: "Edit meal log",
             callback: () => editMealLog(this.app, this.settings),
         });
         // ── Bill Tracker commands ─────────────────────────────────────────────

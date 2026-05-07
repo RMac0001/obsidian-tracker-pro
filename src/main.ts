@@ -59,7 +59,7 @@ export default class Tracker extends Plugin {
 
         this.addCommand({
             id: "edit-meal-log",
-            name: "Edit today's meal log",
+            name: "Edit meal log",
             callback: () => editMealLog(this.app, this.settings),
         });
 

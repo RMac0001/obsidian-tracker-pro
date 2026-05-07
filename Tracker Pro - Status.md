@@ -218,6 +218,22 @@ bill_type: Utility   # optional — omit to show all active bills
 
 ---
 
+### v1.2.9 — Edit Meal Log v2
+
+The "Edit today's meal log" command has been replaced by a unified **Edit meal log** command.
+
+On invoke, today's log opens immediately in a persistent modal. A **Switch date** button in the modal header opens a fuzzy picker of the 30 most recent log files (newest first) to switch to any past log without closing the modal.
+
+**Four edit actions available at any time:**
+- **Change quantity** — pick a meal and item, pre-fills the current amount, re-uses the AmountModal
+- **Remove item** — pick a meal and item to delete; meal heading is always retained
+- **Add item to a meal** — full food/recipe search, same UX as Log Meal
+- **Add a meal block** — same as above; picks meal type first then searches
+
+**Save and recalculate:** on save, nutrition values are re-pulled fresh from each food/recipe source note (not re-summed from stored log values). A timestamped `- YYYY-MM-DD — Log recalculated` bullet is appended to a `## Notes` section at the bottom of the file (created automatically on first save). The entire file is rewritten.
+
+---
+
 ### v1.2.8 — Auto-Refresh on File Change
 
 `tracker-pro` code blocks now automatically re-render whenever a file in their
