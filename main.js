@@ -21533,42 +21533,73 @@ class ReadingChallengeModal extends obsidian.Modal {
     }
     onClose() { this.contentEl.empty(); }
 }
+// ─── Motivational Text ────────────────────────────────────────────────────────
+function motivationalText(booksRead, goal, year) {
+    const currentYear = new Date().getFullYear();
+    if (year < currentYear) {
+        if (goal == null)
+            return `${booksRead} book${booksRead !== 1 ? "s" : ""} read`;
+        if (booksRead >= goal)
+            return "Challenge complete! You met your goal.";
+        return `You read ${booksRead} of ${goal} books.`;
+    }
+    if (year > currentYear)
+        return goal != null ? `Goal: ${goal} book${goal !== 1 ? "s" : ""}` : "";
+    if (goal == null)
+        return "";
+    const today = new Date();
+    const dayOfYear = Math.floor((today.getTime() - new Date(year, 0, 1).getTime()) / 86400000) + 1;
+    const daysInYear = (year % 4 === 0 && (year % 100 !== 0 || year % 400 === 0)) ? 366 : 365;
+    const behind = Math.ceil(goal * (dayOfYear / daysInYear) - booksRead);
+    if (behind <= 0)
+        return "You're on track! Keep reading.";
+    return `Press on! Read ${behind} book${behind !== 1 ? "s" : ""} to get back on track.`;
+}
 // ─── Renderer ─────────────────────────────────────────────────────────────────
 function renderChallenge(el, app, year, books, goal, allGoals, allBooks, onChangeYear) {
     var _a;
     const currentYear = new Date().getFullYear();
     const booksRead = books.length;
     const isPast = year < currentYear;
-    // ── Header ────────────────────────────────────────────────────────────────
-    const header = el.createEl("div", { cls: "tracker-pro-rc-header" });
-    header.createEl("span", {
-        text: `📖  ${year} Reading Challenge`,
-        cls: "tracker-pro-rc-title",
-    });
-    const changeBtn = header.createEl("button", {
+    // ── Hero ──────────────────────────────────────────────────────────────────
+    const hero = el.createEl("div", { cls: "tracker-pro-rc-hero" });
+    // Left: colored badge tile
+    const badge = hero.createEl("div", { cls: "tracker-pro-rc-badge" });
+    badge.createEl("div", { text: String(year), cls: "tracker-pro-rc-badge-year" });
+    badge.createEl("div", { text: "📖", cls: "tracker-pro-rc-badge-icon" });
+    // Right: title + subtitle + change-year button
+    const heroText = hero.createEl("div", { cls: "tracker-pro-rc-hero-text" });
+    const heroTop = heroText.createEl("div", { cls: "tracker-pro-rc-hero-top" });
+    heroTop.createEl("span", { text: "Reading Challenge", cls: "tracker-pro-rc-title" });
+    const changeBtn = heroTop.createEl("button", {
         text: "Change Year ▾",
         cls: "tracker-pro-rc-change-year",
     });
     changeBtn.onclick = onChangeYear;
+    const subtitle = motivationalText(booksRead, goal, year);
+    if (subtitle) {
+        heroText.createEl("div", { text: subtitle, cls: "tracker-pro-rc-subtitle" });
+    }
     // ── Progress ──────────────────────────────────────────────────────────────
     const progress = el.createEl("div", { cls: "tracker-pro-rc-progress" });
     const countLine = goal != null
-        ? `${booksRead} of ${goal} book${goal !== 1 ? "s" : ""}`
+        ? `${booksRead} of ${goal} books read`
         : `${booksRead} book${booksRead !== 1 ? "s" : ""} read`;
     const remaining = daysLeft(year);
     const timeLine = isPast
         ? "Completed"
         : `${remaining} day${remaining !== 1 ? "s" : ""} left`;
     progress.createEl("div", {
-        text: `${countLine} · ${timeLine}`,
+        text: `${countLine} | ${timeLine}`,
         cls: "tracker-pro-rc-count",
     });
     if (goal != null && goal > 0) {
         const pct = Math.min(100, Math.round(booksRead / goal * 100));
-        const barWrap = progress.createEl("div", { cls: "tracker-pro-rc-bar-wrap" });
+        const barRow = progress.createEl("div", { cls: "tracker-pro-rc-bar-row" });
+        const barWrap = barRow.createEl("div", { cls: "tracker-pro-rc-bar-wrap" });
         const barFill = barWrap.createEl("div", { cls: "tracker-pro-rc-bar-fill" });
         barFill.style.width = `${pct}%`;
-        progress.createEl("div", { text: `${pct}%`, cls: "tracker-pro-rc-pct" });
+        barRow.createEl("span", { text: `${pct}%`, cls: "tracker-pro-rc-pct" });
     }
     // ── Book List ─────────────────────────────────────────────────────────────
     el.createEl("div", { text: "Books Read", cls: "tracker-pro-rc-section-title" });
