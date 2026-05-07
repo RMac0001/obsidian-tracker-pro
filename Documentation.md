@@ -9,14 +9,20 @@ and renders them as charts and summaries. It requires no Dataview dependency.
 
 1. [Installation](#installation)
 2. [Global Settings](#global-settings)
-3. [How It Works](#how-it-works)
-4. [Core Parameters](#core-parameters)
+3. [Meal Logger](#meal-logger)
+   - [Vault Structure](#vault-structure)
+   - [Daily Log Frontmatter](#daily-log-frontmatter)
+   - [Log meal](#log-meal)
+   - [Clear meal](#clear-meal)
+   - [Edit meal log](#edit-meal-log)
+4. [How It Works](#how-it-works)
+5. [Core Parameters](#core-parameters)
    - [Data Source](#data-source)
    - [Date Handling](#date-handling)
    - [Properties](#properties)
    - [Aggregation](#aggregation)
    - [Visuals](#visuals)
-5. [Chart Types](#chart-types)
+6. [Chart Types](#chart-types)
    - [line](#line)
    - [bar](#bar)
    - [pie](#pie)
@@ -31,11 +37,11 @@ and renders them as charts and summaries. It requires no Dataview dependency.
    - [table](#table)
    - [daily-table](#daily-table)
    - [bills](#bills)
-6. [Reading Challenge](#reading-challenge)
-7. [Advanced Features](#advanced-features)
+7. [Reading Challenge](#reading-challenge)
+8. [Advanced Features](#advanced-features)
    - [source: fileMeta](#source-filemeta)
    - [dateAggregation](#dateaggregation)
-8. [Full Parameter Reference](#full-parameter-reference)
+9. [Full Parameter Reference](#full-parameter-reference)
 
 ---
 
@@ -53,14 +59,150 @@ and renders them as charts and summaries. It requires no Dataview dependency.
 
 Open **Settings → Tracker Pro** to configure defaults that apply to every block:
 
+**Charts**
+
 | Setting | Description |
 |---|---|
 | **Default folder location** | Folder scanned for notes when no `folder` is set in the block. Defaults to `/` (entire vault). |
 | **Default date format** | Format used to parse dates in note filenames (e.g. `YYYY-MM-DD`). |
 | **Default date property** | Frontmatter key to read dates from instead of the filename. Leave empty to keep using the filename. Can be overridden per block with `dateProperty`. |
+
+**Meal Logger**
+
+| Setting | Description |
+|---|---|
+| **Meal log folder** | Folder path for daily meal log notes. Supports `{{DATE:FORMAT}}` tokens (e.g. `Data/Food Logs/{{DATE:YYYY}}/{{DATE:YYYY-MM}}`). |
+| **Meal log filename** | Filename template for daily log notes. Supports `{{DATE:FORMAT}}` tokens (e.g. `{{DATE:YYYY-MM-DD}}`). |
+| **Food database folder** | Folder containing individual food notes (e.g. `Data/Food`). |
+| **Recipes folder** | Folder containing recipe notes (e.g. `Data/Recipes`). |
+
+**Bills**
+
+| Setting | Description |
+|---|---|
+| **Bills master folder** | Folder containing master bill notes (default: `Data/Bills`). |
+| **Bills payment folder template** | Folder template for monthly payment notes. Supports `{{DATE:FORMAT}}` tokens (default: `Data/Bills/Payments/BP-{{DATE:YYYY}}/BP-{{DATE:YYYY-MM}}`). |
+
+**Reading Challenge**
+
+| Setting | Description |
+|---|---|
 | **Book notes folder** | Folder containing your book review notes (default: `Data/Book Reviews`). |
 | **Book note prefix** | Filename prefix that identifies book notes (default: `BR-`). Only notes whose basename starts with this prefix are counted. |
 | **Reading goal file** | Path to the note holding your annual reading goals (default: `Data/Reading Goals.md`). |
+
+---
+
+## Meal Logger
+
+The Meal Logger is a set of commands for logging and editing daily food and nutrition data. All commands are available from the command palette.
+
+---
+
+### Vault Structure
+
+**Daily log notes** — one note per day at the path defined by your settings:
+
+```
+Data/Food Logs/2026/2026-05/2026-05-07.md
+```
+
+**Food database notes** — one note per food item in your `Food database folder`:
+
+```yaml
+food_name: Peanut Butter
+serving_size: 2
+serving_unit: oz
+calories: 190
+protein: 7
+fat: 16
+carbs: 8
+```
+
+**Recipe notes** — one note per recipe in your `Recipes folder`:
+
+```yaml
+recipe_name: Cup of Coffee
+servings: 1
+calories: 45
+protein: 0
+fat: 2
+carbs: 5
+```
+
+---
+
+### Daily Log Frontmatter
+
+The plugin writes 20 nutrition fields automatically — totals for the full day plus a breakdown per meal:
+
+```yaml
+cal_total: 1580       protein_total: 95      fat_total: 62      carbs_total: 180
+cal_breakfast: 380    protein_breakfast: 20  fat_breakfast: 14  carbs_breakfast: 42
+cal_lunch: 620        protein_lunch: 38      fat_lunch: 24      carbs_lunch: 68
+cal_dinner: 490       protein_dinner: 30     fat_dinner: 20     carbs_dinner: 58
+cal_snacks: 90        protein_snacks: 7      fat_snacks: 4      carbs_snacks: 12
+```
+
+These fields are what `daily-table` and `table` chart blocks read.
+
+---
+
+### Log meal
+
+Run **Tracker Pro: Log meal** from the command palette.
+
+1. Pick a meal type — Breakfast, Lunch, Dinner, or Snacks
+2. Search the food database or recipes by name
+3. Enter the amount (in the food's unit for foods; number of servings for recipes)
+4. Choose to add more items or finish
+
+If today's log note doesn't exist it is created automatically. If it does exist, entries are appended to the correct meal section and frontmatter totals are updated.
+
+**Remove last item** — while building a meal, a "Remove last item (Name)" option appears in the menu whenever the list isn't empty. Selecting it pops the last entry and loops back.
+
+**Log line format:**
+
+```
+- [[Peanut Butter]] (2 oz) — 190 cal | 7g protein | 16g fat | 8g carbs
+- [[Recipe - Cup of Coffee]] (1 serving) — 45 cal | 0g protein | 2g fat | 5g carbs
+```
+
+---
+
+### Clear meal
+
+Run **Tracker Pro: Clear meal** from the command palette.
+
+1. Pick a meal type
+2. Confirm
+
+Zeroes all 8 frontmatter fields for that meal, removes all bullet lines from that section, and recalculates the four `_total` fields.
+
+---
+
+### Edit meal log
+
+Run **Tracker Pro: Edit meal log** from the command palette.
+
+Opens the edit modal for today's log. If no log exists for today, a blank one is created automatically with zeroed frontmatter and all four meal sections.
+
+**Switch date** — a button in the modal header opens a picker of the 30 most recent log files so you can edit any past log without closing the modal.
+
+Four edit actions are always available:
+
+| Action | Description |
+|---|---|
+| **Change quantity** | Pick a meal and item, adjust the amount — saves and recalculates |
+| **Remove item** | Pick a meal and item to delete |
+| **Add item to a meal** | Full food/recipe search; choose which meal to add to |
+| **Add a meal block** | Pick the meal type first, then search for the item |
+
+**Save and recalculate** — on save, nutrition values are re-pulled fresh from the source food/recipe notes (not re-summed from stored log values). A timestamped bullet is appended to a `## Notes` section at the bottom of the file:
+
+```
+- 2026-05-07 — Log recalculated
+```
 
 ---
 
@@ -957,8 +1099,16 @@ found. If the anchor day exceeds the days in the target month, it is clamped
 
 ## Reading Challenge
 
-The **Tracker Pro: Reading Challenge** command opens an interactive modal showing
-your annual book reading progress. Run it from the command palette.
+The Reading Challenge renders inline in any note as a `tracker-pro` code block:
+
+````
+```tracker-pro
+type: reading-challenge
+year: 2026
+```
+````
+
+`year` is optional — omit it to default to the current year. The block auto-refreshes when any book note or the goals file changes.
 
 ---
 
@@ -996,10 +1146,10 @@ read_complete: 2026-03-14
 
 ---
 
-### Modal Layout
+### Block Layout
 
 **Hero section** — a colored square badge tile on the left showing the year and a 📖 icon.
-To the right: "Reading Challenge" title and a **Change Year ▾** button.
+To the right: "Reading Challenge" title and a **year dropdown** to switch years in place.
 A motivational subtitle beneath the title adapts to your progress:
 
 | Situation | Subtitle |
@@ -1020,21 +1170,11 @@ percentage label outside to the right: `[████░░░░] 25%`
 - Author to the right of the title
 - Series line below (if `series` is set)
 
-**All Years table** — one row per year found in the goals file:
-
-| Year | Goal | Read | Result |
-|---|---|---|---|
-| 2026 | 12 | 3 | In progress |
-| 2025 | 20 | 22 | ✅ Met |
-| 2024 | 24 | 18 | ❌ Missed |
-
 ---
 
 ### Changing Years
 
-The **Change Year ▾** button re-opens the year selector without dismissing and
-re-running the command. The selector lists all years that appear in the goals file
-plus the current year.
+The year dropdown in the hero re-renders the block in place for the selected year. The list includes all years that appear in the goals file plus the current year.
 
 ---
 
