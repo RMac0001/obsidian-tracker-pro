@@ -1,6 +1,6 @@
 # Tracker Pro — Status
 
-## What was done (v1.1.1 → v1.3.0)
+## What was done (v1.1.1 → v1.3.1)
 
 ---
 
@@ -215,6 +215,25 @@ bill_type: Utility   # optional — omit to show all active bills
 
 **`Generate Monthly Bills` command:**
 - Scans all active master notes and creates any missing payment notes for the current month
+
+---
+
+### v1.3.1 — Reading Challenge
+
+New **Tracker Pro: Reading Challenge** command. Opens a year selector then renders an
+interactive reading progress modal showing:
+
+- Progress bar (books read / annual goal, using `--color-accent`)
+- Days remaining in the year (or "Completed" for past years)
+- Numbered book list with author and optional series line; clicking a title opens the note
+- Historical summary table for all years in the goal file (✅ Met / ❌ Missed / In progress)
+
+Annual goals live in a single note (`Data/Reading Goals.md` by default) with a `goals:` map
+(`2026: 12`). Books are discovered from a configured folder + filename prefix, counted by
+`read_complete` date. A **Change Year ▾** button in the modal header re-opens the year
+selector without re-running the command.
+
+Three new settings: **Book notes folder**, **Book note prefix**, **Reading goal file**.
 
 ---
 

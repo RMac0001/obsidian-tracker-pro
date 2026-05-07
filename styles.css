@@ -366,3 +366,158 @@
 .tracker-pro-edit-save:hover {
   background: var(--interactive-accent-hover);
 }
+
+/* ─── Reading Challenge ──────────────────────────────────────────────────────── */
+
+.tracker-pro-rc-modal .modal-content {
+  max-width: 580px;
+  width: 100%;
+}
+
+.tracker-pro-reading-challenge {
+  padding: 4px 0;
+}
+
+.tracker-pro-rc-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 16px;
+}
+
+.tracker-pro-rc-title {
+  font-size: 1.1em;
+  font-weight: 700;
+}
+
+.tracker-pro-rc-change-year {
+  font-size: 0.8em;
+  padding: 4px 10px;
+  cursor: pointer;
+  border-radius: 4px;
+  background: var(--background-secondary);
+  border: 1px solid var(--background-modifier-border);
+}
+
+.tracker-pro-rc-progress {
+  margin-bottom: 18px;
+}
+
+.tracker-pro-rc-count {
+  font-size: 0.95em;
+  color: var(--text-muted);
+  margin-bottom: 6px;
+}
+
+.tracker-pro-rc-bar-wrap {
+  height: 12px;
+  background: var(--background-modifier-border);
+  border-radius: 6px;
+  overflow: hidden;
+  margin: 4px 0;
+}
+
+.tracker-pro-rc-bar-fill {
+  height: 100%;
+  background: var(--color-accent);
+  border-radius: 6px;
+}
+
+.tracker-pro-rc-pct {
+  text-align: right;
+  font-size: 0.8em;
+  color: var(--text-muted);
+  margin-top: 2px;
+}
+
+.tracker-pro-rc-section-title {
+  font-weight: 600;
+  font-size: 0.9em;
+  margin: 20px 0 4px;
+}
+
+.tracker-pro-rc-divider {
+  border: none;
+  border-top: 1px solid var(--background-modifier-border);
+  margin: 0 0 10px;
+}
+
+.tracker-pro-rc-empty {
+  color: var(--text-muted);
+  font-size: 0.9em;
+  font-style: italic;
+}
+
+.tracker-pro-rc-book-list {
+  padding-left: 20px;
+  margin: 0;
+}
+
+.tracker-pro-rc-book-item {
+  margin-bottom: 8px;
+}
+
+.tracker-pro-rc-book-title-line {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 2px;
+}
+
+.tracker-pro-rc-book-title {
+  font-weight: 500;
+  text-decoration: none;
+  color: var(--text-accent);
+  cursor: pointer;
+}
+
+.tracker-pro-rc-book-author {
+  font-size: 0.85em;
+  color: var(--text-muted);
+}
+
+.tracker-pro-rc-book-series {
+  font-size: 0.8em;
+  color: var(--text-faint);
+  font-style: italic;
+  margin-top: 1px;
+}
+
+.tracker-pro-rc-summary-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.9em;
+  margin-top: 4px;
+}
+
+.tracker-pro-rc-summary-table th,
+.tracker-pro-rc-summary-table td {
+  text-align: left;
+  padding: 4px 12px 4px 0;
+}
+
+.tracker-pro-rc-summary-table th {
+  font-weight: 600;
+  border-bottom: 1px solid var(--background-modifier-border);
+}
+
+.tracker-pro-rc-year-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 10px;
+}
+
+.tracker-pro-rc-year-btn {
+  padding: 10px 16px;
+  text-align: left;
+  font-size: 1em;
+  cursor: pointer;
+  border-radius: 6px;
+  background: var(--background-secondary);
+  border: 1px solid var(--background-modifier-border);
+}
+
+.tracker-pro-rc-year-btn:hover {
+  background: var(--background-modifier-hover);
+}

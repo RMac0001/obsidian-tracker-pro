@@ -8,6 +8,7 @@ import {
 } from "./settings";
 import { logMeal, clearMeal, editMealLog } from "./mealLogger";
 import { generateMonthlyBills } from "./charts/billsChart";
+import { openReadingChallenge } from "./readingChallenge";
 import { TrackerConfig } from "./types";
 
 function isRelevantFile(changedPath: string, config: TrackerConfig): boolean {
@@ -68,6 +69,13 @@ export default class Tracker extends Plugin {
             id: "generate-monthly-bills",
             name: "Generate Monthly Bills",
             callback: () => generateMonthlyBills(this.app, this.settings),
+        });
+
+        // ── Reading Challenge ─────────────────────────────────────────────────
+        this.addCommand({
+            id: "reading-challenge",
+            name: "Tracker Pro: Reading Challenge",
+            callback: () => openReadingChallenge(this.app, this.settings),
         });
 
         // ── Tracker code block processor ──────────────────────────────────────
