@@ -20399,7 +20399,7 @@ class ReadingChallengeModal extends obsidian.Modal {
         const { contentEl } = this;
         contentEl.empty();
         contentEl.addClass("tracker-pro-reading-challenge");
-        renderChallenge(contentEl, this.app, this.year, books, goal, goals, allBooks, {
+        renderChallenge(contentEl, this.app, this.year, books, goal, {
             type: "button",
             onClick: () => {
                 this.close();
@@ -20434,8 +20434,7 @@ function motivationalText(booksRead, goal, year) {
     return `Press on! Read ${behind} book${behind !== 1 ? "s" : ""} to get back on track.`;
 }
 // ─── Renderer ─────────────────────────────────────────────────────────────────
-function renderChallenge(el, app, year, books, goal, allGoals, allBooks, yearControl) {
-    var _a;
+function renderChallenge(el, app, year, books, goal, yearControl) {
     const currentYear = new Date().getFullYear();
     const booksRead = books.length;
     const isPast = year < currentYear;
@@ -20528,36 +20527,6 @@ function renderChallenge(el, app, year, books, goal, allGoals, allBooks, yearCon
             }
         }
     }
-    // ── Historical Summary ────────────────────────────────────────────────────
-    const summaryYears = Object.keys(allGoals)
-        .map(Number)
-        .filter((y) => !isNaN(y))
-        .sort((a, b) => b - a);
-    if (summaryYears.length > 0) {
-        el.createEl("div", { text: "All Years", cls: "tracker-pro-rc-section-title" });
-        el.createEl("hr", { cls: "tracker-pro-rc-divider" });
-        const table = el.createEl("table", { cls: "tracker-pro-rc-summary-table" });
-        const hr = table.createEl("thead").createEl("tr");
-        for (const h of ["Year", "Goal", "Read", "Result"])
-            hr.createEl("th", { text: h });
-        const tbody = table.createEl("tbody");
-        for (const y of summaryYears) {
-            const g = allGoals[y];
-            const b = ((_a = allBooks.get(y)) !== null && _a !== void 0 ? _a : []).length;
-            let result;
-            if (y === currentYear)
-                result = "In progress";
-            else if (b >= g)
-                result = "✅ Met";
-            else
-                result = "❌ Missed";
-            const tr = tbody.createEl("tr");
-            tr.createEl("td", { text: String(y) });
-            tr.createEl("td", { text: g != null ? String(g) : "—" });
-            tr.createEl("td", { text: String(b) });
-            tr.createEl("td", { text: result });
-        }
-    }
 }
 // ─── Inline Block Renderer ────────────────────────────────────────────────────
 function renderReadingChallengeBlock(el, app, settings, config) {
@@ -20571,7 +20540,7 @@ function renderReadingChallengeBlock(el, app, settings, config) {
         el.addClass("tracker-pro-reading-challenge");
         const books = (_a = allBooks.get(year)) !== null && _a !== void 0 ? _a : [];
         const goal = (_b = goals[year]) !== null && _b !== void 0 ? _b : null;
-        renderChallenge(el, app, year, books, goal, goals, allBooks, { type: "select", years, onChange: render });
+        renderChallenge(el, app, year, books, goal, { type: "select", years, onChange: render });
     };
     render((_a = config.year) !== null && _a !== void 0 ? _a : new Date().getFullYear());
 }
@@ -20606,7 +20575,7 @@ async function renderTracker(app, container, config, settings) {
     container.empty();
     container.addClass("tracker-pro-container");
     // Apply size (charts only — tables and summaries size to their content)
-    if (config.height && config.type !== "summary" && config.type !== "table" && config.type !== "daily-table" && config.type !== "bills")
+    if (config.height && config.type !== "summary" && config.type !== "table" && config.type !== "daily-table" && config.type !== "bills" && config.type !== "reading-challenge")
         container.style.height = config.height + "px";
     if (config.width)
         container.style.width = config.width;

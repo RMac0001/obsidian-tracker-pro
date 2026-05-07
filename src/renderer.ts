@@ -51,7 +51,7 @@ export async function renderTracker(
   container.addClass("tracker-pro-container");
 
   // Apply size (charts only — tables and summaries size to their content)
-  if (config.height && config.type !== "summary" && config.type !== "table" && config.type !== "daily-table" && config.type !== "bills") container.style.height = config.height + "px";
+  if (config.height && config.type !== "summary" && config.type !== "table" && config.type !== "daily-table" && config.type !== "bills" && config.type !== "reading-challenge") container.style.height = config.height + "px";
   if (config.width)  container.style.width  = config.width;
 
   // ── Candlestick: own data path ─────────────────────────────────────────────

@@ -158,7 +158,7 @@ export class ReadingChallengeModal extends Modal {
         contentEl.empty();
         contentEl.addClass("tracker-pro-reading-challenge");
 
-        renderChallenge(contentEl, this.app, this.year, books, goal, goals, allBooks, {
+        renderChallenge(contentEl, this.app, this.year, books, goal, {
             type: "button",
             onClick: () => {
                 this.close();
@@ -201,8 +201,6 @@ function renderChallenge(
     year: number,
     books: BookData[],
     goal: number | null,
-    allGoals: GoalMap,
-    allBooks: Map<number, BookData[]>,
     yearControl?: YearControl
 ): void {
     const currentYear = new Date().getFullYear();
@@ -309,37 +307,6 @@ function renderChallenge(
         }
     }
 
-    // ── Historical Summary ────────────────────────────────────────────────────
-    const summaryYears = Object.keys(allGoals)
-        .map(Number)
-        .filter((y) => !isNaN(y))
-        .sort((a, b) => b - a);
-
-    if (summaryYears.length > 0) {
-        el.createEl("div", { text: "All Years", cls: "tracker-pro-rc-section-title" });
-        el.createEl("hr", { cls: "tracker-pro-rc-divider" });
-
-        const table = el.createEl("table", { cls: "tracker-pro-rc-summary-table" });
-        const hr    = table.createEl("thead").createEl("tr");
-        for (const h of ["Year", "Goal", "Read", "Result"]) hr.createEl("th", { text: h });
-
-        const tbody = table.createEl("tbody");
-        for (const y of summaryYears) {
-            const g = allGoals[y] as number;
-            const b = (allBooks.get(y) ?? []).length;
-
-            let result: string;
-            if (y === currentYear)  result = "In progress";
-            else if (b >= g)        result = "✅ Met";
-            else                    result = "❌ Missed";
-
-            const tr = tbody.createEl("tr");
-            tr.createEl("td", { text: String(y) });
-            tr.createEl("td", { text: g != null ? String(g) : "—" });
-            tr.createEl("td", { text: String(b) });
-            tr.createEl("td", { text: result });
-        }
-    }
 }
 
 // ─── Inline Block Renderer ────────────────────────────────────────────────────
@@ -359,7 +326,7 @@ export function renderReadingChallengeBlock(
         el.addClass("tracker-pro-reading-challenge");
         const books = allBooks.get(year) ?? [];
         const goal  = (goals[year] as number) ?? null;
-        renderChallenge(el, app, year, books, goal, goals, allBooks,
+        renderChallenge(el, app, year, books, goal,
             { type: "select", years, onChange: render }
         );
     };
