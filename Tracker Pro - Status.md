@@ -1,6 +1,45 @@
 # Tracker Pro — Status
 
-## What was done (v1.1.1 → v1.2.8)
+## What was done (v1.1.1 → v1.4.0)
+
+---
+
+### v1.4.0 — Interactive Date Range Selector
+
+**`dateSelector: true` — interactive dropdown above any chart**
+- Add `dateSelector: true` to any chart block and a date-range `<select>` renders above the chart
+- Selecting a preset re-renders only the chart portion; the selector stays in place
+- Choosing **Custom…** reveals two `<input type="date">` fields; updating either date re-renders immediately
+- Works with all chart types that support `dateRange`
+
+**New `dateRange` presets**
+- `today` — start = today, end = today
+- `last-week` — the previous full calendar week (Sunday → Saturday)
+- `last-month` — the previous full calendar month (1st → last day)
+
+**Dropdown options (in order):** Today · This Week · This Month · This Year · Last Week · Last Month · Last Year · Last 7 Days · Last 30 Days · Last 90 Days · Last 6 Months · Last 12 Months · All Time · Custom…
+
+---
+
+### v1.3.3 — Edit Meal Log works without an existing log
+
+**Edit meal log — no log required**
+- Previously showed "No food log found for today" and aborted if today's log didn't exist yet
+- Now creates a blank log note automatically (zeroed frontmatter, all four meal sections) and opens the edit modal on it
+
+---
+
+### v1.3.2 — Summary `min()` + Reading Challenge inline
+
+**`min()` template variable for summary charts**
+- Adds `{{min()}}` alongside the existing `{{max()}}`, `{{mean()}}`, and `{{sum()}}` variables
+- Returns the lowest non-null value across all series points in the date range
+
+**Reading Challenge converted to inline block**
+- `type: reading-challenge` now renders directly in a note as a `tracker-pro` code block — no command or modal needed
+- Year selector is a `<select>` dropdown in the hero that re-renders in place
+- Removed the **Tracker Pro: Reading Challenge** command (superseded by the inline block)
+- Goals file uses `reading_goal_YYYY: N` number properties (one per year) instead of a nested map
 
 ---
 
@@ -215,6 +254,65 @@ bill_type: Utility   # optional — omit to show all active bills
 
 **`Generate Monthly Bills` command:**
 - Scans all active master notes and creates any missing payment notes for the current month
+
+---
+
+### v1.3.1 — Reading Challenge
+
+New **Tracker Pro: Reading Challenge** command. Opens a year selector then renders an
+interactive reading progress modal with a Goodreads-style layout.
+
+**Hero section**
+- Colored square badge tile on the left — year in large bold white text with a 📖 icon below; uses `--color-accent`
+- To the right: **Reading Challenge** title + **Change Year ▾** button on the same row
+- Motivational subtitle adapts to your situation:
+  - On track → "You're on track! Keep reading."
+  - Behind → "Press on! Read N book(s) to get back on track."
+  - Past year met → "Challenge complete! You met your goal."
+  - Past year missed → "You read N of G books."
+  - Future year → "Goal: G book(s)"
+
+**Progress section**
+- Bold stats line: `N of G books read | D days left` (or "Completed" for past years)
+- Pill-shaped progress bar with the percentage label outside to the right: `[████░░░░] 25%`
+
+**Book list** — numbered, sorted by finish date
+- Clickable title (opens the note), author to the right
+- Optional series line below (e.g. `The Stormlight Archive #1`)
+
+**Historical summary table** — one row per year in the goal file
+- Columns: Year / Goal / Read / Result (✅ Met / ❌ Missed / In progress)
+
+**Vault setup:**
+- Goals: a single note (default `Data/Reading Goals.md`) with one `reading_goal_YYYY` number property per year, e.g. `reading_goal_2026: 12`
+- Books: any note in the configured folder whose basename starts with the configured prefix and has `read_complete: YYYY-MM-DD` in frontmatter
+
+**Three new settings:** Book notes folder · Book note prefix · Reading goal file
+
+---
+
+### v1.3.0 — Auto-Refresh Cache Fix
+
+Fixed the bills chart not updating after recording a payment.
+The chart now waits for Obsidian's metadata cache to process the
+saved payment note before re-rendering, so the paid status,
+amount, and date appear immediately without navigating away.
+
+---
+
+### v1.2.9 — Edit Meal Log v2
+
+The "Edit today's meal log" command has been replaced by a unified **Edit meal log** command.
+
+On invoke, today's log opens immediately in a persistent modal. A **Switch date** button in the modal header opens a fuzzy picker of the 30 most recent log files (newest first) to switch to any past log without closing the modal.
+
+**Four edit actions available at any time:**
+- **Change quantity** — pick a meal and item, pre-fills the current amount, re-uses the AmountModal
+- **Remove item** — pick a meal and item to delete; meal heading is always retained
+- **Add item to a meal** — full food/recipe search, same UX as Log Meal
+- **Add a meal block** — same as above; picks meal type first then searches
+
+**Save and recalculate:** on save, nutrition values are re-pulled fresh from each food/recipe source note (not re-summed from stored log values). A timestamped `- YYYY-MM-DD — Log recalculated` bullet is appended to a `## Notes` section at the bottom of the file (created automatically on first save). The entire file is rewritten.
 
 ---
 

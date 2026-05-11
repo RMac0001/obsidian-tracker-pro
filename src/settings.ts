@@ -16,6 +16,11 @@ export interface TrackerSettings {
     // ── Bills ─────────────────────────────────────────────────────────────────
     billsMasterFolder:  string;
     billsPaymentFolder: string;
+
+    // ── Reading Challenge ─────────────────────────────────────────────────────
+    bookNotesFolder:  string;
+    bookNotePrefix:   string;
+    readingGoalFile:  string;
 }
 
 export const DEFAULT_SETTINGS: TrackerSettings = {
@@ -33,6 +38,11 @@ export const DEFAULT_SETTINGS: TrackerSettings = {
     // ── Bills ─────────────────────────────────────────────────────────────────
     billsMasterFolder:  "Data/Bills",
     billsPaymentFolder: "Data/Bills/Payments/BP-{{DATE:YYYY}}/BP-{{DATE:YYYY-MM}}",
+
+    // ── Reading Challenge ─────────────────────────────────────────────────────
+    bookNotesFolder: "Data/Book Reviews",
+    bookNotePrefix:  "BR-",
+    readingGoalFile: "Data/Reading Goals.md",
 };
 
 export class TrackerSettingTab extends PluginSettingTab {
@@ -213,6 +223,49 @@ export class TrackerSettingTab extends PluginSettingTab {
                     .setValue(this.plugin.settings.billsPaymentFolder)
                     .onChange(async (value) => {
                         this.plugin.settings.billsPaymentFolder = value.trim();
+                        await this.plugin.saveSettings();
+                    })
+            );
+
+        // ── Reading Challenge ─────────────────────────────────────────────────
+
+        containerEl.createEl("h2", { text: "Reading Challenge" });
+
+        new Setting(containerEl)
+            .setName("Book notes folder")
+            .setDesc("Path to the folder containing your book review notes.")
+            .addText((text) =>
+                text
+                    .setPlaceholder("Data/Book Reviews")
+                    .setValue(this.plugin.settings.bookNotesFolder)
+                    .onChange(async (value) => {
+                        this.plugin.settings.bookNotesFolder = value.trim();
+                        await this.plugin.saveSettings();
+                    })
+            );
+
+        new Setting(containerEl)
+            .setName("Book note prefix")
+            .setDesc("Filename prefix used to identify book notes.")
+            .addText((text) =>
+                text
+                    .setPlaceholder("BR-")
+                    .setValue(this.plugin.settings.bookNotePrefix)
+                    .onChange(async (value) => {
+                        this.plugin.settings.bookNotePrefix = value.trim();
+                        await this.plugin.saveSettings();
+                    })
+            );
+
+        new Setting(containerEl)
+            .setName("Reading goal file")
+            .setDesc("Full path to your reading goal note (folder + filename).")
+            .addText((text) =>
+                text
+                    .setPlaceholder("Data/Reading Goals.md")
+                    .setValue(this.plugin.settings.readingGoalFile)
+                    .onChange(async (value) => {
+                        this.plugin.settings.readingGoalFile = value.trim();
                         await this.plugin.saveSettings();
                     })
             );

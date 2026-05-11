@@ -2834,7 +2834,7 @@ var load                = loader.load;
 // ─── Valid Values ─────────────────────────────────────────────────────────────
 const VALID_CHART_TYPES = [
     "line", "bar", "pie", "donut", "heatmap",
-    "scatter", "radar", "gauge", "candlestick", "calendar", "summary", "table", "daily-table", "bills",
+    "scatter", "radar", "gauge", "candlestick", "calendar", "summary", "table", "daily-table", "bills", "reading-challenge",
 ];
 const VALID_AGGREGATES = [
     "daily", "weekly", "monthly", "cumulative", "moving-average",
@@ -2882,6 +2882,22 @@ function parseDateRange(range) {
             end: new Date(today.getFullYear() - 1, 11, 31),
         };
     }
+    if (range === "today") {
+        return { start: today, end: today };
+    }
+    if (range === "last-week") {
+        const day = today.getDay();
+        const end = new Date(today);
+        end.setDate(today.getDate() - day - 1); // last Saturday
+        const start = new Date(end);
+        start.setDate(end.getDate() - 6); // previous Sunday
+        return { start, end };
+    }
+    if (range === "last-month") {
+        const end = new Date(today.getFullYear(), today.getMonth(), 0);
+        const start = new Date(today.getFullYear(), today.getMonth() - 1, 1);
+        return { start, end };
+    }
     if (range === "all") {
         return {
             start: new Date(2000, 0, 1),
@@ -2902,14 +2918,14 @@ function validateConfig(raw) {
             message: `Unknown chart type "${raw.type}". Valid types: ${VALID_CHART_TYPES.join(", ")}`,
         });
     }
-    // data source (bills manages its own vault paths — no folder config needed)
-    if (raw.type !== "bills" && !raw.folder && !raw.file && !raw.files) {
+    // data source (bills and reading-challenge manage their own vault paths)
+    if (raw.type !== "bills" && raw.type !== "reading-challenge" && !raw.folder && !raw.file && !raw.files) {
         errors.push({
             message: "Must specify at least one of: folder, file, or files",
         });
     }
-    // properties (not required for summary, table, daily-table, or bills)
-    if (raw.type !== "summary" && raw.type !== "table" && raw.type !== "daily-table" && raw.type !== "bills" && raw.source !== "fileMeta") {
+    // properties (not required for summary, table, daily-table, bills, or reading-challenge)
+    if (raw.type !== "summary" && raw.type !== "table" && raw.type !== "daily-table" && raw.type !== "bills" && raw.type !== "reading-challenge" && raw.source !== "fileMeta") {
         if (!raw.properties) {
             errors.push({ message: "Missing required field: properties" });
         }
@@ -2940,6 +2956,12 @@ function validateConfig(raw) {
         }
     }
     const config = raw;
+    if (raw.showSource !== undefined)
+        config.showSource = Boolean(raw.showSource);
+    if (raw.year !== undefined)
+        config.year = Number(raw.year);
+    if (raw.dateSelector !== undefined)
+        config.dateSelector = Boolean(raw.dateSelector);
     // Apply defaults
     if (!config.aggregate)
         config.aggregate = "daily";
@@ -19217,6 +19239,16 @@ function calcMax(series) {
     }
     return max === -Infinity ? 0 : max;
 }
+function calcMin(series) {
+    let min = Infinity;
+    for (const s of series) {
+        for (const pt of s.points) {
+            if (pt.value !== null && pt.value < min)
+                min = pt.value;
+        }
+    }
+    return min === Infinity ? 0 : min;
+}
 // ─── Template Engine ──────────────────────────────────────────────────────────
 function applyTemplate(template, vars) {
     return template.replace(/\{\{(\w+)\(\)\}\}/g, (_, name) => {
@@ -19242,6 +19274,7 @@ function renderSummaryChart(container, series, config) {
         sum: calcSum(series),
         mean: calcMean(series),
         max: calcMax(series),
+        min: calcMin(series),
     };
     const rendered = applyTemplate(template, vars)
         .split("\n")
@@ -19672,6 +19705,8 @@ function renderDailyTable(container, entries, config) {
         headerRow.createEl("th", { text: "Meal" });
     for (const col of columns)
         headerRow.createEl("th", { text: col.label });
+    if (config.showSource)
+        headerRow.createEl("th", { text: "Source" });
     if (entries.length === 0)
         return;
     const tbody = table.createEl("tbody");
@@ -19687,6 +19722,7 @@ function renderDailyTable(container, entries, config) {
             for (const row of visible) {
                 const tr = tbody.createEl("tr");
                 // Date cell — only on the first visible row of each date group
+                const isFirstRow = firstRow;
                 const dateTd = tr.createEl("td", { cls: "tracker-pro-daily-date" });
                 if (firstRow) {
                     dateTd.setText(dateStr);
@@ -19695,6 +19731,12 @@ function renderDailyTable(container, entries, config) {
                 tr.createEl("td", { text: row.label, cls: "tracker-pro-daily-meal" });
                 for (const col of columns) {
                     tr.createEl("td", { text: evalCellExpr(col.value, row.key, fm) });
+                }
+                if (config.showSource && isFirstRow) {
+                    tr.createEl("td", { text: entry.filePath, cls: "tracker-pro-daily-source" });
+                }
+                else if (config.showSource) {
+                    tr.createEl("td");
                 }
             }
             // Per-day total row
@@ -19709,6 +19751,8 @@ function renderDailyTable(container, entries, config) {
                 for (const col of columns) {
                     tr.createEl("td", { text: evalCellExpr(col.value, "total", fm) });
                 }
+                if (config.showSource)
+                    tr.createEl("td");
             }
         }
         else {
@@ -19717,6 +19761,9 @@ function renderDailyTable(container, entries, config) {
             tr.createEl("td", { text: dateStr, cls: "tracker-pro-daily-date" });
             for (const col of columns) {
                 tr.createEl("td", { text: evalCellExpr(col.value, "total", fm) });
+            }
+            if (config.showSource) {
+                tr.createEl("td", { text: entry.filePath, cls: "tracker-pro-daily-source" });
             }
         }
     }
@@ -20003,6 +20050,19 @@ async function savePayment(app, payment, amountPaid, masterFolder) {
     }
     new obsidian.Notice(`✓ Payment recorded for ${payment.bill_name}`);
 }
+// ─── Cache Helper ─────────────────────────────────────────────────────────────
+function waitForCacheUpdate(app, filePath) {
+    return new Promise(resolve => {
+        const timeoutId = setTimeout(resolve, 1000);
+        const ref = app.metadataCache.on("changed", (changedFile) => {
+            if (changedFile.path === filePath) {
+                clearTimeout(timeoutId);
+                app.metadataCache.offref(ref);
+                resolve();
+            }
+        });
+    });
+}
 // ─── Row Renderer ─────────────────────────────────────────────────────────────
 function renderMasterLink(td, displayText, billName, masterFolder) {
     const path = obsidian.normalizePath(`${masterFolder}/Bill-${billName}.md`);
@@ -20027,6 +20087,7 @@ function renderBillRow(app, tbody, payment, masterFolder, visibleCols, linkColum
             checkbox.checked = false;
             new RecordPaymentModal(app, payment, async (amountPaid) => {
                 await savePayment(app, payment, amountPaid, masterFolder);
+                await waitForCacheUpdate(app, payment.filePath);
                 onPaymentSaved();
             }).open();
         });
@@ -20212,9 +20273,6 @@ async function renderBillsChart(container, app, config, settings) {
                 colsPanel.style.display = "none";
             }
         });
-        // Refresh button
-        const refreshBtn = controls.createEl("button", { cls: "tracker-pro-bills-refresh", text: "↻ Refresh" });
-        refreshBtn.addEventListener("click", () => render());
         // ── Sections ──────────────────────────────────────────────────────────────
         const thisMon = new Date(thisYear, thisMonth, 1).toLocaleString("en-US", { month: "long" });
         const nextMon = new Date(nextYear, nextMonth, 1).toLocaleString("en-US", { month: "long" });
@@ -20250,6 +20308,209 @@ async function generateMonthlyBills(app, settings) {
     new obsidian.Notice(`Generated ${created} bill${created !== 1 ? "s" : ""} for ${monthName} ${year}`);
 }
 
+// ─── Data Readers ─────────────────────────────────────────────────────────────
+function readGoals(app, settings) {
+    var _a;
+    let goalPath = settings.readingGoalFile;
+    if (!goalPath.endsWith(".md"))
+        goalPath += ".md";
+    const path = obsidian.normalizePath(goalPath);
+    const file = app.vault.getAbstractFileByPath(path);
+    if (!(file instanceof obsidian.TFile)) {
+        console.warn(`Tracker Pro: reading goal file not found: ${path}`);
+        return {};
+    }
+    const fm = (_a = app.metadataCache.getFileCache(file)) === null || _a === void 0 ? void 0 : _a.frontmatter;
+    if (!fm)
+        return {};
+    const goals = {};
+    for (const key of Object.keys(fm)) {
+        const match = key.match(/^reading_goal_(\d{4})$/);
+        if (match) {
+            const num = typeof fm[key] === "number" ? fm[key] : parseInt(String(fm[key]));
+            if (!isNaN(num))
+                goals[parseInt(match[1])] = num;
+        }
+    }
+    return goals;
+}
+function readAllBooks(app, settings) {
+    var _a, _b, _c, _d, _e;
+    const folder = settings.bookNotesFolder.replace(/\/$/, "");
+    const prefix = settings.bookNotePrefix;
+    const byYear = new Map();
+    for (const f of app.vault.getMarkdownFiles()) {
+        if (!f.path.startsWith(folder + "/") || !f.basename.startsWith(prefix))
+            continue;
+        const fm = (_b = (_a = app.metadataCache.getFileCache(f)) === null || _a === void 0 ? void 0 : _a.frontmatter) !== null && _b !== void 0 ? _b : {};
+        const readComplete = String((_c = fm.read_complete) !== null && _c !== void 0 ? _c : "");
+        if (!readComplete.match(/^\d{4}-\d{2}-\d{2}$/))
+            continue;
+        const year = parseInt(readComplete.slice(0, 4));
+        let title = String((_d = fm.title) !== null && _d !== void 0 ? _d : "").trim();
+        if (!title) {
+            title = f.basename.slice(prefix.length).replace(/-/g, " ").trim();
+        }
+        if (!title) {
+            title = f.basename;
+        }
+        const book = {
+            title,
+            author: String((_e = fm.author) !== null && _e !== void 0 ? _e : ""),
+            readComplete,
+            filePath: f.path,
+        };
+        if (fm.series)
+            book.series = String(fm.series);
+        if (fm.series_number != null)
+            book.seriesNumber = Number(fm.series_number);
+        if (!byYear.has(year))
+            byYear.set(year, []);
+        byYear.get(year).push(book);
+    }
+    for (const books of byYear.values()) {
+        books.sort((a, b) => a.readComplete.localeCompare(b.readComplete));
+    }
+    return byYear;
+}
+// ─── Helpers ──────────────────────────────────────────────────────────────────
+function getAvailableYears(goals) {
+    const currentYear = new Date().getFullYear();
+    const goalYears = Object.keys(goals).map(Number).filter((y) => !isNaN(y));
+    return Array.from(new Set([...goalYears, currentYear])).sort((a, b) => b - a);
+}
+function daysLeft(year) {
+    const today = new Date();
+    const endOfYear = new Date(year, 11, 31);
+    return Math.max(0, Math.floor((endOfYear.getTime() - today.getTime()) / 86400000));
+}
+// ─── Motivational Text ────────────────────────────────────────────────────────
+function motivationalText(booksRead, goal, year) {
+    const currentYear = new Date().getFullYear();
+    if (year < currentYear) {
+        if (goal == null)
+            return `${booksRead} book${booksRead !== 1 ? "s" : ""} read`;
+        if (booksRead >= goal)
+            return "Challenge complete! You met your goal.";
+        return `You read ${booksRead} of ${goal} books.`;
+    }
+    if (year > currentYear)
+        return goal != null ? `Goal: ${goal} book${goal !== 1 ? "s" : ""}` : "";
+    if (goal == null)
+        return "";
+    const today = new Date();
+    const dayOfYear = Math.floor((today.getTime() - new Date(year, 0, 1).getTime()) / 86400000) + 1;
+    const daysInYear = (year % 4 === 0 && (year % 100 !== 0 || year % 400 === 0)) ? 366 : 365;
+    const behind = Math.ceil(goal * (dayOfYear / daysInYear) - booksRead);
+    if (behind <= 0)
+        return "You're on track! Keep reading.";
+    return `Press on! Read ${behind} book${behind !== 1 ? "s" : ""} to get back on track.`;
+}
+// ─── Renderer ─────────────────────────────────────────────────────────────────
+function renderChallenge(el, app, year, books, goal, yearControl) {
+    const currentYear = new Date().getFullYear();
+    const booksRead = books.length;
+    const isPast = year < currentYear;
+    // ── Hero ──────────────────────────────────────────────────────────────────
+    const hero = el.createEl("div", { cls: "tracker-pro-rc-hero" });
+    // Left: colored badge tile
+    const badge = hero.createEl("div", { cls: "tracker-pro-rc-badge" });
+    badge.createEl("div", { text: String(year), cls: "tracker-pro-rc-badge-year" });
+    badge.createEl("div", { text: "📖", cls: "tracker-pro-rc-badge-icon" });
+    // Right: title + subtitle + change-year button
+    const heroText = hero.createEl("div", { cls: "tracker-pro-rc-hero-text" });
+    const heroTop = heroText.createEl("div", { cls: "tracker-pro-rc-hero-top" });
+    heroTop.createEl("span", { text: "Reading Challenge", cls: "tracker-pro-rc-title" });
+    if (yearControl) {
+        const select = heroTop.createEl("select", { cls: "tracker-pro-rc-year-select" });
+        for (const y of yearControl.years) {
+            const opt = select.createEl("option", { text: String(y) });
+            opt.value = String(y);
+            if (y === year)
+                opt.selected = true;
+        }
+        select.addEventListener("change", () => yearControl.onChange(parseInt(select.value)));
+    }
+    const subtitle = motivationalText(booksRead, goal, year);
+    if (subtitle) {
+        heroText.createEl("div", { text: subtitle, cls: "tracker-pro-rc-subtitle" });
+    }
+    // ── Progress ──────────────────────────────────────────────────────────────
+    const progress = el.createEl("div", { cls: "tracker-pro-rc-progress" });
+    const countLine = goal != null
+        ? `${booksRead} of ${goal} books read`
+        : `${booksRead} book${booksRead !== 1 ? "s" : ""} read`;
+    const remaining = daysLeft(year);
+    const timeLine = isPast
+        ? "Completed"
+        : `${remaining} day${remaining !== 1 ? "s" : ""} left`;
+    progress.createEl("div", {
+        text: `${countLine} | ${timeLine}`,
+        cls: "tracker-pro-rc-count",
+    });
+    if (goal != null && goal > 0) {
+        const pct = Math.min(100, Math.round(booksRead / goal * 100));
+        const barRow = progress.createEl("div", { cls: "tracker-pro-rc-bar-row" });
+        const barWrap = barRow.createEl("div", { cls: "tracker-pro-rc-bar-wrap" });
+        const barFill = barWrap.createEl("div", { cls: "tracker-pro-rc-bar-fill" });
+        barFill.style.width = `${pct}%`;
+        barRow.createEl("span", { text: `${pct}%`, cls: "tracker-pro-rc-pct" });
+    }
+    // ── Book List ─────────────────────────────────────────────────────────────
+    el.createEl("div", { text: "Books Read", cls: "tracker-pro-rc-section-title" });
+    el.createEl("hr", { cls: "tracker-pro-rc-divider" });
+    if (books.length === 0) {
+        el.createEl("div", { text: "No books read yet", cls: "tracker-pro-rc-empty" });
+    }
+    else {
+        const list = el.createEl("ol", { cls: "tracker-pro-rc-book-list" });
+        for (const book of books) {
+            const item = list.createEl("li", { cls: "tracker-pro-rc-book-item" });
+            const titleLine = item.createEl("div", { cls: "tracker-pro-rc-book-title-line" });
+            const titleLink = titleLine.createEl("a", {
+                text: book.title,
+                cls: "tracker-pro-rc-book-title internal-link",
+            });
+            titleLink.setAttribute("data-href", book.filePath);
+            titleLink.onclick = (e) => {
+                e.preventDefault();
+                app.workspace.openLinkText(book.filePath, "", false);
+            };
+            if (book.author) {
+                titleLine.createEl("span", {
+                    text: ` · ${book.author}`,
+                    cls: "tracker-pro-rc-book-author",
+                });
+            }
+            if (book.series) {
+                const seriesText = book.seriesNumber != null
+                    ? `${book.series} #${book.seriesNumber}`
+                    : book.series;
+                item.createEl("div", {
+                    text: seriesText,
+                    cls: "tracker-pro-rc-book-series",
+                });
+            }
+        }
+    }
+}
+// ─── Inline Block Renderer ────────────────────────────────────────────────────
+function renderReadingChallengeBlock(el, app, settings, config) {
+    var _a;
+    const goals = readGoals(app, settings);
+    const allBooks = readAllBooks(app, settings);
+    const years = getAvailableYears(goals);
+    const render = (year) => {
+        var _a, _b;
+        el.empty();
+        el.addClass("tracker-pro-reading-challenge");
+        const books = (_a = allBooks.get(year)) !== null && _a !== void 0 ? _a : [];
+        const goal = (_b = goals[year]) !== null && _b !== void 0 ? _b : null;
+        renderChallenge(el, app, year, books, goal, { years, onChange: render });
+    };
+    render((_a = config.year) !== null && _a !== void 0 ? _a : new Date().getFullYear());
+}
+
 // ─── Error Display ────────────────────────────────────────────────────────────
 function renderErrors(container, errors) {
     container.empty();
@@ -20268,25 +20529,19 @@ function renderEmpty(container, config) {
     box.createEl("span", { text: "📊 No data found" });
     box.createEl("small", { text: `No notes matching the config were found in the specified date range.` });
 }
-// ─── Main Render ──────────────────────────────────────────────────────────────
-async function renderTracker(app, container, config, settings) {
+// ─── Chart Content ────────────────────────────────────────────────────────────
+async function renderChartContent(app, el, config, settings) {
     var _a, _b, _c, _d;
-    container.empty();
-    container.addClass("tracker-pro-container");
-    // Apply size (charts only — tables and summaries size to their content)
-    if (config.height && config.type !== "summary" && config.type !== "table" && config.type !== "daily-table" && config.type !== "bills")
-        container.style.height = config.height + "px";
-    if (config.width)
-        container.style.width = config.width;
+    el.empty();
     // ── Candlestick: own data path ─────────────────────────────────────────────
     if (config.type === "candlestick") {
         const entries = await collectRawEntries(app, config);
         const data = buildOHLCData(entries, config);
         if (data.length === 0) {
-            renderEmpty(container);
+            renderEmpty(el);
             return;
         }
-        renderCandlestickChart(container, data, config);
+        renderCandlestickChart(el, data, config);
         return;
     }
     // ── Pie / Donut: frequency data ────────────────────────────────────────────
@@ -20294,10 +20549,10 @@ async function renderTracker(app, container, config, settings) {
         const entries = await collectRawEntries(app, config);
         const freq = buildFrequencyData(entries, config);
         if (freq.size === 0) {
-            renderEmpty(container);
+            renderEmpty(el);
             return;
         }
-        const canvas = container.createEl("canvas");
+        const canvas = el.createEl("canvas");
         renderPieChart(canvas, freq, config);
         return;
     }
@@ -20307,10 +20562,10 @@ async function renderTracker(app, container, config, settings) {
         const raw = buildSeriesData(entries, config);
         const series = aggregateAllSeries(raw, (_a = config.aggregate) !== null && _a !== void 0 ? _a : "daily", config.period);
         if (series.length === 0 || series[0].points.length === 0) {
-            renderEmpty(container);
+            renderEmpty(el);
             return;
         }
-        renderHeatmapChart(container, series, config);
+        renderHeatmapChart(el, series, config);
         return;
     }
     // ── Calendar ───────────────────────────────────────────────────────────────
@@ -20319,10 +20574,10 @@ async function renderTracker(app, container, config, settings) {
         const raw = buildSeriesData(entries, config);
         const series = aggregateAllSeries(raw, "daily", config.period);
         if (series.length === 0 || series[0].points.length === 0) {
-            renderEmpty(container);
+            renderEmpty(el);
             return;
         }
-        renderCalendarChart(container, series, config);
+        renderCalendarChart(el, series, config);
         return;
     }
     // ── Gauge ──────────────────────────────────────────────────────────────────
@@ -20331,10 +20586,10 @@ async function renderTracker(app, container, config, settings) {
         const raw = buildSeriesData(entries, config);
         const series = aggregateAllSeries(raw, (_b = config.aggregate) !== null && _b !== void 0 ? _b : "daily", config.period);
         if (series.length === 0) {
-            renderEmpty(container);
+            renderEmpty(el);
             return;
         }
-        renderGaugeChart(container, series, config);
+        renderGaugeChart(el, series, config);
         return;
     }
     // ── Radar ──────────────────────────────────────────────────────────────────
@@ -20343,10 +20598,10 @@ async function renderTracker(app, container, config, settings) {
         const raw = buildSeriesData(entries, config);
         const series = aggregateAllSeries(raw, (_c = config.aggregate) !== null && _c !== void 0 ? _c : "daily", config.period);
         if (series.length === 0) {
-            renderEmpty(container);
+            renderEmpty(el);
             return;
         }
-        const canvas = container.createEl("canvas");
+        const canvas = el.createEl("canvas");
         renderRadarChart(canvas, series, config);
         return;
     }
@@ -20354,30 +20609,35 @@ async function renderTracker(app, container, config, settings) {
     if (config.type === "scatter") {
         const entries = await collectRawEntries(app, config);
         const raw = buildSeriesData(entries, config);
-        // No aggregation for scatter — raw daily values needed as pairs
         if (raw.length < 2) {
-            renderErrors(container, [{ message: "Scatter chart needs at least 2 properties" }]);
+            renderErrors(el, [{ message: "Scatter chart needs at least 2 properties" }]);
             return;
         }
-        const canvas = container.createEl("canvas");
+        const canvas = el.createEl("canvas");
         renderScatterChart(canvas, raw, config);
         return;
     }
     // ── Table ─────────────────────────────────────────────────────────────────
     if (config.type === "table") {
         const entries = await collectRawEntries(app, config);
-        renderTableChart(container, entries, config);
+        renderTableChart(el, entries, config);
         return;
     }
     // ── Daily Table ────────────────────────────────────────────────────────────
     if (config.type === "daily-table") {
         const entries = await collectRawEntries(app, config);
-        renderDailyTable(container, entries, config);
+        renderDailyTable(el, entries, config);
         return;
     }
     // ── Bills ──────────────────────────────────────────────────────────────────
     if (config.type === "bills") {
-        await renderBillsChart(container, app, config, settings);
+        await renderBillsChart(el, app, config, settings);
+        return;
+    }
+    // ── Reading Challenge ──────────────────────────────────────────────────────
+    if (config.type === "reading-challenge") {
+        if (settings)
+            renderReadingChallengeBlock(el, app, settings, config);
         return;
     }
     // ── Summary ───────────────────────────────────────────────────────────────
@@ -20387,10 +20647,10 @@ async function renderTracker(app, container, config, settings) {
             ? buildSeriesData(entries, config)
             : [{ name: "presence", points: entries.map(e => ({ date: e.date, value: 1 })), color: "" }];
         if (raw.length === 0) {
-            renderEmpty(container);
+            renderEmpty(el);
             return;
         }
-        renderSummaryChart(container, raw, config);
+        renderSummaryChart(el, raw, config);
         return;
     }
     // ── Line / Bar ─────────────────────────────────────────────────────────────
@@ -20398,15 +20658,102 @@ async function renderTracker(app, container, config, settings) {
     const raw = buildSeriesData(entries, config);
     const series = aggregateAllSeries(raw, (_d = config.aggregate) !== null && _d !== void 0 ? _d : "daily", config.period);
     if (series.length === 0 || series.every((s) => s.points.length === 0)) {
-        renderEmpty(container);
+        renderEmpty(el);
         return;
     }
-    const canvas = container.createEl("canvas");
+    const canvas = el.createEl("canvas");
     if (config.type === "bar") {
         renderBarChart(canvas, series, config);
     }
     else {
         renderLineChart(canvas, series, config);
+    }
+}
+// ─── Date Selector ────────────────────────────────────────────────────────────
+const DATE_OPTIONS = [
+    { label: "Today", value: "today" },
+    { label: "This Week", value: "this-week" },
+    { label: "This Month", value: "this-month" },
+    { label: "This Year", value: "this-year" },
+    { label: "Last Week", value: "last-week" },
+    { label: "Last Month", value: "last-month" },
+    { label: "Last Year", value: "last-year" },
+    { label: "Last 7 Days", value: "last-7-days" },
+    { label: "Last 30 Days", value: "last-30-days" },
+    { label: "Last 90 Days", value: "last-90-days" },
+    { label: "Last 6 Months", value: "last-6-months" },
+    { label: "Last 12 Months", value: "last-12-months" },
+    { label: "All Time", value: "all" },
+    { label: "Custom…", value: "custom" },
+];
+function renderDateSelector(selectorEl, chartEl, app, config, settings) {
+    var _a, _b, _c;
+    let currentValue = (_a = config.dateRange) !== null && _a !== void 0 ? _a : "last-30-days";
+    if (config.startDate && config.endDate && !config.dateRange)
+        currentValue = "custom";
+    const select = selectorEl.createEl("select", { cls: "tracker-pro-date-select" });
+    for (const opt of DATE_OPTIONS) {
+        const el = select.createEl("option", { text: opt.label, value: opt.value });
+        if (opt.value === currentValue)
+            el.selected = true;
+    }
+    const customEl = selectorEl.createEl("div", { cls: "tracker-pro-date-custom" });
+    if (currentValue !== "custom")
+        customEl.addClass("hidden");
+    const startInput = customEl.createEl("input");
+    startInput.type = "date";
+    startInput.value = (_b = config.startDate) !== null && _b !== void 0 ? _b : "";
+    const sep = customEl.createEl("span", { text: "→", cls: "tracker-pro-date-sep" });
+    sep.style.color = "var(--text-muted)";
+    const endInput = customEl.createEl("input");
+    endInput.type = "date";
+    endInput.value = (_c = config.endDate) !== null && _c !== void 0 ? _c : "";
+    const rerender = async () => {
+        await renderChartContent(app, chartEl, config, settings);
+    };
+    const applyCustom = async () => {
+        if (startInput.value && endInput.value) {
+            config.startDate = startInput.value;
+            config.endDate = endInput.value;
+            delete config.dateRange;
+            await rerender();
+        }
+    };
+    startInput.addEventListener("change", applyCustom);
+    endInput.addEventListener("change", applyCustom);
+    select.addEventListener("change", async () => {
+        const val = select.value;
+        if (val === "custom") {
+            customEl.removeClass("hidden");
+        }
+        else {
+            customEl.addClass("hidden");
+            config.dateRange = val;
+            delete config.startDate;
+            delete config.endDate;
+            await rerender();
+        }
+    });
+}
+// ─── Main Render ──────────────────────────────────────────────────────────────
+const NO_HEIGHT_TYPES = ["summary", "table", "daily-table", "bills", "reading-challenge"];
+async function renderTracker(app, container, config, settings) {
+    container.empty();
+    container.addClass("tracker-pro-container");
+    // Apply size (charts only — tables and summaries size to their content)
+    if (config.height && !NO_HEIGHT_TYPES.includes(config.type)) {
+        container.style.height = config.height + "px";
+    }
+    if (config.width)
+        container.style.width = config.width;
+    if (config.dateSelector) {
+        const selectorEl = container.createEl("div", { cls: "tracker-pro-date-selector" });
+        const chartEl = container.createEl("div");
+        renderDateSelector(selectorEl, chartEl, app, config, settings);
+        await renderChartContent(app, chartEl, config, settings);
+    }
+    else {
+        await renderChartContent(app, container, config, settings);
     }
 }
 
@@ -20423,6 +20770,10 @@ const DEFAULT_SETTINGS = {
     // ── Bills ─────────────────────────────────────────────────────────────────
     billsMasterFolder: "Data/Bills",
     billsPaymentFolder: "Data/Bills/Payments/BP-{{DATE:YYYY}}/BP-{{DATE:YYYY-MM}}",
+    // ── Reading Challenge ─────────────────────────────────────────────────────
+    bookNotesFolder: "Data/Book Reviews",
+    bookNotePrefix: "BR-",
+    readingGoalFile: "Data/Reading Goals.md",
 };
 class TrackerSettingTab extends obsidian.PluginSettingTab {
     constructor(app, plugin) {
@@ -20549,6 +20900,38 @@ class TrackerSettingTab extends obsidian.PluginSettingTab {
             this.plugin.settings.billsPaymentFolder = value.trim();
             await this.plugin.saveSettings();
         }));
+        // ── Reading Challenge ─────────────────────────────────────────────────
+        containerEl.createEl("h2", { text: "Reading Challenge" });
+        new obsidian.Setting(containerEl)
+            .setName("Book notes folder")
+            .setDesc("Path to the folder containing your book review notes.")
+            .addText((text) => text
+            .setPlaceholder("Data/Book Reviews")
+            .setValue(this.plugin.settings.bookNotesFolder)
+            .onChange(async (value) => {
+            this.plugin.settings.bookNotesFolder = value.trim();
+            await this.plugin.saveSettings();
+        }));
+        new obsidian.Setting(containerEl)
+            .setName("Book note prefix")
+            .setDesc("Filename prefix used to identify book notes.")
+            .addText((text) => text
+            .setPlaceholder("BR-")
+            .setValue(this.plugin.settings.bookNotePrefix)
+            .onChange(async (value) => {
+            this.plugin.settings.bookNotePrefix = value.trim();
+            await this.plugin.saveSettings();
+        }));
+        new obsidian.Setting(containerEl)
+            .setName("Reading goal file")
+            .setDesc("Full path to your reading goal note (folder + filename).")
+            .addText((text) => text
+            .setPlaceholder("Data/Reading Goals.md")
+            .setValue(this.plugin.settings.readingGoalFile)
+            .onChange(async (value) => {
+            this.plugin.settings.readingGoalFile = value.trim();
+            await this.plugin.saveSettings();
+        }));
     }
 }
 
@@ -20630,19 +21013,23 @@ class FileSuggestModal extends obsidian.FuzzySuggestModal {
  * Recipes: asks "How many servings?"
  *          multiplier = amount
  *          default = 1
+ *
+ * Pass defaultValue to pre-fill a specific number (used by change-quantity).
+ * Pass buttonLabel to customise the submit button text.
  */
 class AmountModal extends obsidian.Modal {
-    constructor(app, itemName, meta, isFood, onSubmit) {
+    constructor(app, itemName, meta, isFood, onSubmit, defaultValue, buttonLabel = "Add to meal") {
         super(app);
         this.itemName = itemName;
         this.meta = meta;
         this.isFood = isFood;
         this.onSubmit = onSubmit;
+        this.defaultValue = defaultValue;
+        this.buttonLabel = buttonLabel;
     }
     onOpen() {
         const { contentEl } = this;
         contentEl.createEl("h3", { text: this.itemName });
-        // Context hint
         const hint = this.isFood
             ? `1 serving = ${this.meta.servingSize} ${this.meta.servingUnit}  ·  ${this.meta.nutrition.calories} cal per serving`
             : `${this.meta.nutrition.calories} cal per serving`;
@@ -20650,7 +21037,6 @@ class AmountModal extends obsidian.Modal {
             text: hint,
             attr: { style: "margin:4px 0 12px;color:var(--text-muted);font-size:0.85em;" },
         });
-        // Label
         const labelText = this.isFood
             ? `Amount (${this.meta.servingUnit})`
             : "Servings";
@@ -20669,12 +21055,13 @@ class AmountModal extends obsidian.Modal {
                     "color:var(--text-normal);margin:6px 0 12px;",
             },
         });
-        // Pre-fill: one serving worth of the unit for foods, 1 for recipes
-        this.input.value = this.isFood ? String(this.meta.servingSize) : "1";
+        this.input.value = this.defaultValue !== undefined
+            ? String(this.defaultValue)
+            : this.isFood ? String(this.meta.servingSize) : "1";
         this.input.focus();
         this.input.select();
         const btn = contentEl.createEl("button", {
-            text: "Add to meal",
+            text: this.buttonLabel,
             attr: { style: "width:100%;padding:8px;cursor:pointer;" },
         });
         btn.onclick = () => this.submit();
@@ -20724,7 +21111,7 @@ function buildUpdatedFrontmatter(existing, mealType, entries, settings) {
         if (!(`${macro}_total` in fm))
             fm[`${macro}_total`] = 0;
     }
-    // Accumulate into this meal (safe to call twice for the same meal type)
+    // Accumulate into this meal
     fm[`cal_${key}`] = round1((fm[`cal_${key}`] || 0) + mealNutrition.calories);
     fm[`protein_${key}`] = round1((fm[`protein_${key}`] || 0) + mealNutrition.protein);
     fm[`fat_${key}`] = round1((fm[`fat_${key}`] || 0) + mealNutrition.fat);
@@ -20841,14 +21228,6 @@ function zeroMealInFrontmatter(fm, mealType) {
     fm[`carbs_${key}`] = 0;
     recalcTotals(fm);
 }
-function subtractFromFrontmatter(fm, mealType, nutrition) {
-    const key = mealKey(mealType);
-    fm[`cal_${key}`] = round1((fm[`cal_${key}`] || 0) - nutrition.calories);
-    fm[`protein_${key}`] = round1((fm[`protein_${key}`] || 0) - nutrition.protein);
-    fm[`fat_${key}`] = round1((fm[`fat_${key}`] || 0) - nutrition.fat);
-    fm[`carbs_${key}`] = round1((fm[`carbs_${key}`] || 0) - nutrition.carbs);
-    recalcTotals(fm);
-}
 function recalcTotals(fm) {
     const allKeys = ["breakfast", "lunch", "dinner", "snacks"];
     fm.cal_total = round1(allKeys.reduce((s, m) => s + (fm[`cal_${m}`] || 0), 0));
@@ -20898,48 +21277,415 @@ function clearMeal(app, settings) {
         }).open();
     }).open();
 }
-// ─── Edit Today's Log ─────────────────────────────────────────────────────────
-function editMealLog(app, settings) {
-    new StringSuggestModal(app, MEAL_TYPES, "Which meal to edit?", async (mealTypeStr) => {
-        const mealType = mealTypeStr;
-        const filePath = resolveTodayPath(settings);
-        const file = app.vault.getAbstractFileByPath(filePath);
-        if (!(file instanceof obsidian.TFile)) {
-            new obsidian.Notice("No food log found for today.");
+// ─── Log Parsing ──────────────────────────────────────────────────────────────
+function extractBody(content) {
+    const lines = content.split("\n");
+    if (lines[0] !== "---")
+        return content;
+    for (let i = 1; i < lines.length; i++) {
+        if (lines[i] === "---")
+            return lines.slice(i + 1).join("\n");
+    }
+    return content;
+}
+function parseLogLine(line) {
+    const m = line.match(/^-\s+\[\[(.+?)\]\]\s+\((.+?)\)/);
+    if (!m)
+        return null;
+    return { name: m[1], displayAmount: m[2], rawLine: line };
+}
+function parseMealSections(body) {
+    const meals = new Map(MEAL_TYPES.map((mt) => [mt, []]));
+    const lines = body.split("\n");
+    let currentMeal = null;
+    for (const line of lines) {
+        const hm = line.match(/^##\s+(.+)/);
+        if (hm) {
+            const heading = hm[1].trim();
+            currentMeal = MEAL_TYPES.includes(heading) ? heading : null;
+            continue;
+        }
+        if (currentMeal && line.trimStart().startsWith("- ")) {
+            const parsed = parseLogLine(line);
+            if (parsed)
+                meals.get(currentMeal).push(parsed);
+        }
+    }
+    return meals;
+}
+function parseNotesLines(body) {
+    const lines = body.split("\n");
+    let inNotes = false;
+    const notes = [];
+    for (const line of lines) {
+        if (line.trim() === "## Notes") {
+            inNotes = true;
+            continue;
+        }
+        if (inNotes) {
+            if (line.startsWith("## "))
+                break;
+            notes.push(line);
+        }
+    }
+    while (notes.length && notes[notes.length - 1].trim() === "")
+        notes.pop();
+    return notes;
+}
+// ─── File Lookup ──────────────────────────────────────────────────────────────
+function findItemFile(app, name, settings) {
+    const allMd = app.vault.getMarkdownFiles();
+    const foodBase = settings.foodFolder.replace(/\/$/, "");
+    const recBase = settings.recipeFolder.replace(/\/$/, "");
+    const foodFile = allMd.find((f) => f.path.startsWith(foodBase + "/") && f.basename === name);
+    if (foodFile)
+        return { file: foodFile, isFood: true };
+    const recFile = allMd.find((f) => f.path.startsWith(recBase + "/") && f.basename === name);
+    if (recFile)
+        return { file: recFile, isFood: false };
+    return null;
+}
+function multiplierFromDisplay(displayAmount, meta, isFood) {
+    const num = parseFloat(displayAmount);
+    if (isNaN(num))
+        return 1;
+    return isFood ? num / meta.servingSize : num;
+}
+// ─── Recent Log Files ─────────────────────────────────────────────────────────
+function getMealLogBaseFolder(settings) {
+    var _a;
+    const template = settings.mealLogFolder;
+    const tokenCount = ((_a = template.match(/\{\{DATE:/g)) !== null && _a !== void 0 ? _a : []).length;
+    if (tokenCount === 0)
+        return template.replace(/\/$/, "");
+    const resolved = resolveDateTemplate(template);
+    const parts = resolved.split("/");
+    return parts.slice(0, Math.max(0, parts.length - tokenCount)).join("/");
+}
+function getRecentLogFiles(app, settings, limit) {
+    const base = getMealLogBaseFolder(settings);
+    const files = app.vault.getMarkdownFiles();
+    const filtered = base
+        ? files.filter((f) => f.path.startsWith(base + "/"))
+        : files;
+    return filtered
+        .sort((a, b) => b.stat.mtime - a.stat.mtime)
+        .slice(0, limit);
+}
+// ─── Recalculate and Save ─────────────────────────────────────────────────────
+async function recalcAndSave(app, settings, file, meals, notesLines) {
+    var _a, _b;
+    const allKeys = ["breakfast", "lunch", "dinner", "snacks"];
+    const mealTotals = {
+        breakfast: { calories: 0, protein: 0, fat: 0, carbs: 0 },
+        lunch: { calories: 0, protein: 0, fat: 0, carbs: 0 },
+        dinner: { calories: 0, protein: 0, fat: 0, carbs: 0 },
+        snacks: { calories: 0, protein: 0, fat: 0, carbs: 0 },
+    };
+    const freshLines = new Map();
+    for (const mealType of MEAL_TYPES) {
+        const key = mealKey(mealType);
+        const entries = (_a = meals.get(mealType)) !== null && _a !== void 0 ? _a : [];
+        const lines = [];
+        for (const entry of entries) {
+            const found = findItemFile(app, entry.name, settings);
+            let nutrition;
+            if (found) {
+                // Re-pull fresh from source note
+                const meta = found.isFood
+                    ? getFoodMeta(app, found.file)
+                    : getRecipeMeta(app, found.file);
+                const multiplier = multiplierFromDisplay(entry.displayAmount, meta, found.isFood);
+                nutrition = {
+                    calories: meta.nutrition.calories * multiplier,
+                    protein: meta.nutrition.protein * multiplier,
+                    fat: meta.nutrition.fat * multiplier,
+                    carbs: meta.nutrition.carbs * multiplier,
+                };
+            }
+            else {
+                // Source note not found — fall back to stored values in the log line
+                const m = entry.rawLine.match(/— ([\d.]+) cal \| ([\d.]+)g protein \| ([\d.]+)g fat \| ([\d.]+)g carbs/);
+                nutrition = m
+                    ? { calories: parseFloat(m[1]), protein: parseFloat(m[2]), fat: parseFloat(m[3]), carbs: parseFloat(m[4]) }
+                    : { calories: 0, protein: 0, fat: 0, carbs: 0 };
+            }
+            mealTotals[key].calories += nutrition.calories;
+            mealTotals[key].protein += nutrition.protein;
+            mealTotals[key].fat += nutrition.fat;
+            mealTotals[key].carbs += nutrition.carbs;
+            lines.push(`- [[${entry.name}]] (${entry.displayAmount}) — ` +
+                `${round1(nutrition.calories)} cal | ` +
+                `${round1(nutrition.protein)}g protein | ` +
+                `${round1(nutrition.fat)}g fat | ` +
+                `${round1(nutrition.carbs)}g carbs`);
+        }
+        freshLines.set(mealType, lines);
+    }
+    // Update frontmatter in-place
+    await app.fileManager.processFrontMatter(file, (fm) => {
+        for (const m of allKeys) {
+            fm[`cal_${m}`] = round1(mealTotals[m].calories);
+            fm[`protein_${m}`] = round1(mealTotals[m].protein);
+            fm[`fat_${m}`] = round1(mealTotals[m].fat);
+            fm[`carbs_${m}`] = round1(mealTotals[m].carbs);
+        }
+        fm.cal_total = round1(allKeys.reduce((s, m) => s + mealTotals[m].calories, 0));
+        fm.protein_total = round1(allKeys.reduce((s, m) => s + mealTotals[m].protein, 0));
+        fm.fat_total = round1(allKeys.reduce((s, m) => s + mealTotals[m].fat, 0));
+        fm.carbs_total = round1(allKeys.reduce((s, m) => s + mealTotals[m].carbs, 0));
+    });
+    // Rebuild body (meal sections + Notes)
+    const d = new Date();
+    const dateStr = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+    let body = "";
+    for (const mealType of MEAL_TYPES) {
+        body += `## ${mealType}\n`;
+        const lines = (_b = freshLines.get(mealType)) !== null && _b !== void 0 ? _b : [];
+        if (lines.length > 0)
+            body += lines.join("\n") + "\n";
+        body += "\n";
+    }
+    body += `## Notes\n`;
+    if (notesLines.length > 0)
+        body += notesLines.join("\n") + "\n";
+    body += `- ${dateStr} — Log recalculated\n`;
+    // Extract the frontmatter block (already updated by processFrontMatter) and rewrite body
+    const updated = await app.vault.read(file);
+    const fmLines = updated.split("\n");
+    let fmEnd = -1;
+    if (fmLines[0] === "---") {
+        for (let i = 1; i < fmLines.length; i++) {
+            if (fmLines[i] === "---") {
+                fmEnd = i;
+                break;
+            }
+        }
+    }
+    const fmBlock = fmEnd !== -1 ? fmLines.slice(0, fmEnd + 1).join("\n") : "";
+    await app.vault.modify(file, fmBlock + "\n\n" + body);
+}
+// ─── Edit Meal Log Modal ──────────────────────────────────────────────────────
+class EditMealLogModal extends obsidian.Modal {
+    constructor(app, settings, file) {
+        super(app);
+        this.settings = settings;
+        this.file = file;
+        this.meals = new Map(MEAL_TYPES.map((mt) => [mt, []]));
+        this.notesLines = [];
+    }
+    onOpen() {
+        this.contentEl.setText("Loading…");
+        this.loadFile().then(() => this.render());
+    }
+    async loadFile() {
+        const content = await this.app.vault.read(this.file);
+        const body = extractBody(content);
+        this.meals = parseMealSections(body);
+        this.notesLines = parseNotesLines(body);
+    }
+    render() {
+        var _a;
+        const { contentEl } = this;
+        contentEl.empty();
+        // ── Header ────────────────────────────────────────────────────────────
+        const header = contentEl.createEl("div", { cls: "tracker-pro-edit-header" });
+        header.createEl("span", {
+            text: this.file.basename,
+            cls: "tracker-pro-edit-title",
+        });
+        const switchBtn = header.createEl("button", {
+            text: "Switch date",
+            cls: "tracker-pro-edit-switch",
+        });
+        switchBtn.onclick = () => this.switchDate();
+        // ── Item summary ──────────────────────────────────────────────────────
+        const summary = contentEl.createEl("div", { cls: "tracker-pro-edit-summary" });
+        let hasItems = false;
+        for (const mealType of MEAL_TYPES) {
+            const count = ((_a = this.meals.get(mealType)) !== null && _a !== void 0 ? _a : []).length;
+            if (count === 0)
+                continue;
+            hasItems = true;
+            summary.createEl("span", {
+                text: `${mealType}: ${count} item${count !== 1 ? "s" : ""}`,
+                cls: "tracker-pro-edit-summary-item",
+            });
+        }
+        if (!hasItems) {
+            summary.createEl("span", {
+                text: "No items logged yet",
+                attr: { style: "color:var(--text-muted);font-size:0.85em;" },
+            });
+        }
+        // ── Actions ───────────────────────────────────────────────────────────
+        contentEl.createEl("p", {
+            text: "What would you like to do?",
+            attr: { style: "margin:12px 0 8px;color:var(--text-muted);font-size:0.9em;" },
+        });
+        const actionList = contentEl.createEl("div", { cls: "tracker-pro-edit-actions" });
+        const actions = [
+            { label: "Change quantity on an item", fn: () => this.changeQuantity() },
+            { label: "Remove an item", fn: () => this.removeItem() },
+            { label: "Add an item to a meal", fn: () => this.addItem() },
+            { label: "Add a meal block", fn: () => this.addMealBlock() },
+        ];
+        for (const action of actions) {
+            const btn = actionList.createEl("button", {
+                text: action.label,
+                cls: "tracker-pro-edit-action-btn",
+            });
+            btn.onclick = () => action.fn();
+        }
+        // ── Save ──────────────────────────────────────────────────────────────
+        const saveBtn = contentEl.createEl("button", {
+            text: "Save and recalculate",
+            cls: "tracker-pro-edit-save",
+        });
+        saveBtn.onclick = () => this.save();
+    }
+    switchDate() {
+        const files = getRecentLogFiles(this.app, this.settings, 30);
+        if (files.length === 0) {
+            new obsidian.Notice("No log files found.");
             return;
         }
-        const content = await app.vault.read(file);
-        const lines = content.split("\n");
-        const { headerIdx, entryLines } = getMealSectionLines(lines, mealType);
-        if (headerIdx === -1) {
-            new obsidian.Notice(`No ${mealType} section found in today's log.`);
+        new FileSuggestModal(this.app, files, "Select a log to edit…", async (f) => {
+            this.file = f;
+            await this.loadFile();
+            this.render();
+        }).open();
+    }
+    changeQuantity() {
+        const mealsWithEntries = MEAL_TYPES.filter((mt) => { var _a; return ((_a = this.meals.get(mt)) !== null && _a !== void 0 ? _a : []).length > 0; });
+        if (mealsWithEntries.length === 0) {
+            new obsidian.Notice("No items to change.");
             return;
         }
-        if (entryLines.length === 0) {
-            new obsidian.Notice(`No items in ${mealType} to remove.`);
+        new StringSuggestModal(this.app, mealsWithEntries, "Which meal?", (mealTypeStr) => {
+            var _a;
+            const mealType = mealTypeStr;
+            const entries = (_a = this.meals.get(mealType)) !== null && _a !== void 0 ? _a : [];
+            const labels = entries.map((e) => `${e.name} (${e.displayAmount})`);
+            new StringSuggestModal(this.app, labels, "Change quantity on which item?", (label) => {
+                const idx = labels.indexOf(label);
+                const entry = entries[idx];
+                const found = findItemFile(this.app, entry.name, this.settings);
+                if (!found) {
+                    new obsidian.Notice(`Cannot find source file for "${entry.name}".`);
+                    this.render();
+                    return;
+                }
+                const meta = found.isFood
+                    ? getFoodMeta(this.app, found.file)
+                    : getRecipeMeta(this.app, found.file);
+                const currentAmount = parseFloat(entry.displayAmount);
+                new AmountModal(this.app, entry.name, meta, found.isFood, (_multiplier, displayAmount) => {
+                    entry.displayAmount = displayAmount;
+                    this.render();
+                }, isNaN(currentAmount) ? undefined : currentAmount, "Update").open();
+            }).open();
+        }).open();
+    }
+    removeItem() {
+        const mealsWithEntries = MEAL_TYPES.filter((mt) => { var _a; return ((_a = this.meals.get(mt)) !== null && _a !== void 0 ? _a : []).length > 0; });
+        if (mealsWithEntries.length === 0) {
+            new obsidian.Notice("No items to remove.");
             return;
         }
-        new StringSuggestModal(app, entryLines, `Remove which ${mealType} item?`, async (selectedLine) => {
-            const match = selectedLine.match(/— ([\d.]+) cal \| ([\d.]+)g protein \| ([\d.]+)g fat \| ([\d.]+)g carbs/);
-            if (!match) {
-                new obsidian.Notice("Could not parse nutrition from that line.");
+        new StringSuggestModal(this.app, mealsWithEntries, "Which meal?", (mealTypeStr) => {
+            const mealType = mealTypeStr;
+            const entries = this.meals.get(mealType);
+            const labels = entries.map((e) => `${e.name} (${e.displayAmount})`);
+            new StringSuggestModal(this.app, labels, "Remove which item?", (label) => {
+                const idx = labels.indexOf(label);
+                entries.splice(idx, 1);
+                this.render();
+            }).open();
+        }).open();
+    }
+    addItem() {
+        new StringSuggestModal(this.app, MEAL_TYPES, "Add to which meal?", (mealTypeStr) => this.searchAndAdd(mealTypeStr)).open();
+    }
+    addMealBlock() {
+        new StringSuggestModal(this.app, MEAL_TYPES, "Which meal type?", (mealTypeStr) => this.searchAndAdd(mealTypeStr)).open();
+    }
+    searchAndAdd(mealType) {
+        new StringSuggestModal(this.app, ["Search food database", "Search recipes"], "Food or recipe?", (choice) => {
+            const isFood = choice === "Search food database";
+            const folder = isFood ? this.settings.foodFolder : this.settings.recipeFolder;
+            const label = isFood ? "foods" : "recipes";
+            const files = this.app.vault
+                .getMarkdownFiles()
+                .filter((f) => f.path.startsWith(folder.replace(/\/$/, "") + "/"));
+            if (files.length === 0) {
+                new obsidian.Notice(`No files found in: ${folder}`);
                 return;
             }
-            const removed = {
-                calories: parseFloat(match[1]),
-                protein: parseFloat(match[2]),
-                fat: parseFloat(match[3]),
-                carbs: parseFloat(match[4]),
-            };
-            // Remove exactly the first occurrence of that line
-            const idx = lines.indexOf(selectedLine);
-            if (idx !== -1)
-                lines.splice(idx, 1);
-            await app.vault.modify(file, lines.join("\n"));
-            await app.fileManager.processFrontMatter(file, (fm) => subtractFromFrontmatter(fm, mealType, removed));
-            new obsidian.Notice(`✓ Item removed from ${mealType}`);
+            new FileSuggestModal(this.app, files, `Search ${label}…`, (file) => {
+                const meta = isFood
+                    ? getFoodMeta(this.app, file)
+                    : getRecipeMeta(this.app, file);
+                new AmountModal(this.app, file.basename, meta, isFood, (multiplier, displayAmount) => {
+                    const nutrition = {
+                        calories: meta.nutrition.calories * multiplier,
+                        protein: meta.nutrition.protein * multiplier,
+                        fat: meta.nutrition.fat * multiplier,
+                        carbs: meta.nutrition.carbs * multiplier,
+                    };
+                    const rawLine = `- [[${file.basename}]] (${displayAmount}) — ` +
+                        `${round1(nutrition.calories)} cal | ` +
+                        `${round1(nutrition.protein)}g protein | ` +
+                        `${round1(nutrition.fat)}g fat | ` +
+                        `${round1(nutrition.carbs)}g carbs`;
+                    this.meals.get(mealType).push({
+                        name: file.basename,
+                        displayAmount,
+                        rawLine,
+                    });
+                    new obsidian.Notice(`Added: ${file.basename}`);
+                    this.render();
+                }).open();
+            }).open();
         }).open();
-    }).open();
+    }
+    save() {
+        recalcAndSave(this.app, this.settings, this.file, this.meals, this.notesLines)
+            .then(() => {
+            new obsidian.Notice(`✓ ${this.file.basename} saved and recalculated`);
+            this.close();
+        })
+            .catch((e) => {
+            new obsidian.Notice(`Error saving: ${String(e)}`);
+            console.error(e);
+        });
+    }
+    onClose() { this.contentEl.empty(); }
+}
+// ─── Edit Meal Log ────────────────────────────────────────────────────────────
+function editMealLog(app, settings) {
+    const todayPath = resolveTodayPath(settings);
+    const todayFile = app.vault.getAbstractFileByPath(todayPath);
+    if (todayFile instanceof obsidian.TFile) {
+        new EditMealLogModal(app, settings, todayFile).open();
+        return;
+    }
+    // No log for today — create a blank one then open the modal
+    (async () => {
+        await ensureFolders(app, todayPath);
+        const fm = buildUpdatedFrontmatter({}, "Breakfast", [], settings);
+        // Zero out Breakfast too (buildUpdatedFrontmatter only zeroes the given meal)
+        for (const meal of MEAL_TYPES) {
+            const k = mealKey(meal);
+            fm[`cal_${k}`] = 0;
+            fm[`protein_${k}`] = 0;
+            fm[`fat_${k}`] = 0;
+            fm[`carbs_${k}`] = 0;
+        }
+        const content = buildNewNoteContent("Breakfast", [], fm);
+        const newFile = await app.vault.create(todayPath, content);
+        new EditMealLogModal(app, settings, newFile).open();
+    })();
 }
 // ─── Main Entry Point ─────────────────────────────────────────────────────────
 async function logMeal(app, settings) {
@@ -21008,6 +21754,38 @@ async function logMeal(app, settings) {
     }
 }
 
+function isRelevantFile(changedPath, config, settings) {
+    if (config.type === "reading-challenge" && settings) {
+        const goalFile = obsidian.normalizePath(settings.readingGoalFile);
+        if (changedPath === goalFile)
+            return true;
+        const folder = settings.bookNotesFolder.replace(/\/$/, "");
+        if (changedPath.startsWith(folder + "/"))
+            return true;
+        return false;
+    }
+    if (config.folder) {
+        const folder = config.folder.replace(/^\//, "").replace(/\/$/, "");
+        if (changedPath.startsWith(folder + "/") || changedPath === folder) {
+            return true;
+        }
+    }
+    if (config.file) {
+        const normalized = config.file.replace(/^\//, "") +
+            (config.file.endsWith(".md") ? "" : ".md");
+        if (changedPath === normalized)
+            return true;
+    }
+    if (config.files) {
+        for (const fp of config.files) {
+            const normalized = fp.replace(/^\//, "") +
+                (fp.endsWith(".md") ? "" : ".md");
+            if (changedPath === normalized)
+                return true;
+        }
+    }
+    return false;
+}
 class Tracker extends obsidian.Plugin {
     async onload() {
         console.log("loading tracker-pro plugin");
@@ -21026,7 +21804,7 @@ class Tracker extends obsidian.Plugin {
         });
         this.addCommand({
             id: "edit-meal-log",
-            name: "Edit today's meal log",
+            name: "Edit meal log",
             callback: () => editMealLog(this.app, this.settings),
         });
         // ── Bill Tracker commands ─────────────────────────────────────────────
@@ -21036,8 +21814,7 @@ class Tracker extends obsidian.Plugin {
             callback: () => generateMonthlyBills(this.app, this.settings),
         });
         // ── Tracker code block processor ──────────────────────────────────────
-        this.registerMarkdownCodeBlockProcessor("tracker-pro", async (source, el, _ctx) => {
-            const container = el.createDiv({ cls: "tracker-pro-root" });
+        this.registerMarkdownCodeBlockProcessor("tracker-pro", async (source, el, ctx) => {
             let src = source;
             if (this.settings.folder &&
                 this.settings.folder !== "/" &&
@@ -21045,6 +21822,7 @@ class Tracker extends obsidian.Plugin {
                 src = `folder: "${this.settings.folder}"\n` + src;
             }
             const { config, errors } = parseTrackerConfig(src);
+            const container = el.createDiv({ cls: "tracker-pro-root" });
             if (errors.length > 0 || !config) {
                 renderErrors(container, errors.length > 0 ? errors : [{ message: "Unknown parse error" }]);
                 return;
@@ -21052,12 +21830,23 @@ class Tracker extends obsidian.Plugin {
             if (!config.dateProperty && this.settings.dateProperty) {
                 config.dateProperty = this.settings.dateProperty;
             }
-            try {
-                await renderTracker(this.app, container, config, this.settings);
-            }
-            catch (e) {
-                renderErrors(container, [{ message: String(e) }]);
-            }
+            const render = async () => {
+                container.empty();
+                try {
+                    await renderTracker(this.app, container, config, this.settings);
+                }
+                catch (e) {
+                    renderErrors(container, [{ message: String(e) }]);
+                }
+            };
+            await render();
+            const child = new obsidian.MarkdownRenderChild(container);
+            child.registerEvent(this.app.metadataCache.on("changed", (file) => {
+                if (isRelevantFile(file.path, config, this.settings)) {
+                    render();
+                }
+            }));
+            ctx.addChild(child);
         });
     }
     async loadSettings() {

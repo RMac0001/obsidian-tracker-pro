@@ -13,6 +13,7 @@ and renders them as charts and summaries. It requires no Dataview dependency.
 4. [Core Parameters](#core-parameters)
    - [Data Source](#data-source)
    - [Date Handling](#date-handling)
+   - [Date Selector](#dateselector)
    - [Properties](#properties)
    - [Aggregation](#aggregation)
    - [Visuals](#visuals)
@@ -123,6 +124,7 @@ If omitted, Tracker Pro looks for common frontmatter keys (`date`, `created`,
 
 | Value | Meaning |
 |---|---|
+| `today` | Today only |
 | `last-N-days` | Last N calendar days (e.g. `last-7-days`, `last-30-days`) |
 | `last-N-weeks` | Last N weeks |
 | `last-N-months` | Last N months |
@@ -130,6 +132,8 @@ If omitted, Tracker Pro looks for common frontmatter keys (`date`, `created`,
 | `this-week` | Sunday through today |
 | `this-month` | 1st of month through today |
 | `this-year` | Jan 1 through today |
+| `last-week` | Previous full calendar week (Sunday → Saturday) |
+| `last-month` | Previous full calendar month (1st → last day) |
 | `last-year` | Full previous calendar year |
 | `all` | Jan 1 2000 through today |
 
@@ -143,6 +147,37 @@ Alternatively, use explicit dates:
 startDate: 2025-01-01
 endDate:   2025-03-31
 ```
+
+---
+
+**`dateSelector`** — render an interactive date-range dropdown above the chart.
+
+```yaml
+dateSelector: true
+```
+
+When enabled, a `<select>` dropdown appears above the chart. Choosing a preset immediately re-renders the chart for that range. Choosing **Custom…** reveals two date pickers; updating either re-renders immediately. The selector stays in place across re-renders — only the chart below it is updated.
+
+**Available presets in the dropdown:**
+
+| Option | Equivalent `dateRange` |
+|---|---|
+| Today | `today` |
+| This Week | `this-week` |
+| This Month | `this-month` |
+| This Year | `this-year` |
+| Last Week | `last-week` |
+| Last Month | `last-month` |
+| Last Year | `last-year` |
+| Last 7 Days | `last-7-days` |
+| Last 30 Days | `last-30-days` |
+| Last 90 Days | `last-90-days` |
+| Last 6 Months | `last-6-months` |
+| Last 12 Months | `last-12-months` |
+| All Time | `all` |
+| Custom… | uses `startDate` / `endDate` |
+
+The initial selection reflects the `dateRange` (or `startDate`/`endDate`) you set in the block. If no range is specified, it defaults to **Last 30 Days**.
 
 ---
 
@@ -1096,17 +1131,22 @@ All available parameters in one table.
 | `showEmptyRows`    | boolean                    | `true`                              | daily-table                      | Hide meal rows where the first column evaluates to 0. |
 | `dateFormat`       | string                     | `MM/DD/YY`                          | daily-table                      | moment.js format for the date column. |
 | `bill_type`        | string                     | —                                   | bills                            | Filter to bills matching this `bill_type` value. Omit to show all active bills. |
+| `year`             | number                     | current year                        | reading-challenge                | Which year to display. |
+| `dateSelector`     | boolean                    | `false`                             | all                              | Render an interactive date-range dropdown above the chart. |
 
 ### Full list of dateRange options
 
 | Value         | What it covers                                          |
 | ------------- | ------------------------------------------------------- |
-| all           | Jan 1 2000 → today                                      |
+| today         | Today only                                              |
 | this-week     | Sunday of the current week → today                      |
 | this-month    | 1st of the current month → today                        |
 | this-year     | Jan 1 of the current year → today                       |
+| last-week     | Previous full calendar week (Sunday → Saturday)         |
+| last-month    | Previous full calendar month (1st → last day)           |
 | last-year     | Full previous calendar year (Jan 1 – Dec 31)            |
 | last-N-days   | N days ago → today (e.g. `last-7-days`, `last-30-days`) |
 | last-N-weeks  | N weeks ago → today                                     |
 | last-N-months | N months ago → today                                    |
 | last-N-years  | N years ago → today                                     |
+| all           | Jan 1 2000 → today                                      |

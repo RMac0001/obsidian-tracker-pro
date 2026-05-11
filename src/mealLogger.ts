@@ -31,6 +31,12 @@ interface MealEntry {
     nutrition: NutritionValues; // already multiplied
 }
 
+interface ParsedEntry {
+    name: string;           // e.g. "Peanut Butter"
+    displayAmount: string;  // e.g. "2 oz" or "1.5 servings"
+    rawLine: string;        // full original log line
+}
+
 type MealType = "Breakfast" | "Lunch" | "Dinner" | "Snacks";
 type MealKey  = "breakfast" | "lunch" | "dinner" | "snacks";
 
@@ -129,6 +135,9 @@ class FileSuggestModal extends FuzzySuggestModal<TFile> {
  * Recipes: asks "How many servings?"
  *          multiplier = amount
  *          default = 1
+ *
+ * Pass defaultValue to pre-fill a specific number (used by change-quantity).
+ * Pass buttonLabel to customise the submit button text.
  */
 class AmountModal extends Modal {
     private input!: HTMLInputElement;
@@ -138,7 +147,9 @@ class AmountModal extends Modal {
         private itemName: string,
         private meta: FoodMeta,
         private isFood: boolean,
-        private onSubmit: (multiplier: number, displayAmount: string) => void
+        private onSubmit: (multiplier: number, displayAmount: string) => void,
+        private defaultValue?: number,
+        private buttonLabel = "Add to meal"
     ) {
         super(app);
     }
@@ -148,7 +159,6 @@ class AmountModal extends Modal {
 
         contentEl.createEl("h3", { text: this.itemName });
 
-        // Context hint
         const hint = this.isFood
             ? `1 serving = ${this.meta.servingSize} ${this.meta.servingUnit}  ·  ${this.meta.nutrition.calories} cal per serving`
             : `${this.meta.nutrition.calories} cal per serving`;
@@ -158,7 +168,6 @@ class AmountModal extends Modal {
             attr: { style: "margin:4px 0 12px;color:var(--text-muted);font-size:0.85em;" },
         });
 
-        // Label
         const labelText = this.isFood
             ? `Amount (${this.meta.servingUnit})`
             : "Servings";
@@ -181,13 +190,14 @@ class AmountModal extends Modal {
             },
         });
 
-        // Pre-fill: one serving worth of the unit for foods, 1 for recipes
-        this.input.value = this.isFood ? String(this.meta.servingSize) : "1";
+        this.input.value = this.defaultValue !== undefined
+            ? String(this.defaultValue)
+            : this.isFood ? String(this.meta.servingSize) : "1";
         this.input.focus();
         this.input.select();
 
         const btn = contentEl.createEl("button", {
-            text: "Add to meal",
+            text: this.buttonLabel,
             attr: { style: "width:100%;padding:8px;cursor:pointer;" },
         });
         btn.onclick = () => this.submit();
@@ -246,7 +256,7 @@ function buildUpdatedFrontmatter(
         if (!(`${macro}_total` in fm)) fm[`${macro}_total`] = 0;
     }
 
-    // Accumulate into this meal (safe to call twice for the same meal type)
+    // Accumulate into this meal
     fm[`cal_${key}`]     = round1((fm[`cal_${key}`]     || 0) + mealNutrition.calories);
     fm[`protein_${key}`] = round1((fm[`protein_${key}`] || 0) + mealNutrition.protein);
     fm[`fat_${key}`]     = round1((fm[`fat_${key}`]     || 0) + mealNutrition.fat);
@@ -473,66 +483,543 @@ export function clearMeal(app: App, settings: TrackerSettings): void {
     }).open();
 }
 
-// ─── Edit Today's Log ─────────────────────────────────────────────────────────
+// ─── Log Parsing ──────────────────────────────────────────────────────────────
 
-export function editMealLog(app: App, settings: TrackerSettings): void {
-    new StringSuggestModal(app, MEAL_TYPES, "Which meal to edit?", async (mealTypeStr) => {
-        const mealType = mealTypeStr as MealType;
-        const filePath = resolveTodayPath(settings);
-        const file     = app.vault.getAbstractFileByPath(filePath);
+function extractBody(content: string): string {
+    const lines = content.split("\n");
+    if (lines[0] !== "---") return content;
+    for (let i = 1; i < lines.length; i++) {
+        if (lines[i] === "---") return lines.slice(i + 1).join("\n");
+    }
+    return content;
+}
 
-        if (!(file instanceof TFile)) {
-            new Notice("No food log found for today.");
-            return;
+function parseLogLine(line: string): ParsedEntry | null {
+    const m = line.match(/^-\s+\[\[(.+?)\]\]\s+\((.+?)\)/);
+    if (!m) return null;
+    return { name: m[1], displayAmount: m[2], rawLine: line };
+}
+
+function parseMealSections(body: string): Map<MealType, ParsedEntry[]> {
+    const meals = new Map<MealType, ParsedEntry[]>(
+        MEAL_TYPES.map((mt) => [mt, []])
+    );
+    const lines = body.split("\n");
+    let currentMeal: MealType | null = null;
+
+    for (const line of lines) {
+        const hm = line.match(/^##\s+(.+)/);
+        if (hm) {
+            const heading = hm[1].trim() as MealType;
+            currentMeal = MEAL_TYPES.includes(heading) ? heading : null;
+            continue;
+        }
+        if (currentMeal && line.trimStart().startsWith("- ")) {
+            const parsed = parseLogLine(line);
+            if (parsed) meals.get(currentMeal)!.push(parsed);
+        }
+    }
+    return meals;
+}
+
+function parseNotesLines(body: string): string[] {
+    const lines = body.split("\n");
+    let inNotes = false;
+    const notes: string[] = [];
+    for (const line of lines) {
+        if (line.trim() === "## Notes") { inNotes = true; continue; }
+        if (inNotes) {
+            if (line.startsWith("## ")) break;
+            notes.push(line);
+        }
+    }
+    while (notes.length && notes[notes.length - 1].trim() === "") notes.pop();
+    return notes;
+}
+
+// ─── File Lookup ──────────────────────────────────────────────────────────────
+
+function findItemFile(
+    app: App,
+    name: string,
+    settings: TrackerSettings
+): { file: TFile; isFood: boolean } | null {
+    const allMd    = app.vault.getMarkdownFiles();
+    const foodBase = settings.foodFolder.replace(/\/$/, "");
+    const recBase  = settings.recipeFolder.replace(/\/$/, "");
+
+    const foodFile = allMd.find(
+        (f) => f.path.startsWith(foodBase + "/") && f.basename === name
+    );
+    if (foodFile) return { file: foodFile, isFood: true };
+
+    const recFile = allMd.find(
+        (f) => f.path.startsWith(recBase + "/") && f.basename === name
+    );
+    if (recFile) return { file: recFile, isFood: false };
+
+    return null;
+}
+
+function multiplierFromDisplay(displayAmount: string, meta: FoodMeta, isFood: boolean): number {
+    const num = parseFloat(displayAmount);
+    if (isNaN(num)) return 1;
+    return isFood ? num / meta.servingSize : num;
+}
+
+// ─── Recent Log Files ─────────────────────────────────────────────────────────
+
+function getMealLogBaseFolder(settings: TrackerSettings): string {
+    const template   = settings.mealLogFolder;
+    const tokenCount = (template.match(/\{\{DATE:/g) ?? []).length;
+    if (tokenCount === 0) return template.replace(/\/$/, "");
+    const resolved   = resolveDateTemplate(template);
+    const parts      = resolved.split("/");
+    return parts.slice(0, Math.max(0, parts.length - tokenCount)).join("/");
+}
+
+function getRecentLogFiles(app: App, settings: TrackerSettings, limit: number): TFile[] {
+    const base = getMealLogBaseFolder(settings);
+    const files = app.vault.getMarkdownFiles();
+    const filtered = base
+        ? files.filter((f) => f.path.startsWith(base + "/"))
+        : files;
+    return filtered
+        .sort((a, b) => b.stat.mtime - a.stat.mtime)
+        .slice(0, limit);
+}
+
+// ─── Recalculate and Save ─────────────────────────────────────────────────────
+
+async function recalcAndSave(
+    app: App,
+    settings: TrackerSettings,
+    file: TFile,
+    meals: Map<MealType, ParsedEntry[]>,
+    notesLines: string[]
+): Promise<void> {
+    const allKeys = ["breakfast", "lunch", "dinner", "snacks"] as MealKey[];
+
+    const mealTotals: Record<MealKey, NutritionValues> = {
+        breakfast: { calories: 0, protein: 0, fat: 0, carbs: 0 },
+        lunch:     { calories: 0, protein: 0, fat: 0, carbs: 0 },
+        dinner:    { calories: 0, protein: 0, fat: 0, carbs: 0 },
+        snacks:    { calories: 0, protein: 0, fat: 0, carbs: 0 },
+    };
+
+    const freshLines = new Map<MealType, string[]>();
+
+    for (const mealType of MEAL_TYPES) {
+        const key     = mealKey(mealType);
+        const entries = meals.get(mealType) ?? [];
+        const lines: string[] = [];
+
+        for (const entry of entries) {
+            const found = findItemFile(app, entry.name, settings);
+            let nutrition: NutritionValues;
+
+            if (found) {
+                // Re-pull fresh from source note
+                const meta       = found.isFood
+                    ? getFoodMeta(app, found.file)
+                    : getRecipeMeta(app, found.file);
+                const multiplier = multiplierFromDisplay(entry.displayAmount, meta, found.isFood);
+                nutrition = {
+                    calories: meta.nutrition.calories * multiplier,
+                    protein:  meta.nutrition.protein  * multiplier,
+                    fat:      meta.nutrition.fat      * multiplier,
+                    carbs:    meta.nutrition.carbs    * multiplier,
+                };
+            } else {
+                // Source note not found — fall back to stored values in the log line
+                const m = entry.rawLine.match(
+                    /— ([\d.]+) cal \| ([\d.]+)g protein \| ([\d.]+)g fat \| ([\d.]+)g carbs/
+                );
+                nutrition = m
+                    ? { calories: parseFloat(m[1]), protein: parseFloat(m[2]), fat: parseFloat(m[3]), carbs: parseFloat(m[4]) }
+                    : { calories: 0, protein: 0, fat: 0, carbs: 0 };
+            }
+
+            mealTotals[key].calories += nutrition.calories;
+            mealTotals[key].protein  += nutrition.protein;
+            mealTotals[key].fat      += nutrition.fat;
+            mealTotals[key].carbs    += nutrition.carbs;
+
+            lines.push(
+                `- [[${entry.name}]] (${entry.displayAmount}) — ` +
+                `${round1(nutrition.calories)} cal | ` +
+                `${round1(nutrition.protein)}g protein | ` +
+                `${round1(nutrition.fat)}g fat | ` +
+                `${round1(nutrition.carbs)}g carbs`
+            );
+        }
+        freshLines.set(mealType, lines);
+    }
+
+    // Update frontmatter in-place
+    await (app as any).fileManager.processFrontMatter(
+        file,
+        (fm: Record<string, any>) => {
+            for (const m of allKeys) {
+                fm[`cal_${m}`]     = round1(mealTotals[m].calories);
+                fm[`protein_${m}`] = round1(mealTotals[m].protein);
+                fm[`fat_${m}`]     = round1(mealTotals[m].fat);
+                fm[`carbs_${m}`]   = round1(mealTotals[m].carbs);
+            }
+            fm.cal_total     = round1(allKeys.reduce((s, m) => s + mealTotals[m].calories, 0));
+            fm.protein_total = round1(allKeys.reduce((s, m) => s + mealTotals[m].protein,  0));
+            fm.fat_total     = round1(allKeys.reduce((s, m) => s + mealTotals[m].fat,      0));
+            fm.carbs_total   = round1(allKeys.reduce((s, m) => s + mealTotals[m].carbs,    0));
+        }
+    );
+
+    // Rebuild body (meal sections + Notes)
+    const d       = new Date();
+    const dateStr = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+
+    let body = "";
+    for (const mealType of MEAL_TYPES) {
+        body += `## ${mealType}\n`;
+        const lines = freshLines.get(mealType) ?? [];
+        if (lines.length > 0) body += lines.join("\n") + "\n";
+        body += "\n";
+    }
+    body += `## Notes\n`;
+    if (notesLines.length > 0) body += notesLines.join("\n") + "\n";
+    body += `- ${dateStr} — Log recalculated\n`;
+
+    // Extract the frontmatter block (already updated by processFrontMatter) and rewrite body
+    const updated = await app.vault.read(file);
+    const fmLines = updated.split("\n");
+    let fmEnd     = -1;
+    if (fmLines[0] === "---") {
+        for (let i = 1; i < fmLines.length; i++) {
+            if (fmLines[i] === "---") { fmEnd = i; break; }
+        }
+    }
+    const fmBlock = fmEnd !== -1 ? fmLines.slice(0, fmEnd + 1).join("\n") : "";
+    await app.vault.modify(file, fmBlock + "\n\n" + body);
+}
+
+// ─── Edit Meal Log Modal ──────────────────────────────────────────────────────
+
+class EditMealLogModal extends Modal {
+    private meals: Map<MealType, ParsedEntry[]> = new Map(
+        MEAL_TYPES.map((mt) => [mt, []])
+    );
+    private notesLines: string[] = [];
+
+    constructor(
+        app: App,
+        private settings: TrackerSettings,
+        private file: TFile
+    ) {
+        super(app);
+    }
+
+    onOpen(): void {
+        this.contentEl.setText("Loading…");
+        this.loadFile().then(() => this.render());
+    }
+
+    private async loadFile(): Promise<void> {
+        const content   = await this.app.vault.read(this.file);
+        const body      = extractBody(content);
+        this.meals      = parseMealSections(body);
+        this.notesLines = parseNotesLines(body);
+    }
+
+    render(): void {
+        const { contentEl } = this;
+        contentEl.empty();
+
+        // ── Header ────────────────────────────────────────────────────────────
+        const header = contentEl.createEl("div", { cls: "tracker-pro-edit-header" });
+        header.createEl("span", {
+            text: this.file.basename,
+            cls: "tracker-pro-edit-title",
+        });
+        const switchBtn = header.createEl("button", {
+            text: "Switch date",
+            cls: "tracker-pro-edit-switch",
+        });
+        switchBtn.onclick = () => this.switchDate();
+
+        // ── Item summary ──────────────────────────────────────────────────────
+        const summary = contentEl.createEl("div", { cls: "tracker-pro-edit-summary" });
+        let hasItems = false;
+        for (const mealType of MEAL_TYPES) {
+            const count = (this.meals.get(mealType) ?? []).length;
+            if (count === 0) continue;
+            hasItems = true;
+            summary.createEl("span", {
+                text: `${mealType}: ${count} item${count !== 1 ? "s" : ""}`,
+                cls: "tracker-pro-edit-summary-item",
+            });
+        }
+        if (!hasItems) {
+            summary.createEl("span", {
+                text: "No items logged yet",
+                attr: { style: "color:var(--text-muted);font-size:0.85em;" },
+            });
         }
 
-        const content              = await app.vault.read(file);
-        const lines                = content.split("\n");
-        const { headerIdx, entryLines } = getMealSectionLines(lines, mealType);
+        // ── Actions ───────────────────────────────────────────────────────────
+        contentEl.createEl("p", {
+            text: "What would you like to do?",
+            attr: { style: "margin:12px 0 8px;color:var(--text-muted);font-size:0.9em;" },
+        });
 
-        if (headerIdx === -1) {
-            new Notice(`No ${mealType} section found in today's log.`);
+        const actionList = contentEl.createEl("div", { cls: "tracker-pro-edit-actions" });
+
+        const actions: { label: string; fn: () => void }[] = [
+            { label: "Change quantity on an item", fn: () => this.changeQuantity() },
+            { label: "Remove an item",             fn: () => this.removeItem() },
+            { label: "Add an item to a meal",      fn: () => this.addItem() },
+            { label: "Add a meal block",            fn: () => this.addMealBlock() },
+        ];
+
+        for (const action of actions) {
+            const btn = actionList.createEl("button", {
+                text: action.label,
+                cls: "tracker-pro-edit-action-btn",
+            });
+            btn.onclick = () => action.fn();
+        }
+
+        // ── Save ──────────────────────────────────────────────────────────────
+        const saveBtn = contentEl.createEl("button", {
+            text: "Save and recalculate",
+            cls: "tracker-pro-edit-save",
+        });
+        saveBtn.onclick = () => this.save();
+    }
+
+    private switchDate(): void {
+        const files = getRecentLogFiles(this.app, this.settings, 30);
+        if (files.length === 0) {
+            new Notice("No log files found.");
             return;
         }
-        if (entryLines.length === 0) {
-            new Notice(`No items in ${mealType} to remove.`);
+        new FileSuggestModal(
+            this.app,
+            files,
+            "Select a log to edit…",
+            async (f) => {
+                this.file = f;
+                await this.loadFile();
+                this.render();
+            }
+        ).open();
+    }
+
+    private changeQuantity(): void {
+        const mealsWithEntries = MEAL_TYPES.filter(
+            (mt) => (this.meals.get(mt) ?? []).length > 0
+        );
+        if (mealsWithEntries.length === 0) {
+            new Notice("No items to change.");
             return;
         }
 
         new StringSuggestModal(
-            app,
-            entryLines,
-            `Remove which ${mealType} item?`,
-            async (selectedLine) => {
-                const match = selectedLine.match(
-                    /— ([\d.]+) cal \| ([\d.]+)g protein \| ([\d.]+)g fat \| ([\d.]+)g carbs/
-                );
-                if (!match) {
-                    new Notice("Could not parse nutrition from that line.");
+            this.app,
+            mealsWithEntries,
+            "Which meal?",
+            (mealTypeStr) => {
+                const mealType = mealTypeStr as MealType;
+                const entries  = this.meals.get(mealType) ?? [];
+                const labels   = entries.map((e) => `${e.name} (${e.displayAmount})`);
+
+                new StringSuggestModal(
+                    this.app,
+                    labels,
+                    "Change quantity on which item?",
+                    (label) => {
+                        const idx   = labels.indexOf(label);
+                        const entry = entries[idx];
+
+                        const found = findItemFile(this.app, entry.name, this.settings);
+                        if (!found) {
+                            new Notice(`Cannot find source file for "${entry.name}".`);
+                            this.render();
+                            return;
+                        }
+
+                        const meta          = found.isFood
+                            ? getFoodMeta(this.app, found.file)
+                            : getRecipeMeta(this.app, found.file);
+                        const currentAmount = parseFloat(entry.displayAmount);
+
+                        new AmountModal(
+                            this.app,
+                            entry.name,
+                            meta,
+                            found.isFood,
+                            (_multiplier, displayAmount) => {
+                                entry.displayAmount = displayAmount;
+                                this.render();
+                            },
+                            isNaN(currentAmount) ? undefined : currentAmount,
+                            "Update"
+                        ).open();
+                    }
+                ).open();
+            }
+        ).open();
+    }
+
+    private removeItem(): void {
+        const mealsWithEntries = MEAL_TYPES.filter(
+            (mt) => (this.meals.get(mt) ?? []).length > 0
+        );
+        if (mealsWithEntries.length === 0) {
+            new Notice("No items to remove.");
+            return;
+        }
+
+        new StringSuggestModal(
+            this.app,
+            mealsWithEntries,
+            "Which meal?",
+            (mealTypeStr) => {
+                const mealType = mealTypeStr as MealType;
+                const entries  = this.meals.get(mealType)!;
+                const labels   = entries.map((e) => `${e.name} (${e.displayAmount})`);
+
+                new StringSuggestModal(
+                    this.app,
+                    labels,
+                    "Remove which item?",
+                    (label) => {
+                        const idx = labels.indexOf(label);
+                        entries.splice(idx, 1);
+                        this.render();
+                    }
+                ).open();
+            }
+        ).open();
+    }
+
+    private addItem(): void {
+        new StringSuggestModal(
+            this.app,
+            MEAL_TYPES,
+            "Add to which meal?",
+            (mealTypeStr) => this.searchAndAdd(mealTypeStr as MealType)
+        ).open();
+    }
+
+    private addMealBlock(): void {
+        new StringSuggestModal(
+            this.app,
+            MEAL_TYPES,
+            "Which meal type?",
+            (mealTypeStr) => this.searchAndAdd(mealTypeStr as MealType)
+        ).open();
+    }
+
+    private searchAndAdd(mealType: MealType): void {
+        new StringSuggestModal(
+            this.app,
+            ["Search food database", "Search recipes"],
+            "Food or recipe?",
+            (choice) => {
+                const isFood = choice === "Search food database";
+                const folder = isFood ? this.settings.foodFolder : this.settings.recipeFolder;
+                const label  = isFood ? "foods" : "recipes";
+                const files  = this.app.vault
+                    .getMarkdownFiles()
+                    .filter((f) => f.path.startsWith(folder.replace(/\/$/, "") + "/"));
+
+                if (files.length === 0) {
+                    new Notice(`No files found in: ${folder}`);
                     return;
                 }
 
-                const removed: NutritionValues = {
-                    calories: parseFloat(match[1]),
-                    protein:  parseFloat(match[2]),
-                    fat:      parseFloat(match[3]),
-                    carbs:    parseFloat(match[4]),
-                };
+                new FileSuggestModal(
+                    this.app,
+                    files,
+                    `Search ${label}…`,
+                    (file) => {
+                        const meta = isFood
+                            ? getFoodMeta(this.app, file)
+                            : getRecipeMeta(this.app, file);
 
-                // Remove exactly the first occurrence of that line
-                const idx = lines.indexOf(selectedLine);
-                if (idx !== -1) lines.splice(idx, 1);
-                await app.vault.modify(file, lines.join("\n"));
+                        new AmountModal(
+                            this.app,
+                            file.basename,
+                            meta,
+                            isFood,
+                            (multiplier, displayAmount) => {
+                                const nutrition = {
+                                    calories: meta.nutrition.calories * multiplier,
+                                    protein:  meta.nutrition.protein  * multiplier,
+                                    fat:      meta.nutrition.fat      * multiplier,
+                                    carbs:    meta.nutrition.carbs    * multiplier,
+                                };
+                                const rawLine =
+                                    `- [[${file.basename}]] (${displayAmount}) — ` +
+                                    `${round1(nutrition.calories)} cal | ` +
+                                    `${round1(nutrition.protein)}g protein | ` +
+                                    `${round1(nutrition.fat)}g fat | ` +
+                                    `${round1(nutrition.carbs)}g carbs`;
 
-                await (app as any).fileManager.processFrontMatter(
-                    file,
-                    (fm: Record<string, any>) => subtractFromFrontmatter(fm, mealType, removed)
-                );
-
-                new Notice(`✓ Item removed from ${mealType}`);
+                                this.meals.get(mealType)!.push({
+                                    name: file.basename,
+                                    displayAmount,
+                                    rawLine,
+                                });
+                                new Notice(`Added: ${file.basename}`);
+                                this.render();
+                            }
+                        ).open();
+                    }
+                ).open();
             }
         ).open();
-    }).open();
+    }
+
+    private save(): void {
+        recalcAndSave(this.app, this.settings, this.file, this.meals, this.notesLines)
+            .then(() => {
+                new Notice(`✓ ${this.file.basename} saved and recalculated`);
+                this.close();
+            })
+            .catch((e) => {
+                new Notice(`Error saving: ${String(e)}`);
+                console.error(e);
+            });
+    }
+
+    onClose(): void { this.contentEl.empty(); }
+}
+
+// ─── Edit Meal Log ────────────────────────────────────────────────────────────
+
+export function editMealLog(app: App, settings: TrackerSettings): void {
+    const todayPath = resolveTodayPath(settings);
+    const todayFile = app.vault.getAbstractFileByPath(todayPath);
+
+    if (todayFile instanceof TFile) {
+        new EditMealLogModal(app, settings, todayFile).open();
+        return;
+    }
+
+    // No log for today — create a blank one then open the modal
+    (async () => {
+        await ensureFolders(app, todayPath);
+        const fm      = buildUpdatedFrontmatter({}, "Breakfast", [], settings);
+        // Zero out Breakfast too (buildUpdatedFrontmatter only zeroes the given meal)
+        for (const meal of MEAL_TYPES) {
+            const k = mealKey(meal);
+            fm[`cal_${k}`] = 0; fm[`protein_${k}`] = 0;
+            fm[`fat_${k}`] = 0; fm[`carbs_${k}`]   = 0;
+        }
+        const content = buildNewNoteContent("Breakfast", [], fm);
+        const newFile = await app.vault.create(todayPath, content);
+        new EditMealLogModal(app, settings, newFile).open();
+    })();
 }
 
 // ─── Main Entry Point ─────────────────────────────────────────────────────────

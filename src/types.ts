@@ -14,7 +14,8 @@ export type ChartType =
   | "summary"
   | "table"
   | "daily-table"
-  | "bills";
+  | "bills"
+  | "reading-challenge";
 
 // ─── Aggregation ─────────────────────────────────────────────────────────────
 
@@ -114,9 +115,16 @@ export interface TrackerConfig {
   totalRow?: string;            // label for per-day total row (omit to hide)
   showEmptyRows?: boolean;      // show rows with zero values (default: true)
   dateFormat?: string;          // moment.js format for the date column (default: MM/DD/YY)
+  showSource?: boolean;         // show source file path column (debug aid)
 
   // Bills chart
   bill_type?: string;           // optional filter — show only bills of this type
+
+  // Reading Challenge chart
+  year?: number;                // which year to display (default: current year)
+
+  // Date selector UI
+  dateSelector?: boolean;       // render a date-range dropdown above the chart
 }
 
 // ─── Bills Interfaces ─────────────────────────────────────────────────────────

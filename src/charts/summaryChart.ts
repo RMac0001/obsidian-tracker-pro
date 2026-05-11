@@ -114,6 +114,16 @@ function calcMax(series: SeriesData[]): number {
   return max === -Infinity ? 0 : max;
 }
 
+function calcMin(series: SeriesData[]): number {
+  let min = Infinity;
+  for (const s of series) {
+    for (const pt of s.points) {
+      if (pt.value !== null && pt.value < min) min = pt.value;
+    }
+  }
+  return min === Infinity ? 0 : min;
+}
+
 // ─── Template Engine ──────────────────────────────────────────────────────────
 
 function applyTemplate(template: string, vars: Record<string, string | number>): string {
@@ -149,6 +159,7 @@ export function renderSummaryChart(
     sum:           calcSum(series),
     mean:          calcMean(series),
     max:           calcMax(series),
+    min:           calcMin(series),
   };
 
   const rendered = applyTemplate(template, vars)
