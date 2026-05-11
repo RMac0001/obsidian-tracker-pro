@@ -56,6 +56,22 @@ export function parseDateRange(
       end: new Date(today.getFullYear() - 1, 11, 31),
     };
   }
+  if (range === "today") {
+    return { start: today, end: today };
+  }
+  if (range === "last-week") {
+    const day = today.getDay();
+    const end = new Date(today);
+    end.setDate(today.getDate() - day - 1); // last Saturday
+    const start = new Date(end);
+    start.setDate(end.getDate() - 6);       // previous Sunday
+    return { start, end };
+  }
+  if (range === "last-month") {
+    const end = new Date(today.getFullYear(), today.getMonth(), 0);
+    const start = new Date(today.getFullYear(), today.getMonth() - 1, 1);
+    return { start, end };
+  }
   if (range === "all") {
     return {
       start: new Date(2000, 0, 1),
@@ -125,6 +141,7 @@ function validateConfig(
 
   if (raw.showSource !== undefined) config.showSource = Boolean(raw.showSource);
   if (raw.year !== undefined) config.year = Number(raw.year);
+  if (raw.dateSelector !== undefined) config.dateSelector = Boolean(raw.dateSelector);
 
   // Apply defaults
   if (!config.aggregate) config.aggregate = "daily";

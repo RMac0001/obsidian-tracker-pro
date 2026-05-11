@@ -1,6 +1,23 @@
 # Tracker Pro — Status
 
-## What was done (v1.1.1 → v1.3.3)
+## What was done (v1.1.1 → v1.4.0)
+
+---
+
+### v1.4.0 — Interactive Date Range Selector
+
+**`dateSelector: true` — interactive dropdown above any chart**
+- Add `dateSelector: true` to any chart block and a date-range `<select>` renders above the chart
+- Selecting a preset re-renders only the chart portion; the selector stays in place
+- Choosing **Custom…** reveals two `<input type="date">` fields; updating either date re-renders immediately
+- Works with all chart types that support `dateRange`
+
+**New `dateRange` presets**
+- `today` — start = today, end = today
+- `last-week` — the previous full calendar week (Sunday → Saturday)
+- `last-month` — the previous full calendar month (1st → last day)
+
+**Dropdown options (in order):** Today · This Week · This Month · This Year · Last Week · Last Month · Last Year · Last 7 Days · Last 30 Days · Last 90 Days · Last 6 Months · Last 12 Months · All Time · Custom…
 
 ---
 

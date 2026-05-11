@@ -9,20 +9,15 @@ and renders them as charts and summaries. It requires no Dataview dependency.
 
 1. [Installation](#installation)
 2. [Global Settings](#global-settings)
-3. [Meal Logger](#meal-logger)
-   - [Vault Structure](#vault-structure)
-   - [Daily Log Frontmatter](#daily-log-frontmatter)
-   - [Log meal](#log-meal)
-   - [Clear meal](#clear-meal)
-   - [Edit meal log](#edit-meal-log)
-4. [How It Works](#how-it-works)
-5. [Core Parameters](#core-parameters)
+3. [How It Works](#how-it-works)
+4. [Core Parameters](#core-parameters)
    - [Data Source](#data-source)
    - [Date Handling](#date-handling)
+   - [Date Selector](#dateselector)
    - [Properties](#properties)
    - [Aggregation](#aggregation)
    - [Visuals](#visuals)
-6. [Chart Types](#chart-types)
+5. [Chart Types](#chart-types)
    - [line](#line)
    - [bar](#bar)
    - [pie](#pie)
@@ -37,11 +32,10 @@ and renders them as charts and summaries. It requires no Dataview dependency.
    - [table](#table)
    - [daily-table](#daily-table)
    - [bills](#bills)
-7. [Reading Challenge](#reading-challenge)
-8. [Advanced Features](#advanced-features)
+6. [Advanced Features](#advanced-features)
    - [source: fileMeta](#source-filemeta)
    - [dateAggregation](#dateaggregation)
-9. [Full Parameter Reference](#full-parameter-reference)
+7. [Full Parameter Reference](#full-parameter-reference)
 
 ---
 
@@ -59,150 +53,11 @@ and renders them as charts and summaries. It requires no Dataview dependency.
 
 Open **Settings → Tracker Pro** to configure defaults that apply to every block:
 
-**Charts**
-
 | Setting | Description |
 |---|---|
 | **Default folder location** | Folder scanned for notes when no `folder` is set in the block. Defaults to `/` (entire vault). |
 | **Default date format** | Format used to parse dates in note filenames (e.g. `YYYY-MM-DD`). |
 | **Default date property** | Frontmatter key to read dates from instead of the filename. Leave empty to keep using the filename. Can be overridden per block with `dateProperty`. |
-
-**Meal Logger**
-
-| Setting | Description |
-|---|---|
-| **Meal log folder** | Folder path for daily meal log notes. Supports `{{DATE:FORMAT}}` tokens (e.g. `Data/Food Logs/{{DATE:YYYY}}/{{DATE:YYYY-MM}}`). |
-| **Meal log filename** | Filename template for daily log notes. Supports `{{DATE:FORMAT}}` tokens (e.g. `{{DATE:YYYY-MM-DD}}`). |
-| **Food database folder** | Folder containing individual food notes (e.g. `Data/Food`). |
-| **Recipes folder** | Folder containing recipe notes (e.g. `Data/Recipes`). |
-
-**Bills**
-
-| Setting | Description |
-|---|---|
-| **Bills master folder** | Folder containing master bill notes (default: `Data/Bills`). |
-| **Bills payment folder template** | Folder template for monthly payment notes. Supports `{{DATE:FORMAT}}` tokens (default: `Data/Bills/Payments/BP-{{DATE:YYYY}}/BP-{{DATE:YYYY-MM}}`). |
-
-**Reading Challenge**
-
-| Setting | Description |
-|---|---|
-| **Book notes folder** | Folder containing your book review notes (default: `Data/Book Reviews`). |
-| **Book note prefix** | Filename prefix that identifies book notes (default: `BR-`). Only notes whose basename starts with this prefix are counted. |
-| **Reading goal file** | Path to the note holding your annual reading goals (default: `Data/Reading Goals.md`). |
-
----
-
-## Meal Logger
-
-The Meal Logger is a set of commands for logging and editing daily food and nutrition data. All commands are available from the command palette.
-
----
-
-### Vault Structure
-
-**Daily log notes** — one note per day at the path defined by your settings:
-
-```
-Data/Food Logs/2026/2026-05/2026-05-07.md
-```
-
-**Food database notes** — one note per food item in your `Food database folder`:
-
-```yaml
-food_name: Peanut Butter
-serving_size: 2
-serving_unit: oz
-calories: 190
-protein: 7
-fat: 16
-carbs: 8
-```
-
-**Recipe notes** — one note per recipe in your `Recipes folder`:
-
-```yaml
-recipe_name: Cup of Coffee
-servings: 1
-calories: 45
-protein: 0
-fat: 2
-carbs: 5
-```
-
----
-
-### Daily Log Frontmatter
-
-The plugin writes 20 nutrition fields automatically — totals for the full day plus a breakdown per meal:
-
-```yaml
-cal_total: 1580       protein_total: 95      fat_total: 62      carbs_total: 180
-cal_breakfast: 380    protein_breakfast: 20  fat_breakfast: 14  carbs_breakfast: 42
-cal_lunch: 620        protein_lunch: 38      fat_lunch: 24      carbs_lunch: 68
-cal_dinner: 490       protein_dinner: 30     fat_dinner: 20     carbs_dinner: 58
-cal_snacks: 90        protein_snacks: 7      fat_snacks: 4      carbs_snacks: 12
-```
-
-These fields are what `daily-table` and `table` chart blocks read.
-
----
-
-### Log meal
-
-Run **Tracker Pro: Log meal** from the command palette.
-
-1. Pick a meal type — Breakfast, Lunch, Dinner, or Snacks
-2. Search the food database or recipes by name
-3. Enter the amount (in the food's unit for foods; number of servings for recipes)
-4. Choose to add more items or finish
-
-If today's log note doesn't exist it is created automatically. If it does exist, entries are appended to the correct meal section and frontmatter totals are updated.
-
-**Remove last item** — while building a meal, a "Remove last item (Name)" option appears in the menu whenever the list isn't empty. Selecting it pops the last entry and loops back.
-
-**Log line format:**
-
-```
-- [[Peanut Butter]] (2 oz) — 190 cal | 7g protein | 16g fat | 8g carbs
-- [[Recipe - Cup of Coffee]] (1 serving) — 45 cal | 0g protein | 2g fat | 5g carbs
-```
-
----
-
-### Clear meal
-
-Run **Tracker Pro: Clear meal** from the command palette.
-
-1. Pick a meal type
-2. Confirm
-
-Zeroes all 8 frontmatter fields for that meal, removes all bullet lines from that section, and recalculates the four `_total` fields.
-
----
-
-### Edit meal log
-
-Run **Tracker Pro: Edit meal log** from the command palette.
-
-Opens the edit modal for today's log. If no log exists for today, a blank one is created automatically with zeroed frontmatter and all four meal sections.
-
-**Switch date** — a button in the modal header opens a picker of the 30 most recent log files so you can edit any past log without closing the modal.
-
-Four edit actions are always available:
-
-| Action | Description |
-|---|---|
-| **Change quantity** | Pick a meal and item, adjust the amount — saves and recalculates |
-| **Remove item** | Pick a meal and item to delete |
-| **Add item to a meal** | Full food/recipe search; choose which meal to add to |
-| **Add a meal block** | Pick the meal type first, then search for the item |
-
-**Save and recalculate** — on save, nutrition values are re-pulled fresh from the source food/recipe notes (not re-summed from stored log values). A timestamped bullet is appended to a `## Notes` section at the bottom of the file:
-
-```
-- 2026-05-07 — Log recalculated
-```
 
 ---
 
@@ -269,6 +124,7 @@ If omitted, Tracker Pro looks for common frontmatter keys (`date`, `created`,
 
 | Value | Meaning |
 |---|---|
+| `today` | Today only |
 | `last-N-days` | Last N calendar days (e.g. `last-7-days`, `last-30-days`) |
 | `last-N-weeks` | Last N weeks |
 | `last-N-months` | Last N months |
@@ -276,6 +132,8 @@ If omitted, Tracker Pro looks for common frontmatter keys (`date`, `created`,
 | `this-week` | Sunday through today |
 | `this-month` | 1st of month through today |
 | `this-year` | Jan 1 through today |
+| `last-week` | Previous full calendar week (Sunday → Saturday) |
+| `last-month` | Previous full calendar month (1st → last day) |
 | `last-year` | Full previous calendar year |
 | `all` | Jan 1 2000 through today |
 
@@ -289,6 +147,37 @@ Alternatively, use explicit dates:
 startDate: 2025-01-01
 endDate:   2025-03-31
 ```
+
+---
+
+**`dateSelector`** — render an interactive date-range dropdown above the chart.
+
+```yaml
+dateSelector: true
+```
+
+When enabled, a `<select>` dropdown appears above the chart. Choosing a preset immediately re-renders the chart for that range. Choosing **Custom…** reveals two date pickers; updating either re-renders immediately. The selector stays in place across re-renders — only the chart below it is updated.
+
+**Available presets in the dropdown:**
+
+| Option | Equivalent `dateRange` |
+|---|---|
+| Today | `today` |
+| This Week | `this-week` |
+| This Month | `this-month` |
+| This Year | `this-year` |
+| Last Week | `last-week` |
+| Last Month | `last-month` |
+| Last Year | `last-year` |
+| Last 7 Days | `last-7-days` |
+| Last 30 Days | `last-30-days` |
+| Last 90 Days | `last-90-days` |
+| Last 6 Months | `last-6-months` |
+| Last 12 Months | `last-12-months` |
+| All Time | `all` |
+| Custom… | uses `startDate` / `endDate` |
+
+The initial selection reflects the `dateRange` (or `startDate`/`endDate`) you set in the block. If no range is specified, it defaults to **Last 30 Days**.
 
 ---
 
@@ -749,7 +638,6 @@ it copies the rendered stats to the clipboard as plain text, one stat per line.
 | `{{sum()}}` | Sum of all values across all series and all days |
 | `{{mean()}}` | Average value per data point (active days only) |
 | `{{max()}}` | Highest single value in the range |
-| `{{min()}}` | Lowest single value in the range |
 
 **Using `properties` with `summary`**
 
@@ -1097,87 +985,6 @@ found. If the anchor day exceeds the days in the target month, it is clamped
 
 ---
 
-## Reading Challenge
-
-The Reading Challenge renders inline in any note as a `tracker-pro` code block:
-
-````
-```tracker-pro
-type: reading-challenge
-year: 2026
-```
-````
-
-`year` is optional — omit it to default to the current year. The block auto-refreshes when any book note or the goals file changes.
-
----
-
-### Vault Setup
-
-**Goals file** — a single note (default `Data/Reading Goals.md`) with one
-`reading_goal_YYYY` number property per year:
-
-```yaml
-reading_goal_2024: 24
-reading_goal_2025: 20
-reading_goal_2026: 12
-```
-
-Each property is a standard Obsidian **number** type. Add a new line for each year you want to track.
-
-**Book notes** — any `.md` file in your configured folder whose basename starts
-with the configured prefix and has a `read_complete: YYYY-MM-DD` frontmatter field:
-
-```yaml
-title: The Name of the Wind
-author: Patrick Rothfuss
-series: The Kingkiller Chronicle
-series_number: 1
-read_complete: 2026-03-14
-```
-
-| Field | Required | Description |
-|---|---|---|
-| `read_complete` | Yes | Date the book was finished (`YYYY-MM-DD`). Notes without this field are ignored. |
-| `title` | No | Display title. Falls back to the filename (prefix stripped, hyphens → spaces). |
-| `author` | No | Shown to the right of the title. |
-| `series` | No | Series name shown below the title. |
-| `series_number` | No | Appended to the series name (e.g. `The Stormlight Archive #1`). |
-
----
-
-### Block Layout
-
-**Hero section** — a colored square badge tile on the left showing the year and a 📖 icon.
-To the right: "Reading Challenge" title and a **year dropdown** to switch years in place.
-A motivational subtitle beneath the title adapts to your progress:
-
-| Situation | Subtitle |
-|---|---|
-| Current year, on track | "You're on track! Keep reading." |
-| Current year, behind | "Press on! Read N book(s) to get back on track." |
-| Past year, goal met | "Challenge complete! You met your goal." |
-| Past year, goal missed | "You read N of G books." |
-| Future year with goal | "Goal: G book(s)" |
-| No goal set | (no subtitle) |
-
-**Progress section** — bold stats line showing `N of G books read | D days left`
-(or "Completed" for past years), followed by a pill-shaped progress bar with the
-percentage label outside to the right: `[████░░░░] 25%`
-
-**Book list** — numbered and sorted by `read_complete` date. Each entry shows:
-- Clickable title link — opens the note in Obsidian
-- Author to the right of the title
-- Series line below (if `series` is set)
-
----
-
-### Changing Years
-
-The year dropdown in the hero re-renders the block in place for the selected year. The list includes all years that appear in the goals file plus the current year.
-
----
-
 ## Advanced Features
 
 ### `source: fileMeta`
@@ -1324,17 +1131,22 @@ All available parameters in one table.
 | `showEmptyRows`    | boolean                    | `true`                              | daily-table                      | Hide meal rows where the first column evaluates to 0. |
 | `dateFormat`       | string                     | `MM/DD/YY`                          | daily-table                      | moment.js format for the date column. |
 | `bill_type`        | string                     | —                                   | bills                            | Filter to bills matching this `bill_type` value. Omit to show all active bills. |
+| `year`             | number                     | current year                        | reading-challenge                | Which year to display. |
+| `dateSelector`     | boolean                    | `false`                             | all                              | Render an interactive date-range dropdown above the chart. |
 
 ### Full list of dateRange options
 
 | Value         | What it covers                                          |
 | ------------- | ------------------------------------------------------- |
-| all           | Jan 1 2000 → today                                      |
+| today         | Today only                                              |
 | this-week     | Sunday of the current week → today                      |
 | this-month    | 1st of the current month → today                        |
 | this-year     | Jan 1 of the current year → today                       |
+| last-week     | Previous full calendar week (Sunday → Saturday)         |
+| last-month    | Previous full calendar month (1st → last day)           |
 | last-year     | Full previous calendar year (Jan 1 – Dec 31)            |
 | last-N-days   | N days ago → today (e.g. `last-7-days`, `last-30-days`) |
 | last-N-weeks  | N weeks ago → today                                     |
 | last-N-months | N months ago → today                                    |
 | last-N-years  | N years ago → today                                     |
+| all           | Jan 1 2000 → today                                      |
