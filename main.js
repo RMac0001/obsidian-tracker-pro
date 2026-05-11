@@ -2882,6 +2882,22 @@ function parseDateRange(range) {
             end: new Date(today.getFullYear() - 1, 11, 31),
         };
     }
+    if (range === "today") {
+        return { start: today, end: today };
+    }
+    if (range === "last-week") {
+        const day = today.getDay();
+        const end = new Date(today);
+        end.setDate(today.getDate() - day - 1); // last Saturday
+        const start = new Date(end);
+        start.setDate(end.getDate() - 6); // previous Sunday
+        return { start, end };
+    }
+    if (range === "last-month") {
+        const end = new Date(today.getFullYear(), today.getMonth(), 0);
+        const start = new Date(today.getFullYear(), today.getMonth() - 1, 1);
+        return { start, end };
+    }
     if (range === "all") {
         return {
             start: new Date(2000, 0, 1),
@@ -2944,6 +2960,8 @@ function validateConfig(raw) {
         config.showSource = Boolean(raw.showSource);
     if (raw.year !== undefined)
         config.year = Number(raw.year);
+    if (raw.dateSelector !== undefined)
+        config.dateSelector = Boolean(raw.dateSelector);
     // Apply defaults
     if (!config.aggregate)
         config.aggregate = "daily";
@@ -20511,25 +20529,19 @@ function renderEmpty(container, config) {
     box.createEl("span", { text: "📊 No data found" });
     box.createEl("small", { text: `No notes matching the config were found in the specified date range.` });
 }
-// ─── Main Render ──────────────────────────────────────────────────────────────
-async function renderTracker(app, container, config, settings) {
+// ─── Chart Content ────────────────────────────────────────────────────────────
+async function renderChartContent(app, el, config, settings) {
     var _a, _b, _c, _d;
-    container.empty();
-    container.addClass("tracker-pro-container");
-    // Apply size (charts only — tables and summaries size to their content)
-    if (config.height && config.type !== "summary" && config.type !== "table" && config.type !== "daily-table" && config.type !== "bills" && config.type !== "reading-challenge")
-        container.style.height = config.height + "px";
-    if (config.width)
-        container.style.width = config.width;
+    el.empty();
     // ── Candlestick: own data path ─────────────────────────────────────────────
     if (config.type === "candlestick") {
         const entries = await collectRawEntries(app, config);
         const data = buildOHLCData(entries, config);
         if (data.length === 0) {
-            renderEmpty(container);
+            renderEmpty(el);
             return;
         }
-        renderCandlestickChart(container, data, config);
+        renderCandlestickChart(el, data, config);
         return;
     }
     // ── Pie / Donut: frequency data ────────────────────────────────────────────
@@ -20537,10 +20549,10 @@ async function renderTracker(app, container, config, settings) {
         const entries = await collectRawEntries(app, config);
         const freq = buildFrequencyData(entries, config);
         if (freq.size === 0) {
-            renderEmpty(container);
+            renderEmpty(el);
             return;
         }
-        const canvas = container.createEl("canvas");
+        const canvas = el.createEl("canvas");
         renderPieChart(canvas, freq, config);
         return;
     }
@@ -20550,10 +20562,10 @@ async function renderTracker(app, container, config, settings) {
         const raw = buildSeriesData(entries, config);
         const series = aggregateAllSeries(raw, (_a = config.aggregate) !== null && _a !== void 0 ? _a : "daily", config.period);
         if (series.length === 0 || series[0].points.length === 0) {
-            renderEmpty(container);
+            renderEmpty(el);
             return;
         }
-        renderHeatmapChart(container, series, config);
+        renderHeatmapChart(el, series, config);
         return;
     }
     // ── Calendar ───────────────────────────────────────────────────────────────
@@ -20562,10 +20574,10 @@ async function renderTracker(app, container, config, settings) {
         const raw = buildSeriesData(entries, config);
         const series = aggregateAllSeries(raw, "daily", config.period);
         if (series.length === 0 || series[0].points.length === 0) {
-            renderEmpty(container);
+            renderEmpty(el);
             return;
         }
-        renderCalendarChart(container, series, config);
+        renderCalendarChart(el, series, config);
         return;
     }
     // ── Gauge ──────────────────────────────────────────────────────────────────
@@ -20574,10 +20586,10 @@ async function renderTracker(app, container, config, settings) {
         const raw = buildSeriesData(entries, config);
         const series = aggregateAllSeries(raw, (_b = config.aggregate) !== null && _b !== void 0 ? _b : "daily", config.period);
         if (series.length === 0) {
-            renderEmpty(container);
+            renderEmpty(el);
             return;
         }
-        renderGaugeChart(container, series, config);
+        renderGaugeChart(el, series, config);
         return;
     }
     // ── Radar ──────────────────────────────────────────────────────────────────
@@ -20586,10 +20598,10 @@ async function renderTracker(app, container, config, settings) {
         const raw = buildSeriesData(entries, config);
         const series = aggregateAllSeries(raw, (_c = config.aggregate) !== null && _c !== void 0 ? _c : "daily", config.period);
         if (series.length === 0) {
-            renderEmpty(container);
+            renderEmpty(el);
             return;
         }
-        const canvas = container.createEl("canvas");
+        const canvas = el.createEl("canvas");
         renderRadarChart(canvas, series, config);
         return;
     }
@@ -20597,36 +20609,35 @@ async function renderTracker(app, container, config, settings) {
     if (config.type === "scatter") {
         const entries = await collectRawEntries(app, config);
         const raw = buildSeriesData(entries, config);
-        // No aggregation for scatter — raw daily values needed as pairs
         if (raw.length < 2) {
-            renderErrors(container, [{ message: "Scatter chart needs at least 2 properties" }]);
+            renderErrors(el, [{ message: "Scatter chart needs at least 2 properties" }]);
             return;
         }
-        const canvas = container.createEl("canvas");
+        const canvas = el.createEl("canvas");
         renderScatterChart(canvas, raw, config);
         return;
     }
     // ── Table ─────────────────────────────────────────────────────────────────
     if (config.type === "table") {
         const entries = await collectRawEntries(app, config);
-        renderTableChart(container, entries, config);
+        renderTableChart(el, entries, config);
         return;
     }
     // ── Daily Table ────────────────────────────────────────────────────────────
     if (config.type === "daily-table") {
         const entries = await collectRawEntries(app, config);
-        renderDailyTable(container, entries, config);
+        renderDailyTable(el, entries, config);
         return;
     }
     // ── Bills ──────────────────────────────────────────────────────────────────
     if (config.type === "bills") {
-        await renderBillsChart(container, app, config, settings);
+        await renderBillsChart(el, app, config, settings);
         return;
     }
     // ── Reading Challenge ──────────────────────────────────────────────────────
     if (config.type === "reading-challenge") {
         if (settings)
-            renderReadingChallengeBlock(container, app, settings, config);
+            renderReadingChallengeBlock(el, app, settings, config);
         return;
     }
     // ── Summary ───────────────────────────────────────────────────────────────
@@ -20636,10 +20647,10 @@ async function renderTracker(app, container, config, settings) {
             ? buildSeriesData(entries, config)
             : [{ name: "presence", points: entries.map(e => ({ date: e.date, value: 1 })), color: "" }];
         if (raw.length === 0) {
-            renderEmpty(container);
+            renderEmpty(el);
             return;
         }
-        renderSummaryChart(container, raw, config);
+        renderSummaryChart(el, raw, config);
         return;
     }
     // ── Line / Bar ─────────────────────────────────────────────────────────────
@@ -20647,15 +20658,102 @@ async function renderTracker(app, container, config, settings) {
     const raw = buildSeriesData(entries, config);
     const series = aggregateAllSeries(raw, (_d = config.aggregate) !== null && _d !== void 0 ? _d : "daily", config.period);
     if (series.length === 0 || series.every((s) => s.points.length === 0)) {
-        renderEmpty(container);
+        renderEmpty(el);
         return;
     }
-    const canvas = container.createEl("canvas");
+    const canvas = el.createEl("canvas");
     if (config.type === "bar") {
         renderBarChart(canvas, series, config);
     }
     else {
         renderLineChart(canvas, series, config);
+    }
+}
+// ─── Date Selector ────────────────────────────────────────────────────────────
+const DATE_OPTIONS = [
+    { label: "Today", value: "today" },
+    { label: "This Week", value: "this-week" },
+    { label: "This Month", value: "this-month" },
+    { label: "This Year", value: "this-year" },
+    { label: "Last Week", value: "last-week" },
+    { label: "Last Month", value: "last-month" },
+    { label: "Last Year", value: "last-year" },
+    { label: "Last 7 Days", value: "last-7-days" },
+    { label: "Last 30 Days", value: "last-30-days" },
+    { label: "Last 90 Days", value: "last-90-days" },
+    { label: "Last 6 Months", value: "last-6-months" },
+    { label: "Last 12 Months", value: "last-12-months" },
+    { label: "All Time", value: "all" },
+    { label: "Custom…", value: "custom" },
+];
+function renderDateSelector(selectorEl, chartEl, app, config, settings) {
+    var _a, _b, _c;
+    let currentValue = (_a = config.dateRange) !== null && _a !== void 0 ? _a : "last-30-days";
+    if (config.startDate && config.endDate && !config.dateRange)
+        currentValue = "custom";
+    const select = selectorEl.createEl("select", { cls: "tracker-pro-date-select" });
+    for (const opt of DATE_OPTIONS) {
+        const el = select.createEl("option", { text: opt.label, value: opt.value });
+        if (opt.value === currentValue)
+            el.selected = true;
+    }
+    const customEl = selectorEl.createEl("div", { cls: "tracker-pro-date-custom" });
+    if (currentValue !== "custom")
+        customEl.addClass("hidden");
+    const startInput = customEl.createEl("input");
+    startInput.type = "date";
+    startInput.value = (_b = config.startDate) !== null && _b !== void 0 ? _b : "";
+    const sep = customEl.createEl("span", { text: "→", cls: "tracker-pro-date-sep" });
+    sep.style.color = "var(--text-muted)";
+    const endInput = customEl.createEl("input");
+    endInput.type = "date";
+    endInput.value = (_c = config.endDate) !== null && _c !== void 0 ? _c : "";
+    const rerender = async () => {
+        await renderChartContent(app, chartEl, config, settings);
+    };
+    const applyCustom = async () => {
+        if (startInput.value && endInput.value) {
+            config.startDate = startInput.value;
+            config.endDate = endInput.value;
+            delete config.dateRange;
+            await rerender();
+        }
+    };
+    startInput.addEventListener("change", applyCustom);
+    endInput.addEventListener("change", applyCustom);
+    select.addEventListener("change", async () => {
+        const val = select.value;
+        if (val === "custom") {
+            customEl.removeClass("hidden");
+        }
+        else {
+            customEl.addClass("hidden");
+            config.dateRange = val;
+            delete config.startDate;
+            delete config.endDate;
+            await rerender();
+        }
+    });
+}
+// ─── Main Render ──────────────────────────────────────────────────────────────
+const NO_HEIGHT_TYPES = ["summary", "table", "daily-table", "bills", "reading-challenge"];
+async function renderTracker(app, container, config, settings) {
+    container.empty();
+    container.addClass("tracker-pro-container");
+    // Apply size (charts only — tables and summaries size to their content)
+    if (config.height && !NO_HEIGHT_TYPES.includes(config.type)) {
+        container.style.height = config.height + "px";
+    }
+    if (config.width)
+        container.style.width = config.width;
+    if (config.dateSelector) {
+        const selectorEl = container.createEl("div", { cls: "tracker-pro-date-selector" });
+        const chartEl = container.createEl("div");
+        renderDateSelector(selectorEl, chartEl, app, config, settings);
+        await renderChartContent(app, chartEl, config, settings);
+    }
+    else {
+        await renderChartContent(app, container, config, settings);
     }
 }
 

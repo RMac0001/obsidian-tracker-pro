@@ -122,6 +122,9 @@ export interface TrackerConfig {
 
   // Reading Challenge chart
   year?: number;                // which year to display (default: current year)
+
+  // Date selector UI
+  dateSelector?: boolean;       // render a date-range dropdown above the chart
 }
 
 // ─── Bills Interfaces ─────────────────────────────────────────────────────────
