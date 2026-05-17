@@ -1,6 +1,24 @@
 # Tracker Pro — Status
 
-## What was done (v1.1.1 → v1.4.0)
+## What was done (v1.1.1 → v1.4.1)
+
+---
+
+### v1.4.1 — Calculate Recipe Nutrition Command
+
+**New command: `Calculate Recipe Nutrition`**
+- Run from the command palette with a recipe note open
+- Reads the `# Ingredients` section and resolves each `[[wiki-link]]` to a food or sub-recipe note
+- Extracts amount and unit from each line; applies unit conversion (volume↔volume, weight↔weight) before calculating contribution
+- Sub-recipes detected by `Recipe -` filename prefix; per-serving values multiplied by resolved serving ratio
+- Shows a confirmation modal with a suggested serving count (≤350 cal/serving), editable with live cal/serving update
+- Writes `calories`, `carbs`, `fat`, `protein` (per serving, rounded), and `servings` to frontmatter via `processFrontMatter`
+- Appends a `## Notes` section listing any skipped ingredients with the skip reason (no note found, unit mismatch, not convertible, recipe missing fields)
+
+**Unit conversion support:**
+- Volume: tsp, tbsp, fl oz, cup, pint, quart, l, ml (all converted to ml for comparison)
+- Weight: g, kg, oz, lb/lbs (all converted to g for comparison)
+- Named/count units (jar, can, serving, piece, etc.) matched directly against `common_serving_unit` or `serving_unit`
 
 ---
 

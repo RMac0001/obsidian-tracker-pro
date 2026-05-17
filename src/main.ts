@@ -8,6 +8,7 @@ import {
 } from "./settings";
 import { logMeal, clearMeal, editMealLog } from "./mealLogger";
 import { generateMonthlyBills } from "./charts/billsChart";
+import { calculateRecipeNutrition } from "./recipeCalculator";
 import { TrackerConfig } from "./types";
 
 function isRelevantFile(changedPath: string, config: TrackerConfig, settings?: TrackerSettings): boolean {
@@ -69,6 +70,13 @@ export default class Tracker extends Plugin {
             id: "edit-meal-log",
             name: "Edit meal log",
             callback: () => editMealLog(this.app, this.settings),
+        });
+
+        // ── Recipe Calculator command ─────────────────────────────────────────
+        this.addCommand({
+            id: "calculate-recipe-nutrition",
+            name: "Calculate Recipe Nutrition",
+            callback: () => calculateRecipeNutrition(this.app),
         });
 
         // ── Bill Tracker commands ─────────────────────────────────────────────

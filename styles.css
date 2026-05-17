@@ -611,6 +611,55 @@
   background: var(--background-modifier-hover);
 }
 
+/* ─── Recipe Calculator Modal ───────────────────────────────────────────────── */
+
+.tracker-pro-recipe-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 10px;
+}
+
+.tracker-pro-recipe-label {
+  font-size: 0.95em;
+  color: var(--text-normal);
+  min-width: 70px;
+}
+
+.tracker-pro-recipe-input {
+  width: 80px;
+  padding: 4px 8px;
+  border-radius: 4px;
+  border: 1px solid var(--background-modifier-border);
+  background: var(--background-secondary);
+  color: var(--text-normal);
+  font-size: 1em;
+}
+
+.tracker-pro-recipe-cal-row {
+  display: flex;
+  align-items: baseline;
+  gap: 4px;
+  margin-bottom: 16px;
+}
+
+.tracker-pro-recipe-cal {
+  font-size: 1.05em;
+  font-weight: 600;
+  color: var(--text-normal);
+}
+
+.tracker-pro-recipe-hint {
+  font-size: 0.8em;
+  color: var(--text-muted);
+}
+
+.tracker-pro-recipe-btns {
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
+}
+
 /* ─── Date Range Selector ────────────────────────────────────────────────────── */
 
 .tracker-pro-date-selector {
