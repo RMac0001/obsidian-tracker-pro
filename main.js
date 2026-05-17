@@ -21754,6 +21754,268 @@ async function logMeal(app, settings) {
     }
 }
 
+// ─── Unit Conversion Tables ───────────────────────────────────────────────────
+const VOL_TO_ML = {
+    tsp: 4.92892, tsps: 4.92892,
+    tbsp: 14.7868, tbsps: 14.7868,
+    "fl oz": 29.5735,
+    cup: 236.588, cups: 236.588,
+    pint: 473.176, pints: 473.176,
+    quart: 946.353, quarts: 946.353,
+    l: 1000,
+    ml: 1,
+};
+const WT_TO_G = {
+    g: 1,
+    kg: 1000,
+    oz: 28.3495,
+    lb: 453.592, lbs: 453.592,
+};
+function nu(u) { return u.toLowerCase().trim(); }
+function classifyUnit(u) {
+    const n = nu(u);
+    if (n in VOL_TO_ML)
+        return "volume";
+    if (n in WT_TO_G)
+        return "weight";
+    return "named";
+}
+function inMl(amount, unit) {
+    const f = VOL_TO_ML[nu(unit)];
+    return f !== undefined ? amount * f : null;
+}
+function inG(amount, unit) {
+    const f = WT_TO_G[nu(unit)];
+    return f !== undefined ? amount * f : null;
+}
+// ─── Ingredient Parsing ───────────────────────────────────────────────────────
+function parseAmount(s) {
+    if (s.includes("/")) {
+        const [n, d] = s.split("/");
+        return parseFloat(n) / parseFloat(d);
+    }
+    return parseFloat(s);
+}
+function extractSection(content, header) {
+    const lines = content.split("\n");
+    const headerRe = new RegExp(`^#{1,6}\\s+${header}\\s*$`, "i");
+    let start = -1;
+    for (let i = 0; i < lines.length; i++) {
+        if (headerRe.test(lines[i])) {
+            start = i + 1;
+            break;
+        }
+    }
+    if (start === -1)
+        return null;
+    const out = [];
+    for (let i = start; i < lines.length; i++) {
+        if (/^#{1,6}\s/.test(lines[i]))
+            break;
+        out.push(lines[i]);
+    }
+    return out.join("\n");
+}
+function parseIngredientLine(line) {
+    var _a;
+    if (!/^\s*-\s*\[[ xX]\]/.test(line))
+        return null;
+    const linkMatch = line.match(/\[\[([^\]|]+)(?:\|[^\]]+)?\]\]/);
+    if (!linkMatch)
+        return null;
+    const linkText = linkMatch[1].trim();
+    const stripped = line.replace(/^\s*-\s*\[[ xX]\]\s*/, "").trim();
+    let amount = 0;
+    let unit = "";
+    // "fl oz" is a two-word unit — check before single-word fallback
+    const flOzM = stripped.match(/^(\d+(?:[\/\.]\d+)?)\s+fl\s+oz\b/i);
+    if (flOzM) {
+        amount = parseAmount(flOzM[1]);
+        unit = "fl oz";
+    }
+    else {
+        const m = stripped.match(/^(\d+(?:[\/\.]\d+)?)\s+(\w+)?/);
+        if (!m)
+            return null;
+        amount = parseAmount(m[1]);
+        const raw = (_a = m[2]) !== null && _a !== void 0 ? _a : "";
+        unit = raw.startsWith("[") ? "" : raw;
+    }
+    return { amount, unit, linkText };
+}
+// ─── Ratio Calculation ────────────────────────────────────────────────────────
+function calcRatio(amount, unit, fm, isRecipe) {
+    var _a;
+    if (isRecipe && (!fm.serving_size || !fm.serving_unit)) {
+        return "recipe note missing serving fields";
+    }
+    const servingSize = Number(fm.serving_size) || 1;
+    const servingUnit = String((_a = fm.serving_unit) !== null && _a !== void 0 ? _a : "").trim();
+    const ingN = nu(unit);
+    const srvN = nu(servingUnit);
+    // Case 1: common_serving_unit match (food notes only)
+    if (!isRecipe && fm.common_serving_unit) {
+        const comN = nu(String(fm.common_serving_unit));
+        const comSz = Number(fm.common_serving_size) || 1;
+        if (ingN === comN)
+            return amount / comSz;
+    }
+    // Case 2: direct serving_unit match
+    if (ingN === srvN)
+        return amount / servingSize;
+    // Case 3: same-dimension unit conversion
+    const ingType = classifyUnit(ingN);
+    const srvType = classifyUnit(srvN);
+    if (ingType === "volume" && srvType === "volume") {
+        const iMl = inMl(amount, ingN);
+        const sMl = inMl(servingSize, srvN);
+        if (iMl !== null && sMl !== null && sMl > 0)
+            return iMl / sMl;
+    }
+    if (ingType === "weight" && srvType === "weight") {
+        const iG = inG(amount, ingN);
+        const sG = inG(servingSize, srvN);
+        if (iG !== null && sG !== null && sG > 0)
+            return iG / sG;
+    }
+    // Case 4: incompatible dimensions
+    if (ingType !== "named" && srvType !== "named" && ingType !== srvType) {
+        return "unit mismatch (volume vs weight)";
+    }
+    if (!unit)
+        return "unit not convertible (no unit specified)";
+    return `unit not convertible (used "${unit}", food note uses "${servingUnit || "unknown"}")`;
+}
+// ─── Notes Section Write-Back ─────────────────────────────────────────────────
+function applyNotesSection(content, skipped) {
+    const bulletLines = skipped.map(s => `- ${s.name} — ${s.reason}`);
+    const newSection = "## Notes\n" +
+        "**Skipped ingredients (not included in nutrition calculation):**\n" +
+        bulletLines.join("\n") + "\n";
+    const fileLines = content.split("\n");
+    let start = -1;
+    let end = fileLines.length;
+    for (let i = 0; i < fileLines.length; i++) {
+        if (/^## Notes\s*$/.test(fileLines[i])) {
+            start = i;
+        }
+        else if (start !== -1 && i > start && /^## /.test(fileLines[i])) {
+            end = i;
+            break;
+        }
+    }
+    if (start !== -1) {
+        const before = fileLines.slice(0, start).join("\n");
+        const after = end < fileLines.length ? "\n" + fileLines.slice(end).join("\n") : "";
+        return before + "\n" + newSection + after;
+    }
+    return content.trimEnd() + "\n\n" + newSection;
+}
+// ─── Servings Modal ───────────────────────────────────────────────────────────
+class ServingsModal extends obsidian.Modal {
+    constructor(app, totals, initial, onConfirm) {
+        super(app);
+        this.totals = totals;
+        this.initial = initial;
+        this.onConfirm = onConfirm;
+    }
+    onOpen() {
+        const { contentEl } = this;
+        contentEl.empty();
+        contentEl.createEl("h3", { text: "Recipe Nutrition" });
+        let servings = this.initial;
+        const row = contentEl.createDiv({ cls: "tracker-pro-recipe-row" });
+        row.createEl("label", { text: "Servings:", cls: "tracker-pro-recipe-label" });
+        const input = row.createEl("input");
+        input.type = "number";
+        input.min = "1";
+        input.value = String(servings);
+        input.addClass("tracker-pro-recipe-input");
+        const calRow = contentEl.createDiv({ cls: "tracker-pro-recipe-cal-row" });
+        const calDisplay = calRow.createEl("span", { cls: "tracker-pro-recipe-cal" });
+        calRow.createEl("span", { text: " · Max 350 cal/serving", cls: "tracker-pro-recipe-hint" });
+        const update = (s) => {
+            calDisplay.setText(`${Math.round(this.totals.calories / s)} cal/serving`);
+        };
+        update(servings);
+        input.addEventListener("input", () => {
+            const v = parseInt(input.value);
+            if (v >= 1) {
+                servings = v;
+                update(v);
+            }
+        });
+        const btnRow = contentEl.createDiv({ cls: "tracker-pro-recipe-btns" });
+        const confirmBtn = btnRow.createEl("button", { text: "Confirm", cls: "mod-cta" });
+        confirmBtn.addEventListener("click", () => {
+            const v = Math.max(1, parseInt(input.value) || 1);
+            this.close();
+            this.onConfirm(v);
+        });
+        btnRow.createEl("button", { text: "Cancel" }).addEventListener("click", () => this.close());
+    }
+    onClose() { this.contentEl.empty(); }
+}
+// ─── Main Entry Point ─────────────────────────────────────────────────────────
+async function calculateRecipeNutrition(app) {
+    var _a, _b;
+    const file = app.workspace.getActiveFile();
+    if (!file) {
+        new obsidian.Notice("No active note.");
+        return;
+    }
+    const content = await app.vault.read(file);
+    const section = extractSection(content, "Ingredients");
+    if (!section) {
+        new obsidian.Notice("No Ingredients section found.");
+        return;
+    }
+    const parsed = section.split("\n")
+        .map(parseIngredientLine)
+        .filter((x) => x !== null);
+    const totals = { calories: 0, carbs: 0, fat: 0, protein: 0 };
+    const skipped = [];
+    let resolved = 0;
+    for (const ing of parsed) {
+        const linked = app.metadataCache.getFirstLinkpathDest(ing.linkText, file.path);
+        if (!linked) {
+            skipped.push({ name: ing.linkText, reason: "no food note found" });
+            continue;
+        }
+        const fm = ((_b = (_a = app.metadataCache.getFileCache(linked)) === null || _a === void 0 ? void 0 : _a.frontmatter) !== null && _b !== void 0 ? _b : {});
+        const isRecipe = linked.basename.startsWith("Recipe -");
+        const ratio = calcRatio(ing.amount, ing.unit, fm, isRecipe);
+        if (typeof ratio === "string") {
+            skipped.push({ name: ing.linkText, reason: ratio });
+            continue;
+        }
+        totals.calories += (Number(fm.calories) || 0) * ratio;
+        totals.carbs += (Number(fm.carbs) || 0) * ratio;
+        totals.fat += (Number(fm.fat) || 0) * ratio;
+        totals.protein += (Number(fm.protein) || 0) * ratio;
+        resolved++;
+    }
+    if (resolved === 0) {
+        new obsidian.Notice("No matching food notes found. Nothing to calculate.");
+        return;
+    }
+    const suggested = Math.max(1, Math.ceil(totals.calories / 350));
+    new ServingsModal(app, totals, suggested, async (servings) => {
+        await app.fileManager.processFrontMatter(file, (fm) => {
+            fm.calories = Math.round(totals.calories / servings);
+            fm.carbs = Math.round(totals.carbs / servings);
+            fm.fat = Math.round(totals.fat / servings);
+            fm.protein = Math.round(totals.protein / servings);
+            fm.servings = servings;
+        });
+        if (skipped.length > 0) {
+            const updated = await app.vault.read(file);
+            await app.vault.modify(file, applyNotesSection(updated, skipped));
+        }
+        new obsidian.Notice("Recipe nutrition calculated.");
+    }).open();
+}
+
 function isRelevantFile(changedPath, config, settings) {
     if (config.type === "reading-challenge" && settings) {
         const goalFile = obsidian.normalizePath(settings.readingGoalFile);
@@ -21806,6 +22068,12 @@ class Tracker extends obsidian.Plugin {
             id: "edit-meal-log",
             name: "Edit meal log",
             callback: () => editMealLog(this.app, this.settings),
+        });
+        // ── Recipe Calculator command ─────────────────────────────────────────
+        this.addCommand({
+            id: "calculate-recipe-nutrition",
+            name: "Calculate Recipe Nutrition",
+            callback: () => calculateRecipeNutrition(this.app),
         });
         // ── Bill Tracker commands ─────────────────────────────────────────────
         this.addCommand({
