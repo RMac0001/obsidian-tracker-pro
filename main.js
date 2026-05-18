@@ -20944,10 +20944,35 @@ function mealKey(mealType) {
 function round1(n) {
     return Math.round(n * 10) / 10;
 }
+const NEVER_PLURALIZE = new Set([
+    "g", "kg", "ml", "l", "oz", "lb", "lbs", "tsp", "tbsp", "cup", "fl oz",
+    "pint", "quart", "pkg", "can", "jar", "bag", "packet", "spray", "medium",
+]);
+const IRREGULAR_PLURALS = {
+    leaf: "leaves",
+    loaf: "loaves",
+};
+function pluralizeUnit(unit, amount) {
+    if (amount === 1)
+        return unit;
+    const lower = unit.toLowerCase();
+    if (NEVER_PLURALIZE.has(lower))
+        return unit;
+    if (IRREGULAR_PLURALS[lower])
+        return IRREGULAR_PLURALS[lower];
+    if (lower.endsWith("fe"))
+        return unit.slice(0, -2) + "ves";
+    if (/[sxz]$|[sc]h$/.test(lower))
+        return unit + "es";
+    return unit + "s";
+}
+function fmt2(n) {
+    return parseFloat(n.toFixed(2)).toString();
+}
 function getFoodMeta(app, file) {
     var _a, _b, _c, _d, _e, _f, _g, _h;
     const fm = (_b = (_a = app.metadataCache.getFileCache(file)) === null || _a === void 0 ? void 0 : _a.frontmatter) !== null && _b !== void 0 ? _b : {};
-    return {
+    const meta = {
         servingSize: Number((_c = fm.serving_size) !== null && _c !== void 0 ? _c : 1),
         servingUnit: String((_d = fm.serving_unit) !== null && _d !== void 0 ? _d : "serving"),
         nutrition: {
@@ -20957,6 +20982,11 @@ function getFoodMeta(app, file) {
             carbs: Number((_h = fm.carbs) !== null && _h !== void 0 ? _h : 0),
         },
     };
+    if (fm.common_serving_size !== undefined && fm.common_serving_unit !== undefined) {
+        meta.commonServingSize = Number(fm.common_serving_size);
+        meta.commonServingUnit = String(fm.common_serving_unit);
+    }
+    return meta;
 }
 function getRecipeMeta(app, file) {
     var _a, _b, _c, _d, _e, _f;
@@ -21003,90 +21033,201 @@ class FileSuggestModal extends obsidian.FuzzySuggestModal {
     getItemText(file) { return file.basename; }
     onChooseItem(file) { this.onChoose(file); }
 }
-/**
- * Unified amount modal.
- *
- * Foods:   asks "How many oz?" (or whatever serving_unit is)
- *          multiplier = amount / serving_size
- *          default = serving_size (i.e. one serving pre-filled)
- *
- * Recipes: asks "How many servings?"
- *          multiplier = amount
- *          default = 1
- *
- * Pass defaultValue to pre-fill a specific number (used by change-quantity).
- * Pass buttonLabel to customise the submit button text.
- */
 class AmountModal extends obsidian.Modal {
-    constructor(app, itemName, meta, isFood, onSubmit, defaultValue, buttonLabel = "Add to meal") {
+    constructor(app, itemName, meta, isFood, onSubmit, defaultValue, defaultUnit, buttonLabel = "Add to meal") {
         super(app);
         this.itemName = itemName;
         this.meta = meta;
         this.isFood = isFood;
         this.onSubmit = onSubmit;
         this.defaultValue = defaultValue;
+        this.defaultUnit = defaultUnit;
         this.buttonLabel = buttonLabel;
     }
     onOpen() {
         const { contentEl } = this;
         contentEl.createEl("h3", { text: this.itemName });
-        const hint = this.isFood
-            ? `1 serving = ${this.meta.servingSize} ${this.meta.servingUnit}  ·  ${this.meta.nutrition.calories} cal per serving`
-            : `${this.meta.nutrition.calories} cal per serving`;
-        contentEl.createEl("p", {
-            text: hint,
-            attr: { style: "margin:4px 0 12px;color:var(--text-muted);font-size:0.85em;" },
-        });
-        const labelText = this.isFood
-            ? `Amount (${this.meta.servingUnit})`
-            : "Servings";
-        contentEl.createEl("label", {
-            text: labelText,
-            attr: { style: "font-size:0.9em;color:var(--text-muted);" },
-        });
-        this.input = contentEl.createEl("input", {
-            attr: {
-                type: "number",
-                min: "0.01",
-                step: this.isFood ? "0.5" : "0.25",
-                style: "display:block;width:100%;padding:8px 10px;font-size:1.1em;" +
-                    "border:1px solid var(--background-modifier-border);" +
-                    "border-radius:6px;background:var(--background-primary);" +
-                    "color:var(--text-normal);margin:6px 0 12px;",
-            },
-        });
-        this.input.value = this.defaultValue !== undefined
-            ? String(this.defaultValue)
-            : this.isFood ? String(this.meta.servingSize) : "1";
-        this.input.focus();
-        this.input.select();
-        const btn = contentEl.createEl("button", {
-            text: this.buttonLabel,
-            attr: { style: "width:100%;padding:8px;cursor:pointer;" },
-        });
-        btn.onclick = () => this.submit();
-        this.input.addEventListener("keydown", (e) => {
-            if (e.key === "Enter")
-                this.submit();
-        });
-    }
-    submit() {
-        const val = parseFloat(this.input.value);
-        if (isNaN(val) || val <= 0) {
-            new obsidian.Notice("Please enter a valid amount.");
-            return;
+        const hasCommon = !!(this.meta.commonServingSize && this.meta.commonServingUnit);
+        if (this.isFood && hasCommon) {
+            const cSize = this.meta.commonServingSize;
+            const cUnit = this.meta.commonServingUnit;
+            const calPerMeasured = this.meta.nutrition.calories;
+            const calPerCommon = round1((cSize / this.meta.servingSize) * calPerMeasured);
+            contentEl.createEl("p", {
+                text: `Measured serving: ${this.meta.servingSize} ${this.meta.servingUnit} — ${calPerMeasured} cal per serving`,
+                attr: { style: "margin:4px 0 2px;color:var(--text-muted);font-size:0.85em;" },
+            });
+            contentEl.createEl("p", {
+                text: `Common serving: ${cSize} ${cUnit} — ${calPerCommon} cal per serving`,
+                attr: { style: "margin:2px 0 12px;color:var(--text-muted);font-size:0.85em;" },
+            });
+            contentEl.createEl("label", {
+                text: "Amount",
+                attr: { style: "font-size:0.9em;color:var(--text-muted);" },
+            });
+            const inputRow = contentEl.createEl("div", {
+                attr: { style: "display:flex;gap:8px;margin:6px 0 8px;" },
+            });
+            this.input = inputRow.createEl("input", {
+                attr: {
+                    type: "number",
+                    min: "0.01",
+                    step: "0.5",
+                    style: "flex:1;padding:8px 10px;font-size:1.1em;" +
+                        "border:1px solid var(--background-modifier-border);" +
+                        "border-radius:6px;background:var(--background-primary);" +
+                        "color:var(--text-normal);",
+                },
+            });
+            const unitSelect = inputRow.createEl("select", {
+                attr: {
+                    style: "padding:8px 10px;font-size:1.0em;" +
+                        "border:1px solid var(--background-modifier-border);" +
+                        "border-radius:6px;background:var(--background-primary);" +
+                        "color:var(--text-normal);cursor:pointer;",
+                },
+            });
+            const optCommon = unitSelect.createEl("option", { text: cUnit });
+            optCommon.value = "common";
+            const optMeasured = unitSelect.createEl("option", { text: this.meta.servingUnit });
+            optMeasured.value = "measured";
+            // Determine default selected unit — prefer common unless defaultUnit matches servingUnit
+            let useServingUnit = false;
+            if (this.defaultUnit) {
+                const du = this.defaultUnit.toLowerCase();
+                const su = this.meta.servingUnit.toLowerCase();
+                useServingUnit = du === su || pluralizeUnit(this.meta.servingUnit, 2).toLowerCase() === du;
+            }
+            unitSelect.value = useServingUnit ? "measured" : "common";
+            this.input.value = this.defaultValue !== undefined ? String(this.defaultValue) : String(cSize);
+            this.input.focus();
+            this.input.select();
+            const totalLine = contentEl.createEl("p", {
+                attr: { style: "margin:0 0 12px;font-size:0.9em;color:var(--text-muted);" },
+            });
+            const btn = contentEl.createEl("button", {
+                text: this.buttonLabel,
+                attr: { style: "width:100%;padding:8px;cursor:pointer;" },
+            });
+            const updateTotal = () => {
+                const amt = parseFloat(this.input.value);
+                if (isNaN(amt) || amt <= 0) {
+                    totalLine.textContent = "Total: —";
+                    btn.disabled = true;
+                    return;
+                }
+                btn.disabled = false;
+                const isCommon = unitSelect.value === "common";
+                const totalCal = isCommon
+                    ? round1((amt / cSize) * calPerMeasured)
+                    : round1((amt / this.meta.servingSize) * calPerMeasured);
+                totalLine.textContent = `Total: ${totalCal} cal`;
+            };
+            updateTotal();
+            this.input.addEventListener("input", updateTotal);
+            unitSelect.addEventListener("change", updateTotal);
+            btn.onclick = () => {
+                const amt = parseFloat(this.input.value);
+                if (isNaN(amt) || amt <= 0) {
+                    new obsidian.Notice("Please enter a valid amount.");
+                    return;
+                }
+                this.close();
+                const isCommon = unitSelect.value === "common";
+                if (isCommon) {
+                    const multiplier = amt / cSize;
+                    const measuredAmt = fmt2((amt / cSize) * this.meta.servingSize);
+                    const displayAmount = `${amt} ${pluralizeUnit(cUnit, amt)} / ${measuredAmt} ${this.meta.servingUnit}`;
+                    this.onSubmit(multiplier, displayAmount);
+                }
+                else {
+                    const multiplier = amt / this.meta.servingSize;
+                    const commonAmt = fmt2((amt / this.meta.servingSize) * cSize);
+                    const commonAmtNum = parseFloat(commonAmt);
+                    const displayAmount = `${amt} ${this.meta.servingUnit} / ${commonAmt} ${pluralizeUnit(cUnit, commonAmtNum)}`;
+                    this.onSubmit(multiplier, displayAmount);
+                }
+            };
+            this.input.addEventListener("keydown", (e) => { if (e.key === "Enter")
+                btn.click(); });
         }
-        this.close();
-        if (this.isFood) {
-            const multiplier = val / this.meta.servingSize;
-            const unit = this.meta.servingUnit;
-            const displayAmount = `${val} ${unit}`;
-            this.onSubmit(multiplier, displayAmount);
+        else if (this.isFood) {
+            contentEl.createEl("p", {
+                text: `1 serving = ${this.meta.servingSize} ${this.meta.servingUnit}  ·  ${this.meta.nutrition.calories} cal per serving`,
+                attr: { style: "margin:4px 0 12px;color:var(--text-muted);font-size:0.85em;" },
+            });
+            contentEl.createEl("label", {
+                text: `Amount (${this.meta.servingUnit})`,
+                attr: { style: "font-size:0.9em;color:var(--text-muted);" },
+            });
+            this.input = contentEl.createEl("input", {
+                attr: {
+                    type: "number", min: "0.01", step: "0.5",
+                    style: "display:block;width:100%;padding:8px 10px;font-size:1.1em;" +
+                        "border:1px solid var(--background-modifier-border);" +
+                        "border-radius:6px;background:var(--background-primary);" +
+                        "color:var(--text-normal);margin:6px 0 12px;",
+                },
+            });
+            this.input.value = this.defaultValue !== undefined ? String(this.defaultValue) : String(this.meta.servingSize);
+            this.input.focus();
+            this.input.select();
+            const btn = contentEl.createEl("button", {
+                text: this.buttonLabel,
+                attr: { style: "width:100%;padding:8px;cursor:pointer;" },
+            });
+            btn.disabled = !(parseFloat(this.input.value) > 0);
+            this.input.addEventListener("input", () => { btn.disabled = !(parseFloat(this.input.value) > 0); });
+            btn.onclick = () => {
+                const val = parseFloat(this.input.value);
+                if (isNaN(val) || val <= 0) {
+                    new obsidian.Notice("Please enter a valid amount.");
+                    return;
+                }
+                this.close();
+                this.onSubmit(val / this.meta.servingSize, `${val} ${this.meta.servingUnit}`);
+            };
+            this.input.addEventListener("keydown", (e) => { if (e.key === "Enter")
+                btn.click(); });
         }
         else {
-            const multiplier = val;
-            const displayAmount = `${val} ${val === 1 ? "serving" : "servings"}`;
-            this.onSubmit(multiplier, displayAmount);
+            contentEl.createEl("p", {
+                text: `${this.meta.nutrition.calories} cal per serving`,
+                attr: { style: "margin:4px 0 12px;color:var(--text-muted);font-size:0.85em;" },
+            });
+            contentEl.createEl("label", {
+                text: "Servings",
+                attr: { style: "font-size:0.9em;color:var(--text-muted);" },
+            });
+            this.input = contentEl.createEl("input", {
+                attr: {
+                    type: "number", min: "0.01", step: "0.25",
+                    style: "display:block;width:100%;padding:8px 10px;font-size:1.1em;" +
+                        "border:1px solid var(--background-modifier-border);" +
+                        "border-radius:6px;background:var(--background-primary);" +
+                        "color:var(--text-normal);margin:6px 0 12px;",
+                },
+            });
+            this.input.value = this.defaultValue !== undefined ? String(this.defaultValue) : "1";
+            this.input.focus();
+            this.input.select();
+            const btn = contentEl.createEl("button", {
+                text: this.buttonLabel,
+                attr: { style: "width:100%;padding:8px;cursor:pointer;" },
+            });
+            btn.disabled = !(parseFloat(this.input.value) > 0);
+            this.input.addEventListener("input", () => { btn.disabled = !(parseFloat(this.input.value) > 0); });
+            btn.onclick = () => {
+                const val = parseFloat(this.input.value);
+                if (isNaN(val) || val <= 0) {
+                    new obsidian.Notice("Please enter a valid amount.");
+                    return;
+                }
+                this.close();
+                this.onSubmit(val, `${val} ${val === 1 ? "serving" : "servings"}`);
+            };
+            this.input.addEventListener("keydown", (e) => { if (e.key === "Enter")
+                btn.click(); });
         }
     }
     onClose() { this.contentEl.empty(); }
@@ -21346,10 +21487,26 @@ function findItemFile(app, name, settings) {
     return null;
 }
 function multiplierFromDisplay(displayAmount, meta, isFood) {
-    const num = parseFloat(displayAmount);
-    if (isNaN(num))
-        return 1;
-    return isFood ? num / meta.servingSize : num;
+    if (!isFood) {
+        const num = parseFloat(displayAmount);
+        return isNaN(num) ? 1 : num;
+    }
+    const firstPart = displayAmount.split("/")[0].trim();
+    const m = firstPart.match(/^([\d.]+)\s+(.*)/);
+    if (!m) {
+        const num = parseFloat(displayAmount);
+        return isNaN(num) ? 1 : num / meta.servingSize;
+    }
+    const amount = parseFloat(m[1]);
+    const unitRaw = m[2].trim().toLowerCase();
+    if (meta.commonServingUnit && meta.commonServingSize) {
+        const comLower = meta.commonServingUnit.toLowerCase();
+        const comPlural = pluralizeUnit(meta.commonServingUnit, amount).toLowerCase();
+        if (unitRaw === comLower || unitRaw === comPlural) {
+            return amount / meta.commonServingSize;
+        }
+    }
+    return amount / meta.servingSize;
 }
 // ─── Recent Log Files ─────────────────────────────────────────────────────────
 function getMealLogBaseFolder(settings) {
@@ -21579,11 +21736,16 @@ class EditMealLogModal extends obsidian.Modal {
                 const meta = found.isFood
                     ? getFoodMeta(this.app, found.file)
                     : getRecipeMeta(this.app, found.file);
-                const currentAmount = parseFloat(entry.displayAmount);
+                const firstPart = entry.displayAmount.split("/")[0].trim();
+                const amtUnitMatch = firstPart.match(/^([\d.]+)\s+(.*)/);
+                const currentAmount = amtUnitMatch
+                    ? parseFloat(amtUnitMatch[1])
+                    : parseFloat(entry.displayAmount);
+                const currentUnit = amtUnitMatch ? amtUnitMatch[2].trim() : undefined;
                 new AmountModal(this.app, entry.name, meta, found.isFood, (_multiplier, displayAmount) => {
                     entry.displayAmount = displayAmount;
                     this.render();
-                }, isNaN(currentAmount) ? undefined : currentAmount, "Update").open();
+                }, isNaN(currentAmount) ? undefined : currentAmount, currentUnit, "Update").open();
             }).open();
         }).open();
     }
@@ -21754,268 +21916,6 @@ async function logMeal(app, settings) {
     }
 }
 
-// ─── Unit Conversion Tables ───────────────────────────────────────────────────
-const VOL_TO_ML = {
-    tsp: 4.92892, tsps: 4.92892,
-    tbsp: 14.7868, tbsps: 14.7868,
-    "fl oz": 29.5735,
-    cup: 236.588, cups: 236.588,
-    pint: 473.176, pints: 473.176,
-    quart: 946.353, quarts: 946.353,
-    l: 1000,
-    ml: 1,
-};
-const WT_TO_G = {
-    g: 1,
-    kg: 1000,
-    oz: 28.3495,
-    lb: 453.592, lbs: 453.592,
-};
-function nu(u) { return u.toLowerCase().trim(); }
-function classifyUnit(u) {
-    const n = nu(u);
-    if (n in VOL_TO_ML)
-        return "volume";
-    if (n in WT_TO_G)
-        return "weight";
-    return "named";
-}
-function inMl(amount, unit) {
-    const f = VOL_TO_ML[nu(unit)];
-    return f !== undefined ? amount * f : null;
-}
-function inG(amount, unit) {
-    const f = WT_TO_G[nu(unit)];
-    return f !== undefined ? amount * f : null;
-}
-// ─── Ingredient Parsing ───────────────────────────────────────────────────────
-function parseAmount(s) {
-    if (s.includes("/")) {
-        const [n, d] = s.split("/");
-        return parseFloat(n) / parseFloat(d);
-    }
-    return parseFloat(s);
-}
-function extractSection(content, header) {
-    const lines = content.split("\n");
-    const headerRe = new RegExp(`^#{1,6}\\s+${header}\\s*$`, "i");
-    let start = -1;
-    for (let i = 0; i < lines.length; i++) {
-        if (headerRe.test(lines[i])) {
-            start = i + 1;
-            break;
-        }
-    }
-    if (start === -1)
-        return null;
-    const out = [];
-    for (let i = start; i < lines.length; i++) {
-        if (/^#{1,6}\s/.test(lines[i]))
-            break;
-        out.push(lines[i]);
-    }
-    return out.join("\n");
-}
-function parseIngredientLine(line) {
-    var _a;
-    if (!/^\s*-\s*\[[ xX]\]/.test(line))
-        return null;
-    const linkMatch = line.match(/\[\[([^\]|]+)(?:\|[^\]]+)?\]\]/);
-    if (!linkMatch)
-        return null;
-    const linkText = linkMatch[1].trim();
-    const stripped = line.replace(/^\s*-\s*\[[ xX]\]\s*/, "").trim();
-    let amount = 0;
-    let unit = "";
-    // "fl oz" is a two-word unit — check before single-word fallback
-    const flOzM = stripped.match(/^(\d+(?:[\/\.]\d+)?)\s+fl\s+oz\b/i);
-    if (flOzM) {
-        amount = parseAmount(flOzM[1]);
-        unit = "fl oz";
-    }
-    else {
-        const m = stripped.match(/^(\d+(?:[\/\.]\d+)?)\s+(\w+)?/);
-        if (!m)
-            return null;
-        amount = parseAmount(m[1]);
-        const raw = (_a = m[2]) !== null && _a !== void 0 ? _a : "";
-        unit = raw.startsWith("[") ? "" : raw;
-    }
-    return { amount, unit, linkText };
-}
-// ─── Ratio Calculation ────────────────────────────────────────────────────────
-function calcRatio(amount, unit, fm, isRecipe) {
-    var _a;
-    if (isRecipe && (!fm.serving_size || !fm.serving_unit)) {
-        return "recipe note missing serving fields";
-    }
-    const servingSize = Number(fm.serving_size) || 1;
-    const servingUnit = String((_a = fm.serving_unit) !== null && _a !== void 0 ? _a : "").trim();
-    const ingN = nu(unit);
-    const srvN = nu(servingUnit);
-    // Case 1: common_serving_unit match (food notes only)
-    if (!isRecipe && fm.common_serving_unit) {
-        const comN = nu(String(fm.common_serving_unit));
-        const comSz = Number(fm.common_serving_size) || 1;
-        if (ingN === comN)
-            return amount / comSz;
-    }
-    // Case 2: direct serving_unit match
-    if (ingN === srvN)
-        return amount / servingSize;
-    // Case 3: same-dimension unit conversion
-    const ingType = classifyUnit(ingN);
-    const srvType = classifyUnit(srvN);
-    if (ingType === "volume" && srvType === "volume") {
-        const iMl = inMl(amount, ingN);
-        const sMl = inMl(servingSize, srvN);
-        if (iMl !== null && sMl !== null && sMl > 0)
-            return iMl / sMl;
-    }
-    if (ingType === "weight" && srvType === "weight") {
-        const iG = inG(amount, ingN);
-        const sG = inG(servingSize, srvN);
-        if (iG !== null && sG !== null && sG > 0)
-            return iG / sG;
-    }
-    // Case 4: incompatible dimensions
-    if (ingType !== "named" && srvType !== "named" && ingType !== srvType) {
-        return "unit mismatch (volume vs weight)";
-    }
-    if (!unit)
-        return "unit not convertible (no unit specified)";
-    return `unit not convertible (used "${unit}", food note uses "${servingUnit || "unknown"}")`;
-}
-// ─── Notes Section Write-Back ─────────────────────────────────────────────────
-function applyNotesSection(content, skipped) {
-    const bulletLines = skipped.map(s => `- ${s.name} — ${s.reason}`);
-    const newSection = "## Notes\n" +
-        "**Skipped ingredients (not included in nutrition calculation):**\n" +
-        bulletLines.join("\n") + "\n";
-    const fileLines = content.split("\n");
-    let start = -1;
-    let end = fileLines.length;
-    for (let i = 0; i < fileLines.length; i++) {
-        if (/^## Notes\s*$/.test(fileLines[i])) {
-            start = i;
-        }
-        else if (start !== -1 && i > start && /^## /.test(fileLines[i])) {
-            end = i;
-            break;
-        }
-    }
-    if (start !== -1) {
-        const before = fileLines.slice(0, start).join("\n");
-        const after = end < fileLines.length ? "\n" + fileLines.slice(end).join("\n") : "";
-        return before + "\n" + newSection + after;
-    }
-    return content.trimEnd() + "\n\n" + newSection;
-}
-// ─── Servings Modal ───────────────────────────────────────────────────────────
-class ServingsModal extends obsidian.Modal {
-    constructor(app, totals, initial, onConfirm) {
-        super(app);
-        this.totals = totals;
-        this.initial = initial;
-        this.onConfirm = onConfirm;
-    }
-    onOpen() {
-        const { contentEl } = this;
-        contentEl.empty();
-        contentEl.createEl("h3", { text: "Recipe Nutrition" });
-        let servings = this.initial;
-        const row = contentEl.createDiv({ cls: "tracker-pro-recipe-row" });
-        row.createEl("label", { text: "Servings:", cls: "tracker-pro-recipe-label" });
-        const input = row.createEl("input");
-        input.type = "number";
-        input.min = "1";
-        input.value = String(servings);
-        input.addClass("tracker-pro-recipe-input");
-        const calRow = contentEl.createDiv({ cls: "tracker-pro-recipe-cal-row" });
-        const calDisplay = calRow.createEl("span", { cls: "tracker-pro-recipe-cal" });
-        calRow.createEl("span", { text: " · Max 350 cal/serving", cls: "tracker-pro-recipe-hint" });
-        const update = (s) => {
-            calDisplay.setText(`${Math.round(this.totals.calories / s)} cal/serving`);
-        };
-        update(servings);
-        input.addEventListener("input", () => {
-            const v = parseInt(input.value);
-            if (v >= 1) {
-                servings = v;
-                update(v);
-            }
-        });
-        const btnRow = contentEl.createDiv({ cls: "tracker-pro-recipe-btns" });
-        const confirmBtn = btnRow.createEl("button", { text: "Confirm", cls: "mod-cta" });
-        confirmBtn.addEventListener("click", () => {
-            const v = Math.max(1, parseInt(input.value) || 1);
-            this.close();
-            this.onConfirm(v);
-        });
-        btnRow.createEl("button", { text: "Cancel" }).addEventListener("click", () => this.close());
-    }
-    onClose() { this.contentEl.empty(); }
-}
-// ─── Main Entry Point ─────────────────────────────────────────────────────────
-async function calculateRecipeNutrition(app) {
-    var _a, _b;
-    const file = app.workspace.getActiveFile();
-    if (!file) {
-        new obsidian.Notice("No active note.");
-        return;
-    }
-    const content = await app.vault.read(file);
-    const section = extractSection(content, "Ingredients");
-    if (!section) {
-        new obsidian.Notice("No Ingredients section found.");
-        return;
-    }
-    const parsed = section.split("\n")
-        .map(parseIngredientLine)
-        .filter((x) => x !== null);
-    const totals = { calories: 0, carbs: 0, fat: 0, protein: 0 };
-    const skipped = [];
-    let resolved = 0;
-    for (const ing of parsed) {
-        const linked = app.metadataCache.getFirstLinkpathDest(ing.linkText, file.path);
-        if (!linked) {
-            skipped.push({ name: ing.linkText, reason: "no food note found" });
-            continue;
-        }
-        const fm = ((_b = (_a = app.metadataCache.getFileCache(linked)) === null || _a === void 0 ? void 0 : _a.frontmatter) !== null && _b !== void 0 ? _b : {});
-        const isRecipe = linked.basename.startsWith("Recipe -");
-        const ratio = calcRatio(ing.amount, ing.unit, fm, isRecipe);
-        if (typeof ratio === "string") {
-            skipped.push({ name: ing.linkText, reason: ratio });
-            continue;
-        }
-        totals.calories += (Number(fm.calories) || 0) * ratio;
-        totals.carbs += (Number(fm.carbs) || 0) * ratio;
-        totals.fat += (Number(fm.fat) || 0) * ratio;
-        totals.protein += (Number(fm.protein) || 0) * ratio;
-        resolved++;
-    }
-    if (resolved === 0) {
-        new obsidian.Notice("No matching food notes found. Nothing to calculate.");
-        return;
-    }
-    const suggested = Math.max(1, Math.ceil(totals.calories / 350));
-    new ServingsModal(app, totals, suggested, async (servings) => {
-        await app.fileManager.processFrontMatter(file, (fm) => {
-            fm.calories = Math.round(totals.calories / servings);
-            fm.carbs = Math.round(totals.carbs / servings);
-            fm.fat = Math.round(totals.fat / servings);
-            fm.protein = Math.round(totals.protein / servings);
-            fm.servings = servings;
-        });
-        if (skipped.length > 0) {
-            const updated = await app.vault.read(file);
-            await app.vault.modify(file, applyNotesSection(updated, skipped));
-        }
-        new obsidian.Notice("Recipe nutrition calculated.");
-    }).open();
-}
-
 function isRelevantFile(changedPath, config, settings) {
     if (config.type === "reading-challenge" && settings) {
         const goalFile = obsidian.normalizePath(settings.readingGoalFile);
@@ -22068,12 +21968,6 @@ class Tracker extends obsidian.Plugin {
             id: "edit-meal-log",
             name: "Edit meal log",
             callback: () => editMealLog(this.app, this.settings),
-        });
-        // ── Recipe Calculator command ─────────────────────────────────────────
-        this.addCommand({
-            id: "calculate-recipe-nutrition",
-            name: "Calculate Recipe Nutrition",
-            callback: () => calculateRecipeNutrition(this.app),
         });
         // ── Bill Tracker commands ─────────────────────────────────────────────
         this.addCommand({
