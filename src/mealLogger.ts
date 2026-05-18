@@ -199,6 +199,7 @@ class AmountModal extends Modal {
             });
 
             const inputRow = contentEl.createEl("div", {
+                cls: "tracker-pro-amount-input-row",
                 attr: { style: "display:flex;gap:8px;margin:6px 0 8px;" },
             });
 
@@ -218,7 +219,7 @@ class AmountModal extends Modal {
             const unitSelect = inputRow.createEl("select", {
                 attr: {
                     style:
-                        "padding:8px 10px;font-size:1.0em;" +
+                        "padding:0 10px;font-size:1.0em;" +
                         "border:1px solid var(--background-modifier-border);" +
                         "border-radius:6px;background:var(--background-primary);" +
                         "color:var(--text-normal);cursor:pointer;",
