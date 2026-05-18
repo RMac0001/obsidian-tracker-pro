@@ -1,6 +1,18 @@
 # Tracker Pro — Status
 
-## What was done (v1.1.1 → v1.4.4)
+## What was done (v1.1.1 → v1.4.5)
+
+---
+
+### v1.4.5 — Recipe Calculator Unit Matching Fixes
+
+Two bugs in `src/recipeCalculator.ts` that caused "No matching food notes found" errors:
+
+**Bug 1 — Pluralized named units not matching `common_serving_unit`**
+Added `singularize()` helper and applied it to both sides of the Case 1 comparison in `calcRatio`. Ingredient lines written as `"2 packages"` or `"3 cans"` now correctly match food notes with `common_serving_unit: package` / `common_serving_unit: can`.
+
+**Bug 2 — Spelled-out unit names not in conversion tables**
+Added full English spellings to `VOL_TO_ML` (`teaspoon`, `teaspoons`, `tablespoon`, `tablespoons`) and `WT_TO_G` (`pound`, `pounds`). These were previously classified as `"named"` and failed conversion.
 
 ---
 

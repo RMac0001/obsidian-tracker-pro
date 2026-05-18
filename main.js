@@ -21933,8 +21933,8 @@ async function logMeal(app, settings) {
 
 // ─── Unit Conversion Tables ───────────────────────────────────────────────────
 const VOL_TO_ML = {
-    tsp: 4.92892, tsps: 4.92892,
-    tbsp: 14.7868, tbsps: 14.7868,
+    tsp: 4.92892, tsps: 4.92892, teaspoon: 4.92892, teaspoons: 4.92892,
+    tbsp: 14.7868, tbsps: 14.7868, tablespoon: 14.7868, tablespoons: 14.7868,
     "fl oz": 29.5735,
     cup: 236.588, cups: 236.588,
     pint: 473.176, pints: 473.176,
@@ -21946,9 +21946,21 @@ const WT_TO_G = {
     g: 1,
     kg: 1000,
     oz: 28.3495,
-    lb: 453.592, lbs: 453.592,
+    lb: 453.592, lbs: 453.592, pound: 453.592, pounds: 453.592,
 };
 function nu(u) { return u.toLowerCase().trim(); }
+function singularize(u) {
+    if (u.endsWith("ves"))
+        return u.slice(0, -3) + "f";
+    if (u.endsWith("ies"))
+        return u.slice(0, -3) + "y";
+    if (u.endsWith("ses") || u.endsWith("xes") || u.endsWith("zes") ||
+        u.endsWith("shes") || u.endsWith("ches"))
+        return u.slice(0, -2);
+    if (u.endsWith("s") && u.length > 2)
+        return u.slice(0, -1);
+    return u;
+}
 function classifyUnit(u) {
     const n = nu(u);
     if (n in VOL_TO_ML)
@@ -22032,9 +22044,9 @@ function calcRatio(amount, unit, fm, isRecipe) {
     const srvN = nu(servingUnit);
     // Case 1: common_serving_unit match (food notes only)
     if (!isRecipe && fm.common_serving_unit) {
-        const comN = nu(String(fm.common_serving_unit));
+        const comN = singularize(nu(String(fm.common_serving_unit)));
         const comSz = Number(fm.common_serving_size) || 1;
-        if (ingN === comN)
+        if (singularize(ingN) === comN)
             return amount / comSz;
     }
     // Case 2: direct serving_unit match
