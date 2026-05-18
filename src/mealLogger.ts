@@ -182,7 +182,7 @@ class AmountModal extends Modal {
             const cSize          = this.meta.commonServingSize!;
             const cUnit          = this.meta.commonServingUnit!;
             const calPerMeasured = this.meta.nutrition.calories;
-            const calPerCommon   = round1((cSize / this.meta.servingSize) * calPerMeasured);
+            const calPerCommon   = round1((1 / cSize) * calPerMeasured);
 
             contentEl.createEl("p", {
                 text: `Measured serving: ${this.meta.servingSize} ${this.meta.servingUnit} — ${calPerMeasured} cal per serving`,
@@ -268,7 +268,20 @@ class AmountModal extends Modal {
 
             updateTotal();
             this.input.addEventListener("input", updateTotal);
-            unitSelect.addEventListener("change", updateTotal);
+            let prevUnit = unitSelect.value;
+            unitSelect.addEventListener("change", () => {
+                const currentAmt = parseFloat(this.input.value);
+                const newUnit    = unitSelect.value;
+                if (!isNaN(currentAmt) && currentAmt > 0) {
+                    if (prevUnit === "common" && newUnit === "measured") {
+                        this.input.value = fmt2((currentAmt / cSize) * this.meta.servingSize);
+                    } else if (prevUnit === "measured" && newUnit === "common") {
+                        this.input.value = fmt2((currentAmt / this.meta.servingSize) * cSize);
+                    }
+                }
+                prevUnit = newUnit;
+                updateTotal();
+            });
 
             btn.onclick = () => {
                 const amt = parseFloat(this.input.value);
