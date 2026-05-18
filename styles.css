@@ -703,3 +703,15 @@
   border: 1px solid var(--background-modifier-border);
   color: var(--text-normal);
 }
+
+/* ─── Amount Input Row (food logging modal) ──────────────────────────────────── */
+
+@media (max-width: 400px) {
+  .tracker-pro-amount-input-row {
+    flex-direction: column;
+  }
+  .tracker-pro-amount-input-row input,
+  .tracker-pro-amount-input-row select {
+    width: 100%;
+  }
+}

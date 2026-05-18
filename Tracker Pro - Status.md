@@ -1,6 +1,15 @@
 # Tracker Pro — Status
 
-## What was done (v1.1.1 → v1.4.3)
+## What was done (v1.1.1 → v1.4.4)
+
+---
+
+### v1.4.4 — Food Logging Modal Layout Fixes
+
+CSS-only fixes for the food logging modal amount input row:
+
+- **Desktop — dropdown text clipped**: reduced vertical padding on the unit `<select>` from `8px` to `0` (horizontal `10px` unchanged) so dropdown text is no longer obscured
+- **Mobile — input row overflow**: added a `@media (max-width: 400px)` rule targeting `.tracker-pro-amount-input-row` that stacks the number input and unit dropdown vertically (full width each) on narrow screens
 
 ---
 
