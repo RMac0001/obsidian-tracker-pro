@@ -9,15 +9,22 @@ and renders them as charts and summaries. It requires no Dataview dependency.
 
 1. [Installation](#installation)
 2. [Global Settings](#global-settings)
-3. [How It Works](#how-it-works)
-4. [Core Parameters](#core-parameters)
+3. [Meal Logger](#meal-logger)
+   - [Vault Structure](#vault-structure)
+   - [Daily Log Frontmatter](#daily-log-frontmatter)
+   - [Log meal](#log-meal)
+   - [Clear meal](#clear-meal)
+   - [Edit meal log](#edit-meal-log)
+   - [Calculate Recipe Nutrition](#calculate-recipe-nutrition)
+4. [How It Works](#how-it-works)
+5. [Core Parameters](#core-parameters)
    - [Data Source](#data-source)
    - [Date Handling](#date-handling)
    - [Date Selector](#dateselector)
    - [Properties](#properties)
    - [Aggregation](#aggregation)
    - [Visuals](#visuals)
-5. [Chart Types](#chart-types)
+6. [Chart Types](#chart-types)
    - [line](#line)
    - [bar](#bar)
    - [pie](#pie)
@@ -32,10 +39,11 @@ and renders them as charts and summaries. It requires no Dataview dependency.
    - [table](#table)
    - [daily-table](#daily-table)
    - [bills](#bills)
-6. [Advanced Features](#advanced-features)
+7. [Reading Challenge](#reading-challenge)
+8. [Advanced Features](#advanced-features)
    - [source: fileMeta](#source-filemeta)
    - [dateAggregation](#dateaggregation)
-7. [Full Parameter Reference](#full-parameter-reference)
+9. [Full Parameter Reference](#full-parameter-reference)
 
 ---
 
@@ -53,11 +61,254 @@ and renders them as charts and summaries. It requires no Dataview dependency.
 
 Open **Settings → Tracker Pro** to configure defaults that apply to every block:
 
+**Charts**
+
 | Setting | Description |
 |---|---|
 | **Default folder location** | Folder scanned for notes when no `folder` is set in the block. Defaults to `/` (entire vault). |
 | **Default date format** | Format used to parse dates in note filenames (e.g. `YYYY-MM-DD`). |
 | **Default date property** | Frontmatter key to read dates from instead of the filename. Leave empty to keep using the filename. Can be overridden per block with `dateProperty`. |
+
+**Meal Logger**
+
+| Setting | Description |
+|---|---|
+| **Meal log folder** | Folder path for daily meal log notes. Supports `{{DATE:FORMAT}}` tokens (e.g. `Data/Food Logs/{{DATE:YYYY}}/{{DATE:YYYY-MM}}`). |
+| **Meal log filename** | Filename template for daily log notes. Supports `{{DATE:FORMAT}}` tokens (e.g. `{{DATE:YYYY-MM-DD}}`). |
+| **Food database folder** | Folder containing individual food notes (e.g. `Data/Food`). |
+| **Recipes folder** | Folder containing recipe notes (e.g. `Data/Recipes`). |
+
+**Bills**
+
+| Setting | Description |
+|---|---|
+| **Bills master folder** | Folder containing master bill notes (default: `Data/Bills`). |
+| **Bills payment folder template** | Folder template for monthly payment notes. Supports `{{DATE:FORMAT}}` tokens (default: `Data/Bills/Payments/BP-{{DATE:YYYY}}/BP-{{DATE:YYYY-MM}}`). |
+
+**Reading Challenge**
+
+| Setting | Description |
+|---|---|
+| **Book notes folder** | Folder containing your book review notes (default: `Data/Book Reviews`). |
+| **Book note prefix** | Filename prefix that identifies book notes (default: `BR-`). Only notes whose basename starts with this prefix are counted. |
+| **Reading goal file** | Path to the note holding your annual reading goals (default: `Data/Reading Goals.md`). |
+
+---
+
+## Meal Logger
+
+The Meal Logger is a set of commands for logging and editing daily food and nutrition data. All commands are available from the command palette.
+
+---
+
+### Vault Structure
+
+**Daily log notes** — one note per day at the path defined by your settings:
+
+```
+Data/Food Logs/2026/2026-05/2026-05-07.md
+```
+
+**Food database notes** — one note per food item in your `Food database folder`:
+
+```yaml
+food_name: Peanut Butter
+serving_size: 2
+serving_unit: oz
+calories: 190
+protein: 7
+fat: 16
+carbs: 8
+```
+
+The optional `common_serving_size` and `common_serving_unit` fields let you define a named "common" unit (e.g. one egg, one slice of bread) alongside the measured unit:
+
+```yaml
+food_name: Eggs
+serving_size: 50
+serving_unit: g
+calories: 70
+protein: 6
+fat: 5
+carbs: 0
+common_serving_size: 1
+common_serving_unit: egg
+```
+
+When both fields are present, the logging modal shows a dual-unit input (see [Log meal](#log-meal)).
+
+**Recipe notes** — one note per recipe in your `Recipes folder`:
+
+```yaml
+recipe_name: Cup of Coffee
+servings: 1
+calories: 45
+protein: 0
+fat: 2
+carbs: 5
+```
+
+---
+
+### Daily Log Frontmatter
+
+The plugin writes 20 nutrition fields automatically — totals for the full day plus a breakdown per meal:
+
+```yaml
+cal_total: 1580       protein_total: 95      fat_total: 62      carbs_total: 180
+cal_breakfast: 380    protein_breakfast: 20  fat_breakfast: 14  carbs_breakfast: 42
+cal_lunch: 620        protein_lunch: 38      fat_lunch: 24      carbs_lunch: 68
+cal_dinner: 490       protein_dinner: 30     fat_dinner: 20     carbs_dinner: 58
+cal_snacks: 90        protein_snacks: 7      fat_snacks: 4      carbs_snacks: 12
+```
+
+These fields are what `daily-table` and `table` chart blocks read.
+
+---
+
+### Log meal
+
+Run **Tracker Pro: Log meal** from the command palette.
+
+1. Pick a meal type — Breakfast, Lunch, Dinner, or Snacks
+2. Search the food database or recipes by name
+3. Enter the amount (see amount modal below)
+4. Choose to add more items or finish
+
+If today's log note doesn't exist it is created automatically. If it does exist, entries are appended to the correct meal section and frontmatter totals are updated.
+
+**Remove last item** — while building a meal, a "Remove last item (Name)" option appears in the menu whenever the list isn't empty. Selecting it pops the last entry and loops back.
+
+**Amount modal — standard food (no common serving):**
+
+Enter the amount in the food's measured unit (e.g. oz, g, cup). The modal shows the serving size and calories per serving as a hint.
+
+**Amount modal — food with `common_serving_size` / `common_serving_unit`:**
+
+The modal shows two info lines — one for the measured serving, one for the common serving — each with its calorie count. A number input paired with a unit dropdown lets you enter either unit:
+
+- Select the **common unit** (e.g. egg) to enter a count of whole items
+- Select the **measured unit** (e.g. g) to enter a precise weight or volume
+
+A **Total: X cal** line updates live as you type or switch units. The Add button is disabled until a valid positive amount is entered.
+
+The log line records both units for readability:
+
+```
+- [[Eggs]] (2 eggs / 100 g) — 140 cal | 12g protein | 10g fat | 0g carbs
+```
+
+or, if you entered the measured unit:
+
+```
+- [[Eggs]] (100 g / 2 eggs) — 140 cal | 12g protein | 10g fat | 0g carbs
+```
+
+**Amount modal — recipe:**
+
+Enter the number of servings. The modal shows calories per serving as a hint.
+
+**Log line format:**
+
+```
+- [[Peanut Butter]] (2 oz) — 190 cal | 7g protein | 16g fat | 8g carbs
+- [[Eggs]] (2 eggs / 100 g) — 140 cal | 12g protein | 10g fat | 0g carbs
+- [[Recipe - Cup of Coffee]] (1 serving) — 45 cal | 0g protein | 2g fat | 5g carbs
+```
+
+---
+
+### Clear meal
+
+Run **Tracker Pro: Clear meal** from the command palette.
+
+1. Pick a meal type
+2. Confirm
+
+Zeroes all 8 frontmatter fields for that meal, removes all bullet lines from that section, and recalculates the four `_total` fields.
+
+---
+
+### Edit meal log
+
+Run **Tracker Pro: Edit meal log** from the command palette.
+
+Opens the edit modal for today's log. If no log exists for today, a blank one is created automatically with zeroed frontmatter and all four meal sections.
+
+**Switch date** — a button in the modal header opens a picker of the 30 most recent log files so you can edit any past log without closing the modal.
+
+Four edit actions are always available:
+
+| Action | Description |
+|---|---|
+| **Change quantity** | Pick a meal and item, adjust the amount — saves and recalculates |
+| **Remove item** | Pick a meal and item to delete |
+| **Add item to a meal** | Full food/recipe search; choose which meal to add to |
+| **Add a meal block** | Pick the meal type first, then search for the item |
+
+**Save and recalculate** — on save, nutrition values are re-pulled fresh from the source food/recipe notes (not re-summed from stored log values). A timestamped bullet is appended to a `## Notes` section at the bottom of the file:
+
+```
+- 2026-05-07 — Log recalculated
+```
+
+---
+
+### Calculate Recipe Nutrition
+
+Run **Tracker Pro: Calculate Recipe Nutrition** from the command palette with any recipe note open.
+
+Reads the `# Ingredients` section of the active note, resolves each `[[wiki-link]]` to a food or recipe note in the vault, calculates total nutrition, and writes per-serving macros back to the note's frontmatter.
+
+**Ingredient line format** — checklist items with an amount, optional unit, and a wiki-link:
+
+```
+- [ ] 16 oz [[Refried Beans]]
+- [ ] 1 cup [[Sour Cream]]
+- [ ] 1 cup shredded [[Cheddar Cheese]]
+- [ ] 2 cups [[Salsa]], drained
+- [ ] 1 cup [[Recipe - Guacamole]]
+- [ ] 3 ripe [[Avocado|avocados]]
+```
+
+- The **amount** is the first number on the line (integers, decimals, and fractions like `1/2` are all supported)
+- The **unit** is the word immediately after the amount (`oz`, `cup`, `tbsp`, etc.)
+- The **food note** is the text inside `[[ ]]` — pipe aliases are stripped (`[[Avocado|avocados]]` → looks up `Avocado`)
+- Lines with no wiki-link, and wiki-links that can't be resolved in the vault, are silently skipped
+
+**Unit handling:**
+
+| Situation | Behaviour |
+|---|---|
+| Ingredient unit matches `common_serving_unit` (food notes only) | `amount / common_serving_size × nutrition` |
+| Ingredient unit matches `serving_unit` directly | `amount / serving_size × nutrition` |
+| Both units are volume (tsp, tbsp, fl oz, cup, pint, quart, l, ml) | Converted to ml, then ratio applied |
+| Both units are weight (g, kg, oz, lb/lbs) | Converted to g, then ratio applied |
+| Volume vs weight | Skipped — "unit mismatch (volume vs weight)" |
+| Named unit (jar, can, piece…) that doesn't match | Skipped — "unit not convertible" |
+
+**Sub-recipes** — any wiki-link resolving to a file whose name starts with `Recipe -` is treated as a sub-recipe. The same unit matching applies using the recipe's `serving_size` and `serving_unit`. The recipe's `calories`, `carbs`, `fat`, `protein` values are already per-serving.
+
+**Servings modal** — after totalling nutrition, a modal shows the suggested serving count (capped at 350 cal/serving, minimum 1). The number is editable and the cal/serving display updates live. Click **Confirm** to write values or **Cancel** to abort.
+
+**Frontmatter written** (per serving, rounded to nearest integer):
+
+```yaml
+calories: 245
+carbs: 18
+fat: 14
+protein: 9
+servings: 6
+```
+
+**Skipped ingredients** — if any ingredients couldn't be resolved, a `## Notes` section is appended (or updated) at the bottom of the note:
+
+```markdown
+## Notes
+**Skipped ingredients (not included in nutrition calculation):**
+- taco seasoning — no food note found
+- Mystery Sauce — unit mismatch (volume vs weight)
+```
 
 ---
 
@@ -150,13 +401,15 @@ endDate:   2025-03-31
 
 ---
 
-**`dateSelector`** — render an interactive date-range dropdown above the chart.
+### `dateSelector`
+
+Add `dateSelector: true` to render an interactive date-range dropdown above the chart.
 
 ```yaml
 dateSelector: true
 ```
 
-When enabled, a `<select>` dropdown appears above the chart. Choosing a preset immediately re-renders the chart for that range. Choosing **Custom…** reveals two date pickers; updating either re-renders immediately. The selector stays in place across re-renders — only the chart below it is updated.
+Choosing a preset immediately re-renders the chart for that range. Choosing **Custom…** reveals two date pickers; updating either re-renders immediately. The selector stays in place across re-renders — only the chart is updated.
 
 **Available presets in the dropdown:**
 
@@ -177,7 +430,7 @@ When enabled, a `<select>` dropdown appears above the chart. Choosing a preset i
 | All Time | `all` |
 | Custom… | uses `startDate` / `endDate` |
 
-The initial selection reflects the `dateRange` (or `startDate`/`endDate`) you set in the block. If no range is specified, it defaults to **Last 30 Days**.
+The initial selection reflects the `dateRange` set in the block (defaults to **Last 30 Days** if none is set).
 
 ---
 
@@ -638,6 +891,7 @@ it copies the rendered stats to the clipboard as plain text, one stat per line.
 | `{{sum()}}` | Sum of all values across all series and all days |
 | `{{mean()}}` | Average value per data point (active days only) |
 | `{{max()}}` | Highest single value in the range |
+| `{{min()}}` | Lowest single value in the range |
 
 **Using `properties` with `summary`**
 
@@ -982,6 +1236,87 @@ idempotent — it skips notes that already exist.
 frequency interval (1 / 3 / 12 months) until a date in the target month is
 found. If the anchor day exceeds the days in the target month, it is clamped
 (e.g. Jan 31 → Feb 28).
+
+---
+
+## Reading Challenge
+
+The Reading Challenge renders inline in any note as a `tracker-pro` code block:
+
+````
+```tracker-pro
+type: reading-challenge
+year: 2026
+```
+````
+
+`year` is optional — omit it to default to the current year. The block auto-refreshes when any book note or the goals file changes.
+
+---
+
+### Vault Setup
+
+**Goals file** — a single note (default `Data/Reading Goals.md`) with one
+`reading_goal_YYYY` number property per year:
+
+```yaml
+reading_goal_2024: 24
+reading_goal_2025: 20
+reading_goal_2026: 12
+```
+
+Each property is a standard Obsidian **number** type. Add a new line for each year you want to track.
+
+**Book notes** — any `.md` file in your configured folder whose basename starts
+with the configured prefix and has a `read_complete: YYYY-MM-DD` frontmatter field:
+
+```yaml
+title: The Name of the Wind
+author: Patrick Rothfuss
+series: The Kingkiller Chronicle
+series_number: 1
+read_complete: 2026-03-14
+```
+
+| Field | Required | Description |
+|---|---|---|
+| `read_complete` | Yes | Date the book was finished (`YYYY-MM-DD`). Notes without this field are ignored. |
+| `title` | No | Display title. Falls back to the filename (prefix stripped, hyphens → spaces). |
+| `author` | No | Shown to the right of the title. |
+| `series` | No | Series name shown below the title. |
+| `series_number` | No | Appended to the series name (e.g. `The Stormlight Archive #1`). |
+
+---
+
+### Block Layout
+
+**Hero section** — a colored square badge tile on the left showing the year and a 📖 icon.
+To the right: "Reading Challenge" title and a **year dropdown** to switch years in place.
+A motivational subtitle beneath the title adapts to your progress:
+
+| Situation | Subtitle |
+|---|---|
+| Current year, on track | "You're on track! Keep reading." |
+| Current year, behind | "Press on! Read N book(s) to get back on track." |
+| Past year, goal met | "Challenge complete! You met your goal." |
+| Past year, goal missed | "You read N of G books." |
+| Future year with goal | "Goal: G book(s)" |
+| No goal set | (no subtitle) |
+
+**Progress section** — bold stats line showing `N of G books read | D days left`
+(or "Completed" for past years), followed by a pill-shaped progress bar with the
+percentage label outside to the right: `[████░░░░] 25%`
+
+**Book list** — numbered and sorted by `read_complete` date. Each entry shows:
+- Clickable title link — opens the note in Obsidian
+- Author to the right of the title
+- Series line below (if `series` is set)
+
+---
+
+### Changing Years
+
+The year dropdown in the hero re-renders the block in place for the selected year. The list includes all years that appear in the goals file plus the current year.
 
 ---
 

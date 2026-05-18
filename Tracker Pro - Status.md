@@ -1,6 +1,47 @@
 # Tracker Pro — Status
 
-## What was done (v1.1.1 → v1.4.0)
+## What was done (v1.1.1 → v1.4.2)
+
+---
+
+### v1.4.2 — Common Serving Support in Food Logging Modal
+
+**Food notes now support `common_serving_size` / `common_serving_unit` fields**
+
+When a food note has both `common_serving_size` and `common_serving_unit` frontmatter fields, the amount modal shows an enhanced UI:
+
+- **Two info lines** listing the measured serving (in `serving_unit`) and the common serving (in `common_serving_unit`), each with its calorie count
+- **Dual-unit input row**: a number field next to a `<select>` dropdown offering both the common unit and the measured unit
+- **Default**: common unit is pre-selected; if re-editing an entry that was entered in the measured unit, the measured unit is pre-selected
+- **Live calorie total** below the inputs, updated as amount or unit changes; the Add button is disabled when amount ≤ 0
+- **Dual-unit display amount** written to the log line: `"2 eggs / 100 g"` (common first) or `"100 g / 2 eggs"` (measured first), depending on which unit was selected
+
+**Pluralization helpers** (`pluralizeUnit`):
+- Units in the `NEVER_PLURALIZE` set (g, kg, ml, oz, cup, tsp, etc.) are never modified
+- Irregular plurals handled: leaf → leaves, loaf → loaves
+- `-fe` endings → `-ves`; sibilant endings → `-es`; default → `-s`
+
+**`multiplierFromDisplay` updated** to parse both halves of a dual-unit string and determine the multiplier from whichever unit appeared first (common or measured).
+
+**`changeQuantity` in Edit Meal Log** updated to extract the current amount and unit from the first part of a dual-unit display, so re-opening the modal pre-fills the correct value and pre-selects the correct unit.
+
+---
+
+### v1.4.1 — Calculate Recipe Nutrition Command
+
+**New command: `Calculate Recipe Nutrition`**
+- Run from the command palette with a recipe note open
+- Reads the `# Ingredients` section and resolves each `[[wiki-link]]` to a food or sub-recipe note
+- Extracts amount and unit from each line; applies unit conversion (volume↔volume, weight↔weight) before calculating contribution
+- Sub-recipes detected by `Recipe -` filename prefix; per-serving values multiplied by resolved serving ratio
+- Shows a confirmation modal with a suggested serving count (≤350 cal/serving), editable with live cal/serving update
+- Writes `calories`, `carbs`, `fat`, `protein` (per serving, rounded), and `servings` to frontmatter via `processFrontMatter`
+- Appends a `## Notes` section listing any skipped ingredients with the skip reason (no note found, unit mismatch, not convertible, recipe missing fields)
+
+**Unit conversion support:**
+- Volume: tsp, tbsp, fl oz, cup, pint, quart, l, ml (all converted to ml for comparison)
+- Weight: g, kg, oz, lb/lbs (all converted to g for comparison)
+- Named/count units (jar, can, serving, piece, etc.) matched directly against `common_serving_unit` or `serving_unit`
 
 ---
 
