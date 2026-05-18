@@ -22,6 +22,8 @@ interface FoodMeta {
     servingSize: number;  // e.g. 4  (in serving_unit)
     servingUnit: string;  // e.g. "oz"
     nutrition: NutritionValues; // per one serving_size amount
+    commonServingSize?: number; // e.g. 1
+    commonServingUnit?: string; // e.g. "egg"
 }
 
 interface MealEntry {
@@ -53,9 +55,33 @@ function round1(n: number): number {
     return Math.round(n * 10) / 10;
 }
 
+const NEVER_PLURALIZE = new Set([
+    "g", "kg", "ml", "l", "oz", "lb", "lbs", "tsp", "tbsp", "cup", "fl oz",
+    "pint", "quart", "pkg", "can", "jar", "bag", "packet", "spray", "medium",
+]);
+
+const IRREGULAR_PLURALS: Record<string, string> = {
+    leaf: "leaves",
+    loaf: "loaves",
+};
+
+function pluralizeUnit(unit: string, amount: number): string {
+    if (amount === 1) return unit;
+    const lower = unit.toLowerCase();
+    if (NEVER_PLURALIZE.has(lower)) return unit;
+    if (IRREGULAR_PLURALS[lower]) return IRREGULAR_PLURALS[lower];
+    if (lower.endsWith("fe")) return unit.slice(0, -2) + "ves";
+    if (/[sxz]$|[sc]h$/.test(lower)) return unit + "es";
+    return unit + "s";
+}
+
+function fmt2(n: number): string {
+    return parseFloat(n.toFixed(2)).toString();
+}
+
 function getFoodMeta(app: App, file: TFile): FoodMeta {
     const fm = app.metadataCache.getFileCache(file)?.frontmatter ?? {};
-    return {
+    const meta: FoodMeta = {
         servingSize: Number(fm.serving_size ?? 1),
         servingUnit: String(fm.serving_unit ?? "serving"),
         nutrition: {
@@ -65,6 +91,11 @@ function getFoodMeta(app: App, file: TFile): FoodMeta {
             carbs:    Number(fm.carbs    ?? 0),
         },
     };
+    if (fm.common_serving_size !== undefined && fm.common_serving_unit !== undefined) {
+        meta.commonServingSize = Number(fm.common_serving_size);
+        meta.commonServingUnit = String(fm.common_serving_unit);
+    }
+    return meta;
 }
 
 function getRecipeMeta(app: App, file: TFile): FoodMeta {
@@ -125,20 +156,6 @@ class FileSuggestModal extends FuzzySuggestModal<TFile> {
     onChooseItem(file: TFile): void { this.onChoose(file); }
 }
 
-/**
- * Unified amount modal.
- *
- * Foods:   asks "How many oz?" (or whatever serving_unit is)
- *          multiplier = amount / serving_size
- *          default = serving_size (i.e. one serving pre-filled)
- *
- * Recipes: asks "How many servings?"
- *          multiplier = amount
- *          default = 1
- *
- * Pass defaultValue to pre-fill a specific number (used by change-quantity).
- * Pass buttonLabel to customise the submit button text.
- */
 class AmountModal extends Modal {
     private input!: HTMLInputElement;
 
@@ -149,6 +166,7 @@ class AmountModal extends Modal {
         private isFood: boolean,
         private onSubmit: (multiplier: number, displayAmount: string) => void,
         private defaultValue?: number,
+        private defaultUnit?: string,
         private buttonLabel = "Add to meal"
     ) {
         super(app);
@@ -156,73 +174,193 @@ class AmountModal extends Modal {
 
     onOpen(): void {
         const { contentEl } = this;
-
         contentEl.createEl("h3", { text: this.itemName });
 
-        const hint = this.isFood
-            ? `1 serving = ${this.meta.servingSize} ${this.meta.servingUnit}  ·  ${this.meta.nutrition.calories} cal per serving`
-            : `${this.meta.nutrition.calories} cal per serving`;
+        const hasCommon = !!(this.meta.commonServingSize && this.meta.commonServingUnit);
 
-        contentEl.createEl("p", {
-            text: hint,
-            attr: { style: "margin:4px 0 12px;color:var(--text-muted);font-size:0.85em;" },
-        });
+        if (this.isFood && hasCommon) {
+            const cSize          = this.meta.commonServingSize!;
+            const cUnit          = this.meta.commonServingUnit!;
+            const calPerMeasured = this.meta.nutrition.calories;
+            const calPerCommon   = round1((cSize / this.meta.servingSize) * calPerMeasured);
 
-        const labelText = this.isFood
-            ? `Amount (${this.meta.servingUnit})`
-            : "Servings";
+            contentEl.createEl("p", {
+                text: `Measured serving: ${this.meta.servingSize} ${this.meta.servingUnit} — ${calPerMeasured} cal per serving`,
+                attr: { style: "margin:4px 0 2px;color:var(--text-muted);font-size:0.85em;" },
+            });
+            contentEl.createEl("p", {
+                text: `Common serving: ${cSize} ${cUnit} — ${calPerCommon} cal per serving`,
+                attr: { style: "margin:2px 0 12px;color:var(--text-muted);font-size:0.85em;" },
+            });
 
-        contentEl.createEl("label", {
-            text: labelText,
-            attr: { style: "font-size:0.9em;color:var(--text-muted);" },
-        });
+            contentEl.createEl("label", {
+                text: "Amount",
+                attr: { style: "font-size:0.9em;color:var(--text-muted);" },
+            });
 
-        this.input = contentEl.createEl("input", {
-            attr: {
-                type: "number",
-                min: "0.01",
-                step: this.isFood ? "0.5" : "0.25",
-                style:
-                    "display:block;width:100%;padding:8px 10px;font-size:1.1em;" +
-                    "border:1px solid var(--background-modifier-border);" +
-                    "border-radius:6px;background:var(--background-primary);" +
-                    "color:var(--text-normal);margin:6px 0 12px;",
-            },
-        });
+            const inputRow = contentEl.createEl("div", {
+                attr: { style: "display:flex;gap:8px;margin:6px 0 8px;" },
+            });
 
-        this.input.value = this.defaultValue !== undefined
-            ? String(this.defaultValue)
-            : this.isFood ? String(this.meta.servingSize) : "1";
-        this.input.focus();
-        this.input.select();
+            this.input = inputRow.createEl("input", {
+                attr: {
+                    type: "number",
+                    min: "0.01",
+                    step: "0.5",
+                    style:
+                        "flex:1;padding:8px 10px;font-size:1.1em;" +
+                        "border:1px solid var(--background-modifier-border);" +
+                        "border-radius:6px;background:var(--background-primary);" +
+                        "color:var(--text-normal);",
+                },
+            });
 
-        const btn = contentEl.createEl("button", {
-            text: this.buttonLabel,
-            attr: { style: "width:100%;padding:8px;cursor:pointer;" },
-        });
-        btn.onclick = () => this.submit();
-        this.input.addEventListener("keydown", (e) => {
-            if (e.key === "Enter") this.submit();
-        });
-    }
+            const unitSelect = inputRow.createEl("select", {
+                attr: {
+                    style:
+                        "padding:8px 10px;font-size:1.0em;" +
+                        "border:1px solid var(--background-modifier-border);" +
+                        "border-radius:6px;background:var(--background-primary);" +
+                        "color:var(--text-normal);cursor:pointer;",
+                },
+            });
+            const optCommon   = unitSelect.createEl("option", { text: cUnit });
+            optCommon.value   = "common";
+            const optMeasured = unitSelect.createEl("option", { text: this.meta.servingUnit });
+            optMeasured.value = "measured";
 
-    private submit(): void {
-        const val = parseFloat(this.input.value);
-        if (isNaN(val) || val <= 0) {
-            new Notice("Please enter a valid amount.");
-            return;
-        }
-        this.close();
+            // Determine default selected unit — prefer common unless defaultUnit matches servingUnit
+            let useServingUnit = false;
+            if (this.defaultUnit) {
+                const du = this.defaultUnit.toLowerCase();
+                const su = this.meta.servingUnit.toLowerCase();
+                useServingUnit = du === su || pluralizeUnit(this.meta.servingUnit, 2).toLowerCase() === du;
+            }
+            unitSelect.value = useServingUnit ? "measured" : "common";
 
-        if (this.isFood) {
-            const multiplier    = val / this.meta.servingSize;
-            const unit          = this.meta.servingUnit;
-            const displayAmount = `${val} ${unit}`;
-            this.onSubmit(multiplier, displayAmount);
+            this.input.value = this.defaultValue !== undefined ? String(this.defaultValue) : String(cSize);
+            this.input.focus();
+            this.input.select();
+
+            const totalLine = contentEl.createEl("p", {
+                attr: { style: "margin:0 0 12px;font-size:0.9em;color:var(--text-muted);" },
+            });
+
+            const btn = contentEl.createEl("button", {
+                text: this.buttonLabel,
+                attr: { style: "width:100%;padding:8px;cursor:pointer;" },
+            });
+
+            const updateTotal = () => {
+                const amt = parseFloat(this.input.value);
+                if (isNaN(amt) || amt <= 0) {
+                    totalLine.textContent = "Total: —";
+                    btn.disabled = true;
+                    return;
+                }
+                btn.disabled = false;
+                const isCommon = unitSelect.value === "common";
+                const totalCal = isCommon
+                    ? round1((amt / cSize) * calPerMeasured)
+                    : round1((amt / this.meta.servingSize) * calPerMeasured);
+                totalLine.textContent = `Total: ${totalCal} cal`;
+            };
+
+            updateTotal();
+            this.input.addEventListener("input", updateTotal);
+            unitSelect.addEventListener("change", updateTotal);
+
+            btn.onclick = () => {
+                const amt = parseFloat(this.input.value);
+                if (isNaN(amt) || amt <= 0) { new Notice("Please enter a valid amount."); return; }
+                this.close();
+                const isCommon = unitSelect.value === "common";
+                if (isCommon) {
+                    const multiplier    = amt / cSize;
+                    const measuredAmt   = fmt2((amt / cSize) * this.meta.servingSize);
+                    const displayAmount = `${amt} ${pluralizeUnit(cUnit, amt)} / ${measuredAmt} ${this.meta.servingUnit}`;
+                    this.onSubmit(multiplier, displayAmount);
+                } else {
+                    const multiplier    = amt / this.meta.servingSize;
+                    const commonAmt     = fmt2((amt / this.meta.servingSize) * cSize);
+                    const commonAmtNum  = parseFloat(commonAmt);
+                    const displayAmount = `${amt} ${this.meta.servingUnit} / ${commonAmt} ${pluralizeUnit(cUnit, commonAmtNum)}`;
+                    this.onSubmit(multiplier, displayAmount);
+                }
+            };
+            this.input.addEventListener("keydown", (e) => { if (e.key === "Enter") btn.click(); });
+
+        } else if (this.isFood) {
+            contentEl.createEl("p", {
+                text: `1 serving = ${this.meta.servingSize} ${this.meta.servingUnit}  ·  ${this.meta.nutrition.calories} cal per serving`,
+                attr: { style: "margin:4px 0 12px;color:var(--text-muted);font-size:0.85em;" },
+            });
+            contentEl.createEl("label", {
+                text: `Amount (${this.meta.servingUnit})`,
+                attr: { style: "font-size:0.9em;color:var(--text-muted);" },
+            });
+            this.input = contentEl.createEl("input", {
+                attr: {
+                    type: "number", min: "0.01", step: "0.5",
+                    style:
+                        "display:block;width:100%;padding:8px 10px;font-size:1.1em;" +
+                        "border:1px solid var(--background-modifier-border);" +
+                        "border-radius:6px;background:var(--background-primary);" +
+                        "color:var(--text-normal);margin:6px 0 12px;",
+                },
+            });
+            this.input.value = this.defaultValue !== undefined ? String(this.defaultValue) : String(this.meta.servingSize);
+            this.input.focus();
+            this.input.select();
+            const btn = contentEl.createEl("button", {
+                text: this.buttonLabel,
+                attr: { style: "width:100%;padding:8px;cursor:pointer;" },
+            });
+            btn.disabled = !(parseFloat(this.input.value) > 0);
+            this.input.addEventListener("input", () => { btn.disabled = !(parseFloat(this.input.value) > 0); });
+            btn.onclick = () => {
+                const val = parseFloat(this.input.value);
+                if (isNaN(val) || val <= 0) { new Notice("Please enter a valid amount."); return; }
+                this.close();
+                this.onSubmit(val / this.meta.servingSize, `${val} ${this.meta.servingUnit}`);
+            };
+            this.input.addEventListener("keydown", (e) => { if (e.key === "Enter") btn.click(); });
+
         } else {
-            const multiplier    = val;
-            const displayAmount = `${val} ${val === 1 ? "serving" : "servings"}`;
-            this.onSubmit(multiplier, displayAmount);
+            contentEl.createEl("p", {
+                text: `${this.meta.nutrition.calories} cal per serving`,
+                attr: { style: "margin:4px 0 12px;color:var(--text-muted);font-size:0.85em;" },
+            });
+            contentEl.createEl("label", {
+                text: "Servings",
+                attr: { style: "font-size:0.9em;color:var(--text-muted);" },
+            });
+            this.input = contentEl.createEl("input", {
+                attr: {
+                    type: "number", min: "0.01", step: "0.25",
+                    style:
+                        "display:block;width:100%;padding:8px 10px;font-size:1.1em;" +
+                        "border:1px solid var(--background-modifier-border);" +
+                        "border-radius:6px;background:var(--background-primary);" +
+                        "color:var(--text-normal);margin:6px 0 12px;",
+                },
+            });
+            this.input.value = this.defaultValue !== undefined ? String(this.defaultValue) : "1";
+            this.input.focus();
+            this.input.select();
+            const btn = contentEl.createEl("button", {
+                text: this.buttonLabel,
+                attr: { style: "width:100%;padding:8px;cursor:pointer;" },
+            });
+            btn.disabled = !(parseFloat(this.input.value) > 0);
+            this.input.addEventListener("input", () => { btn.disabled = !(parseFloat(this.input.value) > 0); });
+            btn.onclick = () => {
+                const val = parseFloat(this.input.value);
+                if (isNaN(val) || val <= 0) { new Notice("Please enter a valid amount."); return; }
+                this.close();
+                this.onSubmit(val, `${val} ${val === 1 ? "serving" : "servings"}`);
+            };
+            this.input.addEventListener("keydown", (e) => { if (e.key === "Enter") btn.click(); });
         }
     }
 
@@ -562,9 +700,26 @@ function findItemFile(
 }
 
 function multiplierFromDisplay(displayAmount: string, meta: FoodMeta, isFood: boolean): number {
-    const num = parseFloat(displayAmount);
-    if (isNaN(num)) return 1;
-    return isFood ? num / meta.servingSize : num;
+    if (!isFood) {
+        const num = parseFloat(displayAmount);
+        return isNaN(num) ? 1 : num;
+    }
+    const firstPart = displayAmount.split("/")[0].trim();
+    const m = firstPart.match(/^([\d.]+)\s+(.*)/);
+    if (!m) {
+        const num = parseFloat(displayAmount);
+        return isNaN(num) ? 1 : num / meta.servingSize;
+    }
+    const amount  = parseFloat(m[1]);
+    const unitRaw = m[2].trim().toLowerCase();
+    if (meta.commonServingUnit && meta.commonServingSize) {
+        const comLower  = meta.commonServingUnit.toLowerCase();
+        const comPlural = pluralizeUnit(meta.commonServingUnit, amount).toLowerCase();
+        if (unitRaw === comLower || unitRaw === comPlural) {
+            return amount / meta.commonServingSize;
+        }
+    }
+    return amount / meta.servingSize;
 }
 
 // ─── Recent Log Files ─────────────────────────────────────────────────────────
@@ -846,10 +1001,15 @@ class EditMealLogModal extends Modal {
                             return;
                         }
 
-                        const meta          = found.isFood
+                        const meta         = found.isFood
                             ? getFoodMeta(this.app, found.file)
                             : getRecipeMeta(this.app, found.file);
-                        const currentAmount = parseFloat(entry.displayAmount);
+                        const firstPart    = entry.displayAmount.split("/")[0].trim();
+                        const amtUnitMatch = firstPart.match(/^([\d.]+)\s+(.*)/);
+                        const currentAmount = amtUnitMatch
+                            ? parseFloat(amtUnitMatch[1])
+                            : parseFloat(entry.displayAmount);
+                        const currentUnit  = amtUnitMatch ? amtUnitMatch[2].trim() : undefined;
 
                         new AmountModal(
                             this.app,
@@ -861,6 +1021,7 @@ class EditMealLogModal extends Modal {
                                 this.render();
                             },
                             isNaN(currentAmount) ? undefined : currentAmount,
+                            currentUnit,
                             "Update"
                         ).open();
                     }

@@ -121,6 +121,22 @@ fat: 16
 carbs: 8
 ```
 
+The optional `common_serving_size` and `common_serving_unit` fields let you define a named "common" unit (e.g. one egg, one slice of bread) alongside the measured unit:
+
+```yaml
+food_name: Eggs
+serving_size: 50
+serving_unit: g
+calories: 70
+protein: 6
+fat: 5
+carbs: 0
+common_serving_size: 1
+common_serving_unit: egg
+```
+
+When both fields are present, the logging modal shows a dual-unit input (see [Log meal](#log-meal)).
+
 **Recipe notes** — one note per recipe in your `Recipes folder`:
 
 ```yaml
@@ -156,17 +172,47 @@ Run **Tracker Pro: Log meal** from the command palette.
 
 1. Pick a meal type — Breakfast, Lunch, Dinner, or Snacks
 2. Search the food database or recipes by name
-3. Enter the amount (in the food's unit for foods; number of servings for recipes)
+3. Enter the amount (see amount modal below)
 4. Choose to add more items or finish
 
 If today's log note doesn't exist it is created automatically. If it does exist, entries are appended to the correct meal section and frontmatter totals are updated.
 
 **Remove last item** — while building a meal, a "Remove last item (Name)" option appears in the menu whenever the list isn't empty. Selecting it pops the last entry and loops back.
 
+**Amount modal — standard food (no common serving):**
+
+Enter the amount in the food's measured unit (e.g. oz, g, cup). The modal shows the serving size and calories per serving as a hint.
+
+**Amount modal — food with `common_serving_size` / `common_serving_unit`:**
+
+The modal shows two info lines — one for the measured serving, one for the common serving — each with its calorie count. A number input paired with a unit dropdown lets you enter either unit:
+
+- Select the **common unit** (e.g. egg) to enter a count of whole items
+- Select the **measured unit** (e.g. g) to enter a precise weight or volume
+
+A **Total: X cal** line updates live as you type or switch units. The Add button is disabled until a valid positive amount is entered.
+
+The log line records both units for readability:
+
+```
+- [[Eggs]] (2 eggs / 100 g) — 140 cal | 12g protein | 10g fat | 0g carbs
+```
+
+or, if you entered the measured unit:
+
+```
+- [[Eggs]] (100 g / 2 eggs) — 140 cal | 12g protein | 10g fat | 0g carbs
+```
+
+**Amount modal — recipe:**
+
+Enter the number of servings. The modal shows calories per serving as a hint.
+
 **Log line format:**
 
 ```
 - [[Peanut Butter]] (2 oz) — 190 cal | 7g protein | 16g fat | 8g carbs
+- [[Eggs]] (2 eggs / 100 g) — 140 cal | 12g protein | 10g fat | 0g carbs
 - [[Recipe - Cup of Coffee]] (1 serving) — 45 cal | 0g protein | 2g fat | 5g carbs
 ```
 
