@@ -1,6 +1,17 @@
 # Tracker Pro — Status
 
-## What was done (v1.1.1 → v1.4.2)
+## What was done (v1.1.1 → v1.4.3)
+
+---
+
+### v1.4.3 — Amount Auto-Convert on Unit Switch
+
+When the unit dropdown is changed in the food logging modal, the amount field now automatically converts to the equivalent in the newly selected unit (rounded to 2 decimal places, trailing zeros trimmed):
+
+- **Common → Measured**: `new_amount = (current_amount / common_serving_size) × serving_size`
+- **Measured → Common**: `new_amount = (current_amount / serving_size) × common_serving_size`
+
+Also fixed the Common serving info line: now correctly shows `(1 / common_serving_size) × calories` instead of the incorrect `(common_serving_size / serving_size) × calories`.
 
 ---
 
