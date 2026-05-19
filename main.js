@@ -22052,8 +22052,21 @@ function calcRatio(amount, unit, fm, isRecipe) {
     if (!isRecipe && fm.common_serving_unit) {
         const comN = singularize(nu(String(fm.common_serving_unit)));
         const comSz = Number(fm.common_serving_size) || 1;
+        // Exact match
         if (singularize(ingN) === comN)
             return amount / comSz;
+        // Same-type volume conversion (e.g. tbsp ingredient, tsp common unit)
+        if (VOL_TO_ML[ingN] !== undefined && VOL_TO_ML[comN] !== undefined) {
+            const amountInMl = amount * VOL_TO_ML[ingN];
+            const comUnitInMl = comSz * VOL_TO_ML[comN];
+            return amountInMl / comUnitInMl;
+        }
+        // Same-type weight conversion (e.g. oz ingredient, g common unit)
+        if (WT_TO_G[ingN] !== undefined && WT_TO_G[comN] !== undefined) {
+            const amountInG = amount * WT_TO_G[ingN];
+            const comUnitInG = comSz * WT_TO_G[comN];
+            return amountInG / comUnitInG;
+        }
     }
     // Case 2: direct serving_unit match
     if (ingN === srvN)
