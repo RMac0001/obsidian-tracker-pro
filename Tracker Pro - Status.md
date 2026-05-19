@@ -1,6 +1,16 @@
 # Tracker Pro — Status
 
-## What was done (v1.1.1 → v1.4.8)
+## What was done (v1.1.1 → v1.4.9)
+
+---
+
+### v1.4.9 — Recipe Calculator: Nothing Written Until Confirm
+
+Fixed the write ordering so nothing is saved to the note until the user clicks **Confirm** in the servings modal:
+
+- Skipped ingredients and frontmatter are now both written inside the modal callback — cancelling the modal leaves the note completely unchanged
+- Skipped Notes write still uses the original `content` captured before the modal opens, so the Ingredients section remains byte-for-byte intact (Bug 3 from v1.4.8 preserved)
+- The `resolved === 0` failure path (no modal) still writes skipped immediately since there is nothing to confirm or cancel
 
 ---
 

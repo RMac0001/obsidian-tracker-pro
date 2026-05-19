@@ -315,13 +315,11 @@ export async function calculateRecipeNutrition(app: App): Promise<void> {
         resolved++;
     }
 
-    // Write skipped to Notes unconditionally, from the original raw content,
-    // before any processFrontMatter call can touch the file.
-    if (skipped.length > 0) {
-        await app.vault.modify(file, applyNotesSection(content, skipped));
-    }
-
+    // Write skipped items when resolved === 0 (no modal — nothing to confirm/cancel)
     if (resolved === 0) {
+        if (skipped.length > 0) {
+            await app.vault.modify(file, applyNotesSection(content, skipped));
+        }
         new Notice("No matching food notes found. Skipped ingredients written to Notes section.");
         return;
     }
@@ -329,6 +327,12 @@ export async function calculateRecipeNutrition(app: App): Promise<void> {
     const suggested = Math.max(1, Math.ceil(totals.calories / 350));
 
     new ServingsModal(app, totals, suggested, async (servings) => {
+        // Write Notes first using original content (before processFrontMatter runs),
+        // so the Ingredients section is preserved byte-for-byte.
+        if (skipped.length > 0) {
+            await app.vault.modify(file, applyNotesSection(content, skipped));
+        }
+
         await app.fileManager.processFrontMatter(file, (fm) => {
             fm.calories = Math.round(totals.calories / servings);
             fm.carbs    = Math.round(totals.carbs    / servings);
