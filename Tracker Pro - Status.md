@@ -1,10 +1,20 @@
 # Tracker Pro — Status
 
-## What was done (v1.1.1 → v1.4.9)
+## What was done (v1.1.1 → v1.4.8)
 
 ---
 
-### v1.4.9 — Recipe Calculator: Nothing Written Until Confirm
+### v1.4.8 — Recipe Calculator: `common_serving_unit` Same-Type Unit Conversion
+
+**Bug 4 fix** — Case 1 in `calcRatio` now handles same-type unit conversion when the ingredient unit and `common_serving_unit` aren't an exact string match but are the same dimension:
+
+- **Volume → volume**: converts both sides to ml via `VOL_TO_ML`, divides `amountInMl / (comSz × comUnitInMl)`. Example: `1 tbsp` with `common_serving_unit: tsp, common_serving_size: 1` → 14.79 ml / 4.93 ml = 3 servings
+- **Weight → weight**: same pattern via `WT_TO_G`
+- Cross-type mismatches (volume ingredient vs weight common unit) fall through to the existing Cases 2–4 as before
+
+---
+
+### v1.4.7 — Recipe Calculator: Nothing Written Until Confirm
 
 Fixed the write ordering so nothing is saved to the note until the user clicks **Confirm** in the servings modal:
 
