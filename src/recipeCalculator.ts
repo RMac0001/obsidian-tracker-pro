@@ -269,13 +269,28 @@ export async function calculateRecipeNutrition(app: App): Promise<void> {
     const section = extractSection(content, "Ingredients");
     if (!section) { new Notice("No Ingredients section found."); return; }
 
-    const parsed = section.split("\n")
-        .map(parseIngredientLine)
-        .filter((x): x is Ingredient => x !== null);
-
     const totals: Nutrition = { calories: 0, carbs: 0, fat: 0, protein: 0 };
     const skipped: Skipped[] = [];
     let resolved = 0;
+
+    // Build ingredient list; record every checklist line that can't be resolved
+    // as a skipped item so it appears in the Notes section.
+    const parsed: Ingredient[] = [];
+    for (const line of section.split("\n")) {
+        if (!/^\s*-\s*\[[ xX]\]/.test(line)) continue; // non-checklist — ignore silently
+        const linkMatch = line.match(/\[\[([^\]|]+)(?:\|[^\]]+)?\]\]/);
+        if (!linkMatch) {
+            const text = line.replace(/^\s*-\s*\[[ xX]\]\s*/, "").trim();
+            skipped.push({ name: text || "(unrecognized line)", reason: "no wiki-link" });
+            continue;
+        }
+        const ing = parseIngredientLine(line);
+        if (ing) {
+            parsed.push(ing);
+        } else {
+            skipped.push({ name: linkMatch[1].trim(), reason: "could not parse ingredient line" });
+        }
+    }
 
     for (const ing of parsed) {
         const linked = app.metadataCache.getFirstLinkpathDest(ing.linkText, file.path);
@@ -300,11 +315,13 @@ export async function calculateRecipeNutrition(app: App): Promise<void> {
         resolved++;
     }
 
+    // Write skipped to Notes unconditionally, from the original raw content,
+    // before any processFrontMatter call can touch the file.
+    if (skipped.length > 0) {
+        await app.vault.modify(file, applyNotesSection(content, skipped));
+    }
+
     if (resolved === 0) {
-        if (skipped.length > 0) {
-            const updated = await app.vault.read(file);
-            await app.vault.modify(file, applyNotesSection(updated, skipped));
-        }
         new Notice("No matching food notes found. Skipped ingredients written to Notes section.");
         return;
     }
@@ -319,11 +336,6 @@ export async function calculateRecipeNutrition(app: App): Promise<void> {
             fm.protein  = Math.round(totals.protein  / servings);
             fm.servings = servings;
         });
-
-        if (skipped.length > 0) {
-            const updated = await app.vault.read(file);
-            await app.vault.modify(file, applyNotesSection(updated, skipped));
-        }
 
         new Notice("Recipe nutrition calculated.");
     }).open();

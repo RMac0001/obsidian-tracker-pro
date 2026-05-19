@@ -1,6 +1,21 @@
 # Tracker Pro — Status
 
-## What was done (v1.1.1 → v1.4.7)
+## What was done (v1.1.1 → v1.4.8)
+
+---
+
+### v1.4.8 — Recipe Calculator: Skipped Ingredients & Ingredient Line Safety
+
+Three bugs fixed in `src/recipeCalculator.ts`:
+
+**Bug 1 — Checklist items without wiki-links silently dropped**
+The previous `map(parseIngredientLine).filter()` chain returned null for checklist items with no `[[wiki-link]]`, and those items were silently discarded. Replaced with an explicit loop: any checklist line without a wiki-link is now pushed to `skipped` with reason `"no wiki-link"`, so lines like `3 floats of ghool` and `1 tbsp pepper` appear in the Notes section.
+
+**Bug 2 — Skipped not written in the success path before early-exit**
+Moved the skipped write to an unconditional block before the `resolved === 0` check, covering both the failure and success paths with a single write.
+
+**Bug 3 — Ingredient line corruption risk from deferred Notes write**
+The Notes write was previously inside the `ServingsModal` callback, executing after `processFrontMatter` had already modified the file. By moving the Notes write to use the original `content` read at command start (before any frontmatter change), the Ingredients section is guaranteed to be byte-for-byte identical to what was read — no reconstructed content, no post-`processFrontMatter` re-read.
 
 ---
 

@@ -22165,12 +22165,29 @@ async function calculateRecipeNutrition(app) {
         new obsidian.Notice("No Ingredients section found.");
         return;
     }
-    const parsed = section.split("\n")
-        .map(parseIngredientLine)
-        .filter((x) => x !== null);
     const totals = { calories: 0, carbs: 0, fat: 0, protein: 0 };
     const skipped = [];
     let resolved = 0;
+    // Build ingredient list; record every checklist line that can't be resolved
+    // as a skipped item so it appears in the Notes section.
+    const parsed = [];
+    for (const line of section.split("\n")) {
+        if (!/^\s*-\s*\[[ xX]\]/.test(line))
+            continue; // non-checklist — ignore silently
+        const linkMatch = line.match(/\[\[([^\]|]+)(?:\|[^\]]+)?\]\]/);
+        if (!linkMatch) {
+            const text = line.replace(/^\s*-\s*\[[ xX]\]\s*/, "").trim();
+            skipped.push({ name: text || "(unrecognized line)", reason: "no wiki-link" });
+            continue;
+        }
+        const ing = parseIngredientLine(line);
+        if (ing) {
+            parsed.push(ing);
+        }
+        else {
+            skipped.push({ name: linkMatch[1].trim(), reason: "could not parse ingredient line" });
+        }
+    }
     for (const ing of parsed) {
         const linked = app.metadataCache.getFirstLinkpathDest(ing.linkText, file.path);
         if (!linked) {
@@ -22190,11 +22207,12 @@ async function calculateRecipeNutrition(app) {
         totals.protein += (Number(fm.protein) || 0) * ratio;
         resolved++;
     }
+    // Write skipped to Notes unconditionally, from the original raw content,
+    // before any processFrontMatter call can touch the file.
+    if (skipped.length > 0) {
+        await app.vault.modify(file, applyNotesSection(content, skipped));
+    }
     if (resolved === 0) {
-        if (skipped.length > 0) {
-            const updated = await app.vault.read(file);
-            await app.vault.modify(file, applyNotesSection(updated, skipped));
-        }
         new obsidian.Notice("No matching food notes found. Skipped ingredients written to Notes section.");
         return;
     }
@@ -22207,10 +22225,6 @@ async function calculateRecipeNutrition(app) {
             fm.protein = Math.round(totals.protein / servings);
             fm.servings = servings;
         });
-        if (skipped.length > 0) {
-            const updated = await app.vault.read(file);
-            await app.vault.modify(file, applyNotesSection(updated, skipped));
-        }
         new obsidian.Notice("Recipe nutrition calculated.");
     }).open();
 }
