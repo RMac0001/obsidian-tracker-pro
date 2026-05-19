@@ -1,6 +1,14 @@
 # Tracker Pro — Status
 
-## What was done (v1.1.1 → v1.4.5)
+## What was done (v1.1.1 → v1.4.6)
+
+---
+
+### v1.4.6 — Recipe Calculator: Always Write Skipped Ingredients
+
+Fixed an early-return bug where `resolved === 0` caused the command to exit before writing the skipped-ingredients Notes section. The user received "No matching food notes found" with no explanation of why each ingredient failed.
+
+Now the skipped list is written to the note first, then the failure Notice is shown. The Notice text is also updated to inform the user to check the Notes section.
 
 ---
 

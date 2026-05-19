@@ -22185,7 +22185,11 @@ async function calculateRecipeNutrition(app) {
         resolved++;
     }
     if (resolved === 0) {
-        new obsidian.Notice("No matching food notes found. Nothing to calculate.");
+        if (skipped.length > 0) {
+            const updated = await app.vault.read(file);
+            await app.vault.modify(file, applyNotesSection(updated, skipped));
+        }
+        new obsidian.Notice("No matching food notes found. Skipped ingredients written to Notes section.");
         return;
     }
     const suggested = Math.max(1, Math.ceil(totals.calories / 350));
