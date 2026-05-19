@@ -706,7 +706,7 @@
 
 /* ─── Amount Input Row (food logging modal) ──────────────────────────────────── */
 
-@media (max-width: 400px) {
+@media (max-width: 300px) {
   .tracker-pro-amount-input-row {
     flex-direction: column;
   }
