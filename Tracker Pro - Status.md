@@ -1,6 +1,21 @@
 # Tracker Pro — Status
 
-## What was done (v1.1.1 → v1.4.6)
+## What was done (v1.1.1 → v1.4.7)
+
+---
+
+### v1.4.7 — Settings Section Reorder
+
+Reordered the plugin settings page sections to alphabetical order:
+
+**New order:** Bills · Meal Logger · Reading Challenge · Tracker Pro General Settings
+
+**Convention established:** any future settings sections must be inserted in
+alphabetical order by heading name. This is documented in a comment block at
+the top of the `display()` method in `src/settings.ts`.
+
+The "Tracker Pro" section heading was renamed to **"Tracker Pro General Settings"**
+to make its alphabetical position unambiguous.
 
 ---
 
