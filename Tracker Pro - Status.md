@@ -1,6 +1,22 @@
 # Tracker Pro — Status
 
-## What was done (v1.1.1 → v1.4.8)
+## What was done (v1.1.1 → v1.4.9)
+
+---
+
+### v1.4.9 — Summary Chart: `{{meanDateDiff()}}` and `{{meanHM()}}` Template Variables
+
+Two new template variables for the `summary` chart type:
+
+- **`{{meanDateDiff(field1, field2)}}`** — computes the average calendar days between two date frontmatter fields across all notes in scope, rounded to one decimal place. Handles both `"YYYY-MM-DD"` strings and js-yaml-coerced `Date` objects. Notes missing either field are skipped.
+- **`{{meanHM()}}`** — formats the average of the `properties` values as hours and minutes (e.g. `6 hours, 33 minutes`). Input values are assumed to be in minutes. Falls back to `N minutes` only when the average is under 60 minutes.
+
+Implementation:
+- `calcMeanDateDiff(entries, field1, field2)` added to `summaryChart.ts`
+- `calcMeanHM(series)` added to `summaryChart.ts`
+- `applyTemplate` now handles two-argument `{{fn(arg1, arg2)}}` calls in addition to zero-argument `{{name()}}` calls
+- `renderSummaryChart` signature extended with `entries: RawEntry[] = []`; `renderer.ts` passes `entries` through
+- Documentation updated with variable table rows and usage example
 
 ---
 
