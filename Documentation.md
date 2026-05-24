@@ -16,6 +16,7 @@ and renders them as charts and summaries. It requires no Dataview dependency.
    - [Clear meal](#clear-meal)
    - [Edit meal log](#edit-meal-log)
    - [Calculate Recipe Nutrition](#calculate-recipe-nutrition)
+   - [Recalculate Food Note Calories](#recalculate-food-note-calories)
 4. [How It Works](#how-it-works)
 5. [Core Parameters](#core-parameters)
    - [Data Source](#data-source)
@@ -309,6 +310,22 @@ servings: 6
 - taco seasoning — no food note found
 - Mystery Sauce — unit mismatch (volume vs weight)
 ```
+
+**Calorie calculation** — `calories` is always derived from macros using the Atwater factors (`carbs × 4 + fat × 9 + protein × 4`), applied to the already-rounded per-serving macro values. The modal preview and the written frontmatter field always show the same number.
+
+---
+
+### Recalculate Food Note Calories
+
+Run **Tracker Pro: Recalculate Food Note Calories** from the command palette with any food note open.
+
+Reads `carbs`, `fat`, and `protein` from the note's frontmatter, computes `calories` using the Atwater formula (`carbs × 4 + fat × 9 + protein × 4`), writes the result back to `calories`, and shows a notice with the before and after values:
+
+```
+Calories updated: 180 → 193
+```
+
+Useful for correcting existing food notes where the stored `calories` field doesn't match the macros. The command does nothing (with a descriptive notice) if the note has no frontmatter or if all three macro fields are 0 or missing.
 
 ---
 

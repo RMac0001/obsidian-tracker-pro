@@ -10,10 +10,19 @@
 
 - The `totals.calories += ... * ratio` line is removed from the ingredient loop
 - After the loop: `totals.calories = Math.round(totals.carbs * 4 + totals.fat * 9 + totals.protein * 4)`
-- `ServingsModal` live preview now computes cal/serving via Atwater on per-serving macros, not `totals.calories / s`
 - Frontmatter write-back: macros are rounded first, then `fm.calories = fm.carbs * 4 + fm.fat * 9 + fm.protein * 4` so the stored value is always exactly consistent with stored macros
 
-**New command: "Recalculate Food Note Calories"** (`recalcFoodNoteCalories` in `recipeCalculator.ts`) — opens on the active note, reads `carbs`/`fat`/`protein` from frontmatter, computes Atwater calories, writes back `calories`, and shows a notice with the old → new values. Guards against missing frontmatter and all-zero macros.
+**ServingsModal display fix (two patches)** — the live cal/serving preview went through two rounds of correction to match the write-back exactly:
+- Patch 1: switched from `totals.calories / s` to per-serving Atwater — still wrong due to rounding order
+- Patch 2 (final): modal `update` now rounds each macro per serving first, *then* applies Atwater — identical arithmetic to the write-back, so preview and written `calories` always match:
+  ```typescript
+  const c = Math.round(this.totals.carbs   / s);
+  const f = Math.round(this.totals.fat     / s);
+  const p = Math.round(this.totals.protein / s);
+  calDisplay.setText(`${c * 4 + f * 9 + p * 4} cal/serving`);
+  ```
+
+**New command: "Recalculate Food Note Calories"** (`recalcFoodNoteCalories` in `recipeCalculator.ts`) — on the active food note, reads `carbs`/`fat`/`protein` from frontmatter, computes Atwater calories, writes back `calories`, and shows a notice with the old → new values. Guards against missing frontmatter and all-zero macros.
 
 ---
 
