@@ -892,6 +892,8 @@ it copies the rendered stats to the clipboard as plain text, one stat per line.
 | `{{mean()}}` | Average value per data point (active days only) |
 | `{{max()}}` | Highest single value in the range |
 | `{{min()}}` | Lowest single value in the range |
+| `{{meanHM()}}` | Average of the `properties` values formatted as hours and minutes (e.g. `6 hours, 33 minutes`). Input values are assumed to be in minutes. Falls back to minutes-only when the average is under 60. |
+| `{{meanDateDiff(field1, field2)}}` | Average calendar days between two date frontmatter fields. Skips notes missing either field. Handles both string (`YYYY-MM-DD`) and js-yaml-coerced Date values. |
 
 **Using `properties` with `summary`**
 
@@ -928,6 +930,21 @@ summary:
     Daily average: {{mean()}}
     Best day: {{max()}}
     Active days: {{totalDays()}}
+```
+
+```yaml
+# Date diff and hours/minutes formatting
+type: summary
+folder: Data/Book Reviews
+dateProperty: read_complete
+dateRange: all
+properties:
+  - reading_time
+title: Reading Stats
+summary:
+  template: |
+    Avg. days to complete: {{meanDateDiff(read_start, read_complete)}} days
+    Avg. time per book: {{meanHM()}}
 ```
 
 ---

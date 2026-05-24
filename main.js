@@ -19249,14 +19249,72 @@ function calcMin(series) {
     }
     return min === Infinity ? 0 : min;
 }
+// ─── Date Diff / HM Helpers ──────────────────────────────────────────────────
+function calcMeanDateDiff(entries, field1, field2) {
+    let total = 0;
+    let count = 0;
+    for (const entry of entries) {
+        const raw1 = entry.frontmatter[field1];
+        const raw2 = entry.frontmatter[field2];
+        if (!raw1 || !raw2)
+            continue;
+        const toMs = (v) => {
+            if (v instanceof Date) {
+                return Date.UTC(v.getFullYear(), v.getMonth(), v.getDate());
+            }
+            const s = String(v).trim();
+            const m = s.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+            if (!m)
+                return null;
+            return Date.UTC(parseInt(m[1]), parseInt(m[2]) - 1, parseInt(m[3]));
+        };
+        const ms1 = toMs(raw1);
+        const ms2 = toMs(raw2);
+        if (ms1 === null || ms2 === null)
+            continue;
+        const diff = Math.abs(ms2 - ms1) / 86400000;
+        total += diff;
+        count++;
+    }
+    if (count === 0)
+        return "0";
+    return (total / count).toFixed(1);
+}
+function calcMeanHM(series) {
+    let total = 0, count = 0;
+    for (const s of series) {
+        for (const pt of s.points) {
+            if (pt.value !== null) {
+                total += pt.value;
+                count++;
+            }
+        }
+    }
+    if (count === 0)
+        return "0 minutes";
+    const avgMinutes = total / count;
+    const hours = Math.floor(avgMinutes / 60);
+    const minutes = Math.round(avgMinutes % 60);
+    if (hours === 0)
+        return `${minutes} minute${minutes !== 1 ? "s" : ""}`;
+    return `${hours} hour${hours !== 1 ? "s" : ""}, ${minutes} minute${minutes !== 1 ? "s" : ""}`;
+}
 // ─── Template Engine ──────────────────────────────────────────────────────────
-function applyTemplate(template, vars) {
-    return template.replace(/\{\{(\w+)\(\)\}\}/g, (_, name) => {
+function applyTemplate(template, vars, twoArgResolver) {
+    // Two-argument calls: {{fn(arg1, arg2)}}
+    let result = template.replace(/\{\{(\w+)\(([^,)]+),\s*([^)]+)\)\}\}/g, (_, fn, a1, a2) => {
+        if (twoArgResolver)
+            return twoArgResolver(fn.trim(), a1.trim(), a2.trim());
+        return `{{${fn}(${a1}, ${a2})}}`;
+    });
+    // Zero-argument calls: {{name()}}
+    result = result.replace(/\{\{(\w+)\(\)\}\}/g, (_, name) => {
         return vars[name] !== undefined ? String(vars[name]) : `{{${name}()}}`;
     });
+    return result;
 }
 // ─── Renderer ─────────────────────────────────────────────────────────────────
-function renderSummaryChart(container, series, config) {
+function renderSummaryChart(container, series, config, entries = []) {
     var _a;
     const summaryConfig = config.summary;
     const template = (_a = summaryConfig === null || summaryConfig === void 0 ? void 0 : summaryConfig.template) !== null && _a !== void 0 ? _a : "Total: {{sum()}} days active";
@@ -19275,8 +19333,14 @@ function renderSummaryChart(container, series, config) {
         mean: calcMean(series),
         max: calcMax(series),
         min: calcMin(series),
+        meanHM: calcMeanHM(series),
     };
-    const rendered = applyTemplate(template, vars)
+    const twoArgResolver = (fn, a1, a2) => {
+        if (fn === "meanDateDiff")
+            return calcMeanDateDiff(entries, a1, a2);
+        return `{{${fn}(${a1}, ${a2})}}`;
+    };
+    const rendered = applyTemplate(template, vars, twoArgResolver)
         .split("\n")
         .map(line => line.trim())
         .filter(line => line.length > 0);
@@ -20650,7 +20714,7 @@ async function renderChartContent(app, el, config, settings) {
             renderEmpty(el);
             return;
         }
-        renderSummaryChart(el, raw, config);
+        renderSummaryChart(el, raw, config, entries);
         return;
     }
     // ── Line / Bar ─────────────────────────────────────────────────────────────

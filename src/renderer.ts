@@ -155,7 +155,7 @@ async function renderChartContent(
       ? buildSeriesData(entries, config)
       : [{ name: "presence", points: entries.map(e => ({ date: e.date, value: 1 })), color: "" }];
     if (raw.length === 0) { renderEmpty(el, config); return; }
-    renderSummaryChart(el, raw, config);
+    renderSummaryChart(el, raw, config, entries);
     return;
   }
 
