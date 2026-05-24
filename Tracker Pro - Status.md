@@ -1,6 +1,19 @@
 # Tracker Pro — Status
 
-## What was done (v1.1.1 → v1.4.9)
+## What was done (v1.1.1 → v1.5.0)
+
+---
+
+### v1.5.0 — Atwater Calorie Calculation + Recalculate Food Note Calories Command
+
+**Atwater fix in `recipeCalculator.ts`** — calories are now always derived from accumulated macros rather than summed from food note calorie fields:
+
+- The `totals.calories += ... * ratio` line is removed from the ingredient loop
+- After the loop: `totals.calories = Math.round(totals.carbs * 4 + totals.fat * 9 + totals.protein * 4)`
+- `ServingsModal` live preview now computes cal/serving via Atwater on per-serving macros, not `totals.calories / s`
+- Frontmatter write-back: macros are rounded first, then `fm.calories = fm.carbs * 4 + fm.fat * 9 + fm.protein * 4` so the stored value is always exactly consistent with stored macros
+
+**New command: "Recalculate Food Note Calories"** (`recalcFoodNoteCalories` in `recipeCalculator.ts`) — opens on the active note, reads `carbs`/`fat`/`protein` from frontmatter, computes Atwater calories, writes back `calories`, and shows a notice with the old → new values. Guards against missing frontmatter and all-zero macros.
 
 ---
 

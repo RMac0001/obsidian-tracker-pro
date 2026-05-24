@@ -22207,7 +22207,10 @@ class ServingsModal extends obsidian.Modal {
         const calDisplay = calRow.createEl("span", { cls: "tracker-pro-recipe-cal" });
         calRow.createEl("span", { text: " · Max 350 cal/serving", cls: "tracker-pro-recipe-hint" });
         const update = (s) => {
-            calDisplay.setText(`${Math.round(this.totals.calories / s)} cal/serving`);
+            const calPerServing = Math.round((this.totals.carbs / s) * 4 +
+                (this.totals.fat / s) * 9 +
+                (this.totals.protein / s) * 4);
+            calDisplay.setText(`${calPerServing} cal/serving`);
         };
         update(servings);
         input.addEventListener("input", () => {
@@ -22278,12 +22281,12 @@ async function calculateRecipeNutrition(app) {
             skipped.push({ name: ing.linkText, reason: ratio });
             continue;
         }
-        totals.calories += (Number(fm.calories) || 0) * ratio;
         totals.carbs += (Number(fm.carbs) || 0) * ratio;
         totals.fat += (Number(fm.fat) || 0) * ratio;
         totals.protein += (Number(fm.protein) || 0) * ratio;
         resolved++;
     }
+    totals.calories = Math.round(totals.carbs * 4 + totals.fat * 9 + totals.protein * 4);
     // Write skipped items when resolved === 0 (no modal — nothing to confirm/cancel)
     if (resolved === 0) {
         if (skipped.length > 0) {
@@ -22300,14 +22303,41 @@ async function calculateRecipeNutrition(app) {
             await app.vault.modify(file, applyNotesSection(content, skipped));
         }
         await app.fileManager.processFrontMatter(file, (fm) => {
-            fm.calories = Math.round(totals.calories / servings);
             fm.carbs = Math.round(totals.carbs / servings);
             fm.fat = Math.round(totals.fat / servings);
             fm.protein = Math.round(totals.protein / servings);
+            fm.calories = fm.carbs * 4 + fm.fat * 9 + fm.protein * 4;
             fm.servings = servings;
         });
         new obsidian.Notice("Recipe nutrition calculated.");
     }).open();
+}
+// ─── Recalculate Food Note Calories ──────────────────────────────────────────
+async function recalcFoodNoteCalories(app) {
+    var _a;
+    const file = app.workspace.getActiveFile();
+    if (!file) {
+        new obsidian.Notice("No active file.");
+        return;
+    }
+    const fm = (_a = app.metadataCache.getFileCache(file)) === null || _a === void 0 ? void 0 : _a.frontmatter;
+    if (!fm) {
+        new obsidian.Notice("No frontmatter found in this note.");
+        return;
+    }
+    const carbs = Number(fm.carbs) || 0;
+    const fat = Number(fm.fat) || 0;
+    const protein = Number(fm.protein) || 0;
+    if (carbs === 0 && fat === 0 && protein === 0) {
+        new obsidian.Notice("No macro data found (carbs, fat, protein are all 0 or missing).");
+        return;
+    }
+    const newCalories = Math.round(carbs * 4 + fat * 9 + protein * 4);
+    const oldCalories = Number(fm.calories) || 0;
+    await app.fileManager.processFrontMatter(file, (frontmatter) => {
+        frontmatter.calories = newCalories;
+    });
+    new obsidian.Notice(`Calories updated: ${oldCalories} → ${newCalories}`);
 }
 
 function isRelevantFile(changedPath, config, settings) {
@@ -22363,11 +22393,16 @@ class Tracker extends obsidian.Plugin {
             name: "Edit meal log",
             callback: () => editMealLog(this.app, this.settings),
         });
-        // ── Recipe Calculator command ─────────────────────────────────────────
+        // ── Recipe Calculator commands ────────────────────────────────────────
         this.addCommand({
             id: "calculate-recipe-nutrition",
             name: "Calculate Recipe Nutrition",
             callback: () => calculateRecipeNutrition(this.app),
+        });
+        this.addCommand({
+            id: "recalc-food-note-calories",
+            name: "Recalculate Food Note Calories",
+            callback: () => recalcFoodNoteCalories(this.app),
         });
         // ── Bill Tracker commands ─────────────────────────────────────────────
         this.addCommand({

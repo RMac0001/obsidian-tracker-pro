@@ -253,7 +253,12 @@ class ServingsModal extends Modal {
         calRow.createEl("span", { text: " · Max 350 cal/serving", cls: "tracker-pro-recipe-hint" });
 
         const update = (s: number) => {
-            calDisplay.setText(`${Math.round(this.totals.calories / s)} cal/serving`);
+            const calPerServing = Math.round(
+                (this.totals.carbs   / s) * 4 +
+                (this.totals.fat     / s) * 9 +
+                (this.totals.protein / s) * 4
+            );
+            calDisplay.setText(`${calPerServing} cal/serving`);
         };
         update(servings);
 
@@ -324,12 +329,13 @@ export async function calculateRecipeNutrition(app: App): Promise<void> {
             continue;
         }
 
-        totals.calories += (Number(fm.calories) || 0) * ratio;
         totals.carbs    += (Number(fm.carbs)    || 0) * ratio;
         totals.fat      += (Number(fm.fat)      || 0) * ratio;
         totals.protein  += (Number(fm.protein)  || 0) * ratio;
         resolved++;
     }
+
+    totals.calories = Math.round(totals.carbs * 4 + totals.fat * 9 + totals.protein * 4);
 
     // Write skipped items when resolved === 0 (no modal — nothing to confirm/cancel)
     if (resolved === 0) {
@@ -350,13 +356,47 @@ export async function calculateRecipeNutrition(app: App): Promise<void> {
         }
 
         await app.fileManager.processFrontMatter(file, (fm) => {
-            fm.calories = Math.round(totals.calories / servings);
             fm.carbs    = Math.round(totals.carbs    / servings);
             fm.fat      = Math.round(totals.fat      / servings);
             fm.protein  = Math.round(totals.protein  / servings);
+            fm.calories = fm.carbs * 4 + fm.fat * 9 + fm.protein * 4;
             fm.servings = servings;
         });
 
         new Notice("Recipe nutrition calculated.");
     }).open();
+}
+
+// ─── Recalculate Food Note Calories ──────────────────────────────────────────
+
+export async function recalcFoodNoteCalories(app: App): Promise<void> {
+    const file = app.workspace.getActiveFile();
+    if (!file) {
+        new Notice("No active file.");
+        return;
+    }
+
+    const fm = app.metadataCache.getFileCache(file)?.frontmatter;
+    if (!fm) {
+        new Notice("No frontmatter found in this note.");
+        return;
+    }
+
+    const carbs   = Number(fm.carbs)   || 0;
+    const fat     = Number(fm.fat)     || 0;
+    const protein = Number(fm.protein) || 0;
+
+    if (carbs === 0 && fat === 0 && protein === 0) {
+        new Notice("No macro data found (carbs, fat, protein are all 0 or missing).");
+        return;
+    }
+
+    const newCalories = Math.round(carbs * 4 + fat * 9 + protein * 4);
+    const oldCalories = Number(fm.calories) || 0;
+
+    await app.fileManager.processFrontMatter(file, (frontmatter) => {
+        frontmatter.calories = newCalories;
+    });
+
+    new Notice(`Calories updated: ${oldCalories} → ${newCalories}`);
 }
