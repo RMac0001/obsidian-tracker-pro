@@ -253,12 +253,7 @@ class ServingsModal extends Modal {
         calRow.createEl("span", { text: " · Max 350 cal/serving", cls: "tracker-pro-recipe-hint" });
 
         const update = (s: number) => {
-            const calPerServing = Math.round(
-                (this.totals.carbs   / s) * 4 +
-                (this.totals.fat     / s) * 9 +
-                (this.totals.protein / s) * 4
-            );
-            calDisplay.setText(`${calPerServing} cal/serving`);
+            calDisplay.setText(`${Math.round(this.totals.calories / s)} cal/serving`);
         };
         update(servings);
 
