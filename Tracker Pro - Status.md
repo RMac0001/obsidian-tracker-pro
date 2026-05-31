@@ -1,6 +1,25 @@
 # Tracker Pro — Status
 
-## What was done (v1.1.1 → v1.5.1)
+## What was done (v1.1.1 → v1.5.2)
+
+---
+
+### v1.5.2 — Summary Chart Named-Argument Template Functions
+
+Extended the summary template engine with named-argument function syntax.
+
+**Single-arg named aggregates** — operate on one named property (must be in `properties`):
+- `{{mean(propName)}}` — average daily value for that property
+- `{{sum(propName)}}` — total sum
+- `{{max(propName)}}` — highest single-day value
+- `{{min(propName)}}` — lowest single-day value
+
+**Two-arg macro percentage functions** — Atwater formula:
+- `{{carbPct(macroProp, calProp)}}` — carb caloric percentage (× 4)
+- `{{fatPct(macroProp, calProp)}}` — fat caloric percentage (× 9)
+- `{{proteinPct(macroProp, calProp)}}` — protein caloric percentage (× 4)
+
+Unrecognised property names render as `?`. All existing no-arg functions unchanged. The `twoArgResolver` in `renderSummaryChart` is extended to handle the three macro pct functions alongside `meanDateDiff`. `applyTemplate` gains a fifth `series` parameter used by the new single-arg pass.
 
 ---
 
