@@ -19268,6 +19268,93 @@ function calcLatest(series) {
     }
     return last !== null && last !== void 0 ? last : 0;
 }
+// ─── Named-Property Aggregates ───────────────────────────────────────────────
+function getSeriesByName(series, name) {
+    return series.find(s => s.name === name);
+}
+function calcMeanFor(series, propName) {
+    const s = getSeriesByName(series, propName);
+    if (!s)
+        return "?";
+    let total = 0, count = 0;
+    for (const pt of s.points) {
+        if (pt.value !== null) {
+            total += pt.value;
+            count++;
+        }
+    }
+    if (count === 0)
+        return "0";
+    return (total / count).toFixed(1);
+}
+function calcSumFor(series, propName) {
+    const s = getSeriesByName(series, propName);
+    if (!s)
+        return "?";
+    let total = 0;
+    for (const pt of s.points) {
+        if (pt.value !== null)
+            total += pt.value;
+    }
+    return total.toFixed(1);
+}
+function calcMaxFor(series, propName) {
+    const s = getSeriesByName(series, propName);
+    if (!s)
+        return "?";
+    let max = -Infinity;
+    for (const pt of s.points) {
+        if (pt.value !== null && pt.value > max)
+            max = pt.value;
+    }
+    return max === -Infinity ? "0" : String(max);
+}
+function calcMinFor(series, propName) {
+    const s = getSeriesByName(series, propName);
+    if (!s)
+        return "?";
+    let min = Infinity;
+    for (const pt of s.points) {
+        if (pt.value !== null && pt.value < min)
+            min = pt.value;
+    }
+    return min === Infinity ? "0" : String(min);
+}
+// ─── Macro Percentage Helpers ─────────────────────────────────────────────────
+function calcMacroMeanRaw(series, propName) {
+    const s = getSeriesByName(series, propName);
+    if (!s)
+        return 0;
+    let total = 0, count = 0;
+    for (const pt of s.points) {
+        if (pt.value !== null) {
+            total += pt.value;
+            count++;
+        }
+    }
+    return count === 0 ? 0 : total / count;
+}
+function calcCarbPct(series, macroProp, calProp) {
+    const macroMean = calcMacroMeanRaw(series, macroProp);
+    const calMean = calcMacroMeanRaw(series, calProp);
+    if (calMean === 0)
+        return "0%";
+    return ((macroMean * 4) / calMean * 100).toFixed(1) + "%";
+}
+function calcFatPct(series, macroProp, calProp) {
+    const macroMean = calcMacroMeanRaw(series, macroProp);
+    const calMean = calcMacroMeanRaw(series, calProp);
+    if (calMean === 0)
+        return "0%";
+    return ((macroMean * 9) / calMean * 100).toFixed(1) + "%";
+}
+function calcProteinPct(series, macroProp, calProp) {
+    const macroMean = calcMacroMeanRaw(series, macroProp);
+    const calMean = calcMacroMeanRaw(series, calProp);
+    if (calMean === 0)
+        return "0%";
+    return ((macroMean * 4) / calMean * 100).toFixed(1) + "%";
+}
 // ─── Date Diff / HM Helpers ──────────────────────────────────────────────────
 function calcMeanDateDiff(entries, field1, field2) {
     let total = 0;
@@ -19319,12 +19406,22 @@ function calcMeanHM(series) {
     return `${hours} hour${hours !== 1 ? "s" : ""}, ${minutes} minute${minutes !== 1 ? "s" : ""}`;
 }
 // ─── Template Engine ──────────────────────────────────────────────────────────
-function applyTemplate(template, vars, twoArgResolver, latestVal = 0) {
+function applyTemplate(template, vars, twoArgResolver, latestVal = 0, series = []) {
     // Two-argument calls: {{fn(arg1, arg2)}}
     let result = template.replace(/\{\{(\w+)\(([^,)]+),\s*([^)]+)\)\}\}/g, (_, fn, a1, a2) => {
         if (twoArgResolver)
             return twoArgResolver(fn.trim(), a1.trim(), a2.trim());
         return `{{${fn}(${a1}, ${a2})}}`;
+    });
+    // Single word-arg named aggregates: {{mean(prop)}}, {{sum(prop)}}, {{max(prop)}}, {{min(prop)}}
+    result = result.replace(/\{\{(mean|sum|max|min)\((\w+)\)\}\}/g, (_, fn, prop) => {
+        switch (fn) {
+            case "mean": return calcMeanFor(series, prop);
+            case "sum": return calcSumFor(series, prop);
+            case "max": return calcMaxFor(series, prop);
+            case "min": return calcMinFor(series, prop);
+            default: return `{{${fn}(${prop})}}`;
+        }
     });
     // One-numeric-arg calls: {{name(N)}}
     result = result.replace(/\{\{(\w+)\(([^)]+)\)\}\}/g, (_, name, rawArg) => {
@@ -19373,9 +19470,15 @@ function renderSummaryChart(container, series, config, entries = []) {
     const twoArgResolver = (fn, a1, a2) => {
         if (fn === "meanDateDiff")
             return calcMeanDateDiff(entries, a1, a2);
+        if (fn === "carbPct")
+            return calcCarbPct(series, a1, a2);
+        if (fn === "fatPct")
+            return calcFatPct(series, a1, a2);
+        if (fn === "proteinPct")
+            return calcProteinPct(series, a1, a2);
         return `{{${fn}(${a1}, ${a2})}}`;
     };
-    const rendered = applyTemplate(template, vars, twoArgResolver, latestNum)
+    const rendered = applyTemplate(template, vars, twoArgResolver, latestNum, series)
         .split("\n")
         .map(line => line.trim())
         .filter(line => line.length > 0);

@@ -912,6 +912,22 @@ it copies the rendered stats to the clipboard as plain text, one stat per line.
 | `{{meanHM()}}` | Average of the `properties` values formatted as hours and minutes (e.g. `6 hours, 33 minutes`). Input values are assumed to be in minutes. Falls back to minutes-only when the average is under 60. |
 | `{{meanDateDiff(field1, field2)}}` | Average calendar days between two date frontmatter fields. Skips notes missing either field. Handles both string (`YYYY-MM-DD`) and js-yaml-coerced Date values. |
 
+**Named-argument functions**
+
+These operate on a single named property. The property must be listed in `properties`.
+
+| Variable | Description |
+|---|---|
+| `{{mean(propName)}}` | Average daily value for the named property |
+| `{{sum(propName)}}` | Total sum for the named property |
+| `{{max(propName)}}` | Highest single-day value for the named property |
+| `{{min(propName)}}` | Lowest single-day value for the named property |
+| `{{carbPct(macroProp, calProp)}}` | Carb calories as % of total (macro × 4 / cal mean × 100) |
+| `{{fatPct(macroProp, calProp)}}` | Fat calories as % of total (macro × 9 / cal mean × 100) |
+| `{{proteinPct(macroProp, calProp)}}` | Protein calories as % of total (macro × 4 / cal mean × 100) |
+
+Unrecognised property names render as `?` rather than crashing.
+
 **Using `properties` with `summary`**
 
 `properties` is **optional** for `summary`. When omitted, streak calculations
@@ -962,6 +978,26 @@ summary:
   template: |
     Avg. days to complete: {{meanDateDiff(read_start, read_complete)}} days
     Avg. time per book: {{meanHM()}}
+```
+
+```yaml
+# Named-property aggregates and macro percentages
+type: summary
+folder: Data/Food Logs
+dateProperty: creation_date
+dateRange: this-year
+properties:
+  - cal_total
+  - carbs_total
+  - fat_total
+  - protein_total
+title: Daily Averages
+summary:
+  template: |
+    Avg calories: {{mean(cal_total)}}
+    Avg carbs %: {{carbPct(carbs_total, cal_total)}}
+    Avg fat %: {{fatPct(fat_total, cal_total)}}
+    Avg protein %: {{proteinPct(protein_total, cal_total)}}
 ```
 
 ---
