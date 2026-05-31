@@ -18656,7 +18656,7 @@ function renderGaugeChart(container, allSeries, config) {
         const rad = (angleDeg * Math.PI) / 180;
         return {
             x: cx + radius * Math.cos(rad),
-            y: cy + radius * Math.sin(rad),
+            y: cy - radius * Math.sin(rad),
         };
     }
     // Thresholds → color zones
@@ -18672,7 +18672,7 @@ function renderGaugeChart(container, allSeries, config) {
         const start = polarToXY(startAngle, r);
         const end = polarToXY(endAngle, r);
         const largeArc = Math.abs(endPct - startPct) > 0.5 ? 1 : 0;
-        return `M ${start.x} ${start.y} A ${r} ${r} 0 ${largeArc} 1 ${end.x} ${end.y}`;
+        return `M ${start.x} ${start.y} A ${r} ${r} 0 ${largeArc} 0 ${end.x} ${end.y}`;
     }
     // Needle
     const needleAngle = 180 - pct * 180;
