@@ -1,6 +1,21 @@
 # Tracker Pro — Status
 
-## What was done (v1.1.1 → v1.5.0)
+## What was done (v1.1.1 → v1.5.1)
+
+---
+
+### v1.5.1 — Summary Template Variables: `{{first()}}`, `{{latest()}}`, `{{diffFrom(N)}}`, `{{latestTo(N)}}`
+
+Four new variables for the `summary` chart type:
+
+- **`{{first()}}`** — earliest non-null value in the summary date range (rounded to 1 decimal)
+- **`{{latest()}}`** — most recent non-null value in the summary date range (rounded to 1 decimal)
+- **`{{diffFrom(N)}}`** — `N − latest()`, useful for tracking loss from a fixed starting point (e.g. `{{diffFrom(366.2)}}` for lbs lost from starting weight)
+- **`{{latestTo(N)}}`** — `latest() − N`, useful for distance remaining to a goal (e.g. `{{latestTo(180)}}` for lbs to goal)
+
+`applyTemplate` extended with a one-numeric-argument pass (`{{name(N)}}`) between the existing two-arg and zero-arg passes — `meanDateDiff` and all existing variables continue to work unchanged.
+
+`Dashboards/Weight Dashboard Test.md` added to the vault — gauge, summary, and line chart blocks targeting `Data/Daily Notes` weight property.
 
 ---
 
