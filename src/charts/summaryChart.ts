@@ -124,6 +124,25 @@ function calcMin(series: SeriesData[]): number {
   return min === Infinity ? 0 : min;
 }
 
+function calcFirst(series: SeriesData[]): number | string {
+  for (const s of series) {
+    for (const pt of s.points) {
+      if (pt.value !== null) return pt.value;
+    }
+  }
+  return 0;
+}
+
+function calcLatest(series: SeriesData[]): number | string {
+  let last: number | null = null;
+  for (const s of series) {
+    for (const pt of s.points) {
+      if (pt.value !== null) last = pt.value;
+    }
+  }
+  return last ?? 0;
+}
+
 // ─── Date Diff / HM Helpers ──────────────────────────────────────────────────
 
 function calcMeanDateDiff(entries: RawEntry[], field1: string, field2: string): string {
@@ -173,7 +192,8 @@ function calcMeanHM(series: SeriesData[]): string {
 function applyTemplate(
   template: string,
   vars: Record<string, string | number>,
-  twoArgResolver?: (fn: string, arg1: string, arg2: string) => string
+  twoArgResolver?: (fn: string, arg1: string, arg2: string) => string,
+  latestVal: number = 0
 ): string {
   // Two-argument calls: {{fn(arg1, arg2)}}
   let result = template.replace(
@@ -183,6 +203,14 @@ function applyTemplate(
       return `{{${fn}(${a1}, ${a2})}}`;
     }
   );
+  // One-numeric-arg calls: {{name(N)}}
+  result = result.replace(/\{\{(\w+)\(([^)]+)\)\}\}/g, (_, name, rawArg) => {
+    const n = parseFloat(rawArg);
+    if (isNaN(n)) return `{{${name}(${rawArg})}}`;
+    if (name === "diffFrom") return (n - latestVal).toFixed(1);
+    if (name === "latestTo") return (latestVal - n).toFixed(1);
+    return `{{${name}(${rawArg})}}`;
+  });
   // Zero-argument calls: {{name()}}
   result = result.replace(/\{\{(\w+)\(\)\}\}/g, (_, name) => {
     return vars[name] !== undefined ? String(vars[name]) : `{{${name}()}}`;
@@ -209,6 +237,9 @@ export function renderSummaryChart(
 
   const currentBreak = calcCurrentBreak(days);
 
+  const latestVal = calcLatest(series);
+  const firstVal  = calcFirst(series);
+
   const vars: Record<string, string | number> = {
     maxStreak:     calcMaxStreak(days),
     currentStreak: calcCurrentStreak(days),
@@ -220,13 +251,16 @@ export function renderSummaryChart(
     max:           calcMax(series),
     min:           calcMin(series),
     meanHM:        calcMeanHM(series),
+    first:         typeof firstVal  === "number" ? Number(firstVal.toFixed(1))  : firstVal,
+    latest:        typeof latestVal === "number" ? Number(latestVal.toFixed(1)) : latestVal,
   };
 
+  const latestNum = typeof latestVal === "number" ? latestVal : parseFloat(String(latestVal));
   const twoArgResolver = (fn: string, a1: string, a2: string): string => {
     if (fn === "meanDateDiff") return calcMeanDateDiff(entries, a1, a2);
     return `{{${fn}(${a1}, ${a2})}}`;
   };
-  const rendered = applyTemplate(template, vars, twoArgResolver)
+  const rendered = applyTemplate(template, vars, twoArgResolver, latestNum)
     .split("\n")
     .map(line => line.trim())
     .filter(line => line.length > 0);
