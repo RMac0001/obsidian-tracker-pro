@@ -21152,27 +21152,26 @@ function mealKey(mealType) {
 function round1(n) {
     return Math.round(n * 10) / 10;
 }
-const NEVER_PLURALIZE = new Set([
-    "g", "kg", "ml", "l", "oz", "lb", "lbs", "tsp", "tbsp", "cup", "fl oz",
-    "pint", "quart", "pkg", "can", "jar", "bag", "packet", "spray", "medium",
-]);
-const IRREGULAR_PLURALS = {
-    leaf: "leaves",
-    loaf: "loaves",
+const UNIT_CANONICAL = {
+    cup: "cup", cups: "cup",
+    oz: "oz", ounce: "oz", ounces: "oz",
+    "fl oz": "fl oz", "fl. oz": "fl oz", "fluid oz": "fl oz",
+    "fluid ounce": "fl oz", "fluid ounces": "fl oz",
+    tbsp: "tbsp", tablespoon: "tbsp", tablespoons: "tbsp",
+    tsp: "tsp", teaspoon: "tsp", teaspoons: "tsp",
+    lb: "lb", lbs: "lb", pound: "lb", pounds: "lb",
+    g: "g", gram: "g", grams: "g",
+    kg: "kg", kilogram: "kg", kilograms: "kg",
+    ml: "ml", milliliter: "ml", milliliters: "ml",
+    l: "l", liter: "l", liters: "l",
+    slice: "slice", slices: "slice",
+    piece: "piece", pieces: "piece",
+    serving: "serving", servings: "serving",
 };
-function pluralizeUnit(unit, amount) {
-    if (amount === 1)
-        return unit;
-    const lower = unit.toLowerCase();
-    if (NEVER_PLURALIZE.has(lower))
-        return unit;
-    if (IRREGULAR_PLURALS[lower])
-        return IRREGULAR_PLURALS[lower];
-    if (lower.endsWith("fe"))
-        return unit.slice(0, -2) + "ves";
-    if (/[sxz]$|[sc]h$/.test(lower))
-        return unit + "es";
-    return unit + "s";
+function normalizeUnit(unit) {
+    var _a;
+    const key = unit.toLowerCase().trim();
+    return (_a = UNIT_CANONICAL[key]) !== null && _a !== void 0 ? _a : key;
 }
 function fmt2(n) {
     return parseFloat(n.toFixed(2)).toString();
@@ -21304,8 +21303,8 @@ class AmountModal extends obsidian.Modal {
             let useServingUnit = false;
             if (this.defaultUnit) {
                 const du = this.defaultUnit.toLowerCase();
-                const su = this.meta.servingUnit.toLowerCase();
-                useServingUnit = du === su || pluralizeUnit(this.meta.servingUnit, 2).toLowerCase() === du;
+                this.meta.servingUnit.toLowerCase();
+                useServingUnit = normalizeUnit(du) === normalizeUnit(this.meta.servingUnit);
             }
             unitSelect.value = useServingUnit ? "measured" : "common";
             this.input.value = this.defaultValue !== undefined ? String(this.defaultValue) : String(cSize);
@@ -21360,14 +21359,13 @@ class AmountModal extends obsidian.Modal {
                 if (isCommon) {
                     const multiplier = amt / cSize;
                     const measuredAmt = fmt2((amt / cSize) * this.meta.servingSize);
-                    const displayAmount = `${amt} ${pluralizeUnit(cUnit, amt)} / ${measuredAmt} ${this.meta.servingUnit}`;
+                    const displayAmount = `${amt} ${cUnit} / ${measuredAmt} ${this.meta.servingUnit}`;
                     this.onSubmit(multiplier, displayAmount);
                 }
                 else {
                     const multiplier = amt / this.meta.servingSize;
                     const commonAmt = fmt2((amt / this.meta.servingSize) * cSize);
-                    const commonAmtNum = parseFloat(commonAmt);
-                    const displayAmount = `${amt} ${this.meta.servingUnit} / ${commonAmt} ${pluralizeUnit(cUnit, commonAmtNum)}`;
+                    const displayAmount = `${amt} ${this.meta.servingUnit} / ${commonAmt} ${cUnit}`;
                     this.onSubmit(multiplier, displayAmount);
                 }
             };
@@ -21723,9 +21721,7 @@ function multiplierFromDisplay(displayAmount, meta, isFood) {
     const amount = parseFloat(m[1]);
     const unitRaw = m[2].trim().toLowerCase();
     if (meta.commonServingUnit && meta.commonServingSize) {
-        const comLower = meta.commonServingUnit.toLowerCase();
-        const comPlural = pluralizeUnit(meta.commonServingUnit, amount).toLowerCase();
-        if (unitRaw === comLower || unitRaw === comPlural) {
+        if (normalizeUnit(unitRaw) === normalizeUnit(meta.commonServingUnit)) {
             return amount / meta.commonServingSize;
         }
     }
