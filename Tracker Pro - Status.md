@@ -4,6 +4,16 @@
 
 ---
 
+### v1.5.3 — Unit Pluralization Bug Fix
+
+- Fixed: Units were incorrectly pluralized in meal log notes (e.g. `cupses`, `sliceses`)
+- Fixed: Singular quantities (e.g. `1 slice`) were incorrectly pluralized
+- Fixed: Unit matching now normalizes variants (`cup`/`cups`, `slice`/`slices`, `oz`/`ounce`, etc.) so recipe/log lookups succeed regardless of which form is stored in the food note
+- Replaced `pluralizeUnit` / `NEVER_PLURALIZE` / `IRREGULAR_PLURALS` with `UNIT_CANONICAL` map + `normalizeUnit()` function
+- Display strings use the unit exactly as stored in the food note frontmatter — no modification
+
+---
+
 ### v1.5.2 — Summary Chart Named-Argument Template Functions
 
 Extended the summary template engine with named-argument function syntax.
