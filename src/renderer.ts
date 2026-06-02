@@ -16,6 +16,7 @@ import { renderTableChart } from "./charts/tableChart";
 import { renderDailyTable } from "./charts/dailyTableChart";
 import { renderBillsChart } from "./charts/billsChart";
 import { renderReadingChallengeBlock } from "./readingChallenge";
+import { renderVitaminTrackerBlock } from "./vitaminTracker";
 
 // ─── Error Display ────────────────────────────────────────────────────────────
 
@@ -148,6 +149,12 @@ async function renderChartContent(
     return;
   }
 
+  // ── Vitamins ───────────────────────────────────────────────────────────────
+  if (config.type === "vitamins") {
+    if (settings) renderVitaminTrackerBlock(el, app, settings);
+    return;
+  }
+
   // ── Summary ───────────────────────────────────────────────────────────────
   if (config.type === "summary") {
     const entries = await collectRawEntries(app, config);
@@ -258,7 +265,7 @@ function renderDateSelector(
 
 // ─── Main Render ──────────────────────────────────────────────────────────────
 
-const NO_HEIGHT_TYPES = ["summary", "table", "daily-table", "bills", "reading-challenge"] as const;
+const NO_HEIGHT_TYPES = ["summary", "table", "daily-table", "bills", "reading-challenge", "vitamins"] as const;
 
 export async function renderTracker(
   app: App,

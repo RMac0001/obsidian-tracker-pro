@@ -20,6 +20,12 @@ function isRelevantFile(changedPath: string, config: TrackerConfig, settings?: T
         return false;
     }
 
+    if (config.type === "vitamins" && settings) {
+        const folder = settings.vitaminsFolder.replace(/\/$/, "");
+        if (changedPath.startsWith(folder + "/")) return true;
+        return false;
+    }
+
     if (config.folder) {
         const folder = config.folder.replace(/^\//, "").replace(/\/$/, "");
         if (changedPath.startsWith(folder + "/") || changedPath === folder) {

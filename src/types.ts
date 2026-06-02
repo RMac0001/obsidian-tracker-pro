@@ -15,7 +15,8 @@ export type ChartType =
   | "table"
   | "daily-table"
   | "bills"
-  | "reading-challenge";
+  | "reading-challenge"
+  | "vitamins";
 
 // ─── Aggregation ─────────────────────────────────────────────────────────────
 

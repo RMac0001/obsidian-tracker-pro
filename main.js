@@ -20081,7 +20081,7 @@ function readPaymentNote(app, billName, year, month, paymentTemplate) {
     };
 }
 // ─── Note Creation ─────────────────────────────────────────────────────────────
-async function ensureFolders$1(app, filePath) {
+async function ensureFolders$2(app, filePath) {
     const parts = filePath.split("/");
     parts.pop();
     let current = "";
@@ -20111,7 +20111,7 @@ function buildPaymentContent(billName, company, billType, dueDate, amountDue, am
 }
 async function createPaymentNote(app, master, dueDate, year, month, paymentTemplate) {
     const path = paymentNotePath(master.fileName, year, month, paymentTemplate);
-    await ensureFolders$1(app, path);
+    await ensureFolders$2(app, path);
     const monthName = new Date(year, month, 1).toLocaleString("en-US", { month: "long" });
     const body = `Payment record for ${master.bill_company} — ${monthName} ${year}.\n`;
     const content = buildPaymentContent(master.fileName, master.bill_company, master.bill_type, dueDate, master.bill_amount_due, undefined, undefined, "unpaid", body);
@@ -20242,7 +20242,7 @@ async function savePayment(app, payment, amountPaid, masterFolder) {
         await app.vault.modify(existingFile, buildPaymentContent(payment.bill_name, payment.bill_company, payment.bill_type, payment.bill_due_date, amountDue, amountPaid, today, "paid", body));
     }
     else {
-        await ensureFolders$1(app, payment.filePath);
+        await ensureFolders$2(app, payment.filePath);
         const dueParts = payment.bill_due_date.match(/^(\d{4})-(\d{2})-(\d{2})$/);
         const dYear = dueParts ? parseInt(dueParts[1]) : new Date().getFullYear();
         const dMonth = dueParts ? parseInt(dueParts[2]) - 1 : new Date().getMonth();
@@ -20713,6 +20713,447 @@ function renderReadingChallengeBlock(el, app, settings, config) {
     render((_a = config.year) !== null && _a !== void 0 ? _a : new Date().getFullYear());
 }
 
+// ─── Helpers ──────────────────────────────────────────────────────────────────
+function todayYMD() {
+    const d = new Date();
+    const y = d.getFullYear();
+    const m = String(d.getMonth() + 1).padStart(2, "0");
+    const day = String(d.getDate()).padStart(2, "0");
+    return `${y}-${m}-${day}`;
+}
+function isTakenToday(lastTaken) {
+    if (!lastTaken)
+        return false;
+    // Parse lastTaken as local date to compare with local today
+    const parts = String(lastTaken).match(/^(\d{4})-(\d{2})-(\d{2})/);
+    if (!parts)
+        return false;
+    const y = parseInt(parts[1]);
+    const m = parseInt(parts[2]);
+    const d = parseInt(parts[3]);
+    const today = new Date();
+    return (today.getFullYear() === y &&
+        today.getMonth() + 1 === m &&
+        today.getDate() === d);
+}
+function parseDose(dose) {
+    const str = String(dose !== null && dose !== void 0 ? dose : "1");
+    if (str.includes("/")) {
+        return str.split("/").reduce((sum, part) => sum + (parseFloat(part.trim()) || 0), 0);
+    }
+    return parseFloat(str) || 1;
+}
+function doseDisplay(dose) {
+    // For split-dose "1/1", each session is 1 pill
+    const str = String(dose !== null && dose !== void 0 ? dose : "1");
+    if (str.includes("/"))
+        return "1";
+    return str;
+}
+function resolveTodayLogPath(settings) {
+    const folder = resolveDateTemplate(settings.mealLogFolder);
+    const filename = resolveDateTemplate(settings.mealLogFilename);
+    return obsidian.normalizePath(`${folder}/${filename}.md`);
+}
+async function ensureFolders$1(app, filePath) {
+    const parts = filePath.split("/");
+    parts.pop();
+    let current = "";
+    for (const part of parts) {
+        current = current ? `${current}/${part}` : part;
+        if (!app.vault.getAbstractFileByPath(current)) {
+            try {
+                await app.vault.createFolder(current);
+            }
+            catch ( /* already exists */_a) { /* already exists */ }
+        }
+    }
+}
+function buildBlankLogContent() {
+    const fm = {};
+    for (const macro of ["cal", "protein", "fat", "carbs"]) {
+        fm[`${macro}_total`] = 0;
+        for (const meal of ["breakfast", "lunch", "dinner", "snacks"]) {
+            fm[`${macro}_${meal}`] = 0;
+        }
+    }
+    let content = "---\n";
+    for (const [k, v] of Object.entries(fm))
+        content += `${k}: ${v}\n`;
+    content += "---\n\n";
+    for (const meal of ["Breakfast", "Lunch", "Dinner", "Snacks"]) {
+        content += `## ${meal}\n\n`;
+    }
+    return content;
+}
+function getVitaminMeta(app, file) {
+    var _a, _b, _c, _d, _e, _f, _g, _h, _j, _k, _l;
+    const fm = (_b = (_a = app.metadataCache.getFileCache(file)) === null || _a === void 0 ? void 0 : _a.frontmatter) !== null && _b !== void 0 ? _b : {};
+    return {
+        file,
+        name: String((_c = fm.vitamin_name) !== null && _c !== void 0 ? _c : file.basename),
+        brand: String((_d = fm.vitamin_brand) !== null && _d !== void 0 ? _d : ""),
+        count: Number((_e = fm.vitamin_count) !== null && _e !== void 0 ? _e : 0),
+        onHand: Number((_f = fm.vitamin_on_hand) !== null && _f !== void 0 ? _f : 0),
+        dose: String((_g = fm.vitamin_dose) !== null && _g !== void 0 ? _g : "1"),
+        doseUnit: String((_h = fm.vitamin_dose_unit) !== null && _h !== void 0 ? _h : ""),
+        form: String((_j = fm.vitamin_form) !== null && _j !== void 0 ? _j : ""),
+        time: String((_k = fm.vitamin_time) !== null && _k !== void 0 ? _k : ""),
+        lastTaken: String((_l = fm.vitamin_last_taken) !== null && _l !== void 0 ? _l : ""),
+    };
+}
+function loadActiveVitamins(app, settings) {
+    var _a, _b;
+    const folder = settings.vitaminsFolder.replace(/\/$/, "");
+    const files = app.vault.getMarkdownFiles()
+        .filter(f => f.path.startsWith(folder + "/"));
+    const result = [];
+    for (const file of files) {
+        const fm = (_b = (_a = app.metadataCache.getFileCache(file)) === null || _a === void 0 ? void 0 : _a.frontmatter) !== null && _b !== void 0 ? _b : {};
+        if (fm.vitamin_active !== true)
+            continue;
+        result.push(getVitaminMeta(app, file));
+    }
+    result.sort((a, b) => a.name.localeCompare(b.name));
+    return result;
+}
+function parseVitaminsSection(content) {
+    const morning = [];
+    const evening = [];
+    const vitSection = content.match(/## Vitamins\s*([\s\S]*?)(?=\n##\s|\n---\s*$|$)/);
+    if (!vitSection)
+        return { morning, evening };
+    const body = vitSection[1];
+    let currentSection = "";
+    for (const rawLine of body.split("\n")) {
+        const line = rawLine.trimEnd();
+        if (/^###\s*Morning/i.test(line)) {
+            currentSection = "morning";
+            continue;
+        }
+        if (/^###\s*Evening/i.test(line)) {
+            currentSection = "evening";
+            continue;
+        }
+        if (/^###\s/.test(line)) {
+            currentSection = "";
+            continue;
+        }
+        if (/^##\s/.test(line))
+            break;
+        if (!line.startsWith("- "))
+            continue;
+        const nameMatch = line.match(/^- (.+?) —/);
+        if (!nameMatch)
+            continue;
+        const entry = { name: nameMatch[1], line };
+        if (currentSection === "morning")
+            morning.push(entry);
+        else if (currentSection === "evening")
+            evening.push(entry);
+    }
+    return { morning, evening };
+}
+function buildVitaminsSection(morning, evening) {
+    let block = "## Vitamins\n\n";
+    if (morning.length > 0) {
+        block += "### Morning\n";
+        for (const e of morning)
+            block += e.line + "\n";
+        block += "\n";
+    }
+    if (evening.length > 0) {
+        block += "### Evening\n";
+        for (const e of evening)
+            block += e.line + "\n";
+        block += "\n";
+    }
+    return block.trimEnd() + "\n";
+}
+function mergeVitaminEntries(existing, newEntries) {
+    const seen = new Set(existing.map(e => e.name));
+    const merged = [...existing];
+    for (const e of newEntries) {
+        if (!seen.has(e.name)) {
+            seen.add(e.name);
+            merged.push(e);
+        }
+    }
+    return merged;
+}
+// ─── Modals ───────────────────────────────────────────────────────────────────
+class VitaminPickModal extends obsidian.FuzzySuggestModal {
+    constructor(app, vitamins, onChoose) {
+        super(app);
+        this.vitamins = vitamins;
+        this.onChoose = onChoose;
+        this.setPlaceholder("Select a vitamin to resupply…");
+    }
+    getItems() { return this.vitamins; }
+    getItemText(item) { return item.name; }
+    onChooseItem(item) { this.onChoose(item); }
+}
+class SameBottleModal extends obsidian.Modal {
+    constructor(app, vitamin, onSame, onDifferent) {
+        super(app);
+        this.vitamin = vitamin;
+        this.onSame = onSame;
+        this.onDifferent = onDifferent;
+    }
+    onOpen() {
+        const { contentEl } = this;
+        contentEl.createEl("h3", { text: `Restocking ${this.vitamin.name}` });
+        contentEl.createEl("p", {
+            text: `Is this the same bottle size as before? Current: ${this.vitamin.count} · Brand: ${this.vitamin.brand}`,
+            attr: { style: "color:var(--text-muted);margin-bottom:16px;" },
+        });
+        const btnRow = contentEl.createEl("div", {
+            attr: { style: "display:flex;gap:10px;" },
+        });
+        const sameBtn = btnRow.createEl("button", { text: "Same" });
+        sameBtn.addEventListener("click", () => {
+            this.close();
+            this.onSame();
+        });
+        const diffBtn = btnRow.createEl("button", { text: "Different" });
+        diffBtn.addEventListener("click", () => {
+            this.close();
+            this.onDifferent();
+        });
+    }
+    onClose() { this.contentEl.empty(); }
+}
+class NewBottleModal extends obsidian.Modal {
+    constructor(app, vitamin, onConfirm) {
+        super(app);
+        this.vitamin = vitamin;
+        this.onConfirm = onConfirm;
+    }
+    onOpen() {
+        const { contentEl } = this;
+        contentEl.createEl("h3", { text: `New bottle details — ${this.vitamin.name}` });
+        contentEl.createEl("label", { text: "Brand", attr: { style: "font-size:0.9em;color:var(--text-muted);" } });
+        const brandInput = contentEl.createEl("input", {
+            attr: {
+                type: "text",
+                value: this.vitamin.brand,
+                style: "display:block;width:100%;margin:4px 0 12px;padding:8px 10px;" +
+                    "border:1px solid var(--background-modifier-border);" +
+                    "border-radius:6px;background:var(--background-primary);color:var(--text-normal);",
+            },
+        });
+        contentEl.createEl("label", { text: "Quantity", attr: { style: "font-size:0.9em;color:var(--text-muted);" } });
+        const countInput = contentEl.createEl("input", {
+            attr: {
+                type: "number",
+                min: "1",
+                value: String(this.vitamin.count),
+                style: "display:block;width:100%;margin:4px 0 16px;padding:8px 10px;" +
+                    "border:1px solid var(--background-modifier-border);" +
+                    "border-radius:6px;background:var(--background-primary);color:var(--text-normal);",
+            },
+        });
+        const confirmBtn = contentEl.createEl("button", { text: "Confirm" });
+        confirmBtn.addEventListener("click", () => {
+            const brand = brandInput.value.trim();
+            const count = parseInt(countInput.value) || this.vitamin.count;
+            this.close();
+            this.onConfirm(brand, count);
+        });
+    }
+    onClose() { this.contentEl.empty(); }
+}
+// ─── Resupply ──────────────────────────────────────────────────────────────────
+async function resupplyVitamin(app, vitamin, newBrand, newCount) {
+    const effectiveCount = newCount !== null && newCount !== void 0 ? newCount : vitamin.count;
+    await app.vault.process(vitamin.file, (content) => {
+        let result = content;
+        result = updateFrontmatterField(result, "vitamin_on_hand", String(vitamin.onHand + effectiveCount));
+        if (newBrand !== null && newBrand !== vitamin.brand) {
+            result = updateFrontmatterField(result, "vitamin_brand", newBrand);
+        }
+        if (newCount !== null && newCount !== vitamin.count) {
+            result = updateFrontmatterField(result, "vitamin_count", String(newCount));
+        }
+        return result;
+    });
+    new obsidian.Notice(`✓ ${vitamin.name} restocked.`);
+}
+// ─── Frontmatter Update Helpers ───────────────────────────────────────────────
+function updateFrontmatterField(content, key, value) {
+    // Replace existing field in frontmatter block
+    const fmMatch = content.match(/^---\n([\s\S]*?)\n---/);
+    if (!fmMatch)
+        return content;
+    const fmBody = fmMatch[1];
+    const regex = new RegExp(`^(${key}:).*$`, "m");
+    let newFmBody;
+    if (regex.test(fmBody)) {
+        newFmBody = fmBody.replace(regex, `$1 ${value}`);
+    }
+    else {
+        newFmBody = fmBody + `\n${key}: ${value}`;
+    }
+    return content.replace(/^---\n[\s\S]*?\n---/, `---\n${newFmBody}\n---`);
+}
+// ─── Main Render ──────────────────────────────────────────────────────────────
+function renderVitaminTrackerBlock(el, app, settings) {
+    const vitamins = loadActiveVitamins(app, settings);
+    const today = todayYMD();
+    el.empty();
+    if (vitamins.length === 0) {
+        el.createEl("p", {
+            text: "No active vitamins found. Add vitamin notes to your vitamins folder.",
+            attr: { style: "color:var(--text-muted);padding:12px 0;" },
+        });
+        return;
+    }
+    // Track checkbox state: eligible = not taken today
+    const checkboxMap = new Map();
+    const wrapper = el.createEl("div", { cls: "tracker-pro-vitamins" });
+    // ── Select All / Deselect All ────────────────────────────────────────────
+    const headerRow = wrapper.createEl("div", {
+        attr: { style: "display:flex;align-items:center;margin-bottom:10px;gap:10px;" },
+    });
+    const toggleBtn = headerRow.createEl("button", { text: "Select All" });
+    const updateToggleBtn = () => {
+        const eligible = vitamins.filter(v => !isTakenToday(v.lastTaken));
+        const allChecked = eligible.length > 0 && eligible.every(v => {
+            var _a;
+            const entry = checkboxMap.get(v.name);
+            return (_a = entry === null || entry === void 0 ? void 0 : entry.checked) !== null && _a !== void 0 ? _a : false;
+        });
+        toggleBtn.textContent = allChecked ? "Deselect All" : "Select All";
+    };
+    // ── Vitamin rows ─────────────────────────────────────────────────────────
+    for (const v of vitamins) {
+        const taken = isTakenToday(v.lastTaken);
+        const dose = doseDisplay(v.dose);
+        let label = `${v.name} — ${dose} ${v.form}`;
+        if (v.doseUnit)
+            label += `, ${v.doseUnit}`;
+        const row = wrapper.createEl("div", {
+            attr: {
+                style: "display:flex;align-items:center;gap:8px;padding:4px 0;" +
+                    (taken ? "opacity:0.45;pointer-events:none;" : ""),
+            },
+        });
+        const cb = row.createEl("input", { attr: { type: "checkbox" } });
+        cb.disabled = taken;
+        cb.checked = !taken; // pre-check eligible, pre-uncheck already taken
+        row.createEl("span", { text: label });
+        checkboxMap.set(v.name, { checked: cb.checked, input: cb });
+        cb.addEventListener("change", () => {
+            const entry = checkboxMap.get(v.name);
+            if (entry)
+                entry.checked = cb.checked;
+            updateToggleBtn();
+        });
+    }
+    updateToggleBtn();
+    toggleBtn.addEventListener("click", () => {
+        const eligible = vitamins.filter(v => !isTakenToday(v.lastTaken));
+        const allChecked = eligible.length > 0 && eligible.every(v => {
+            var _a, _b;
+            return (_b = (_a = checkboxMap.get(v.name)) === null || _a === void 0 ? void 0 : _a.checked) !== null && _b !== void 0 ? _b : false;
+        });
+        const newState = !allChecked;
+        for (const v of eligible) {
+            const entry = checkboxMap.get(v.name);
+            if (entry) {
+                entry.checked = newState;
+                entry.input.checked = newState;
+            }
+        }
+        updateToggleBtn();
+    });
+    // ── Buttons ──────────────────────────────────────────────────────────────
+    const btnRow = wrapper.createEl("div", {
+        attr: { style: "display:flex;gap:10px;margin-top:14px;" },
+    });
+    const logBtn = btnRow.createEl("button", { text: "Log Vitamins" });
+    logBtn.addEventListener("click", () => logVitamins(app, settings, vitamins, checkboxMap, today, el));
+    const resupplyBtn = btnRow.createEl("button", { text: "Resupply" });
+    resupplyBtn.addEventListener("click", () => {
+        const allActive = loadActiveVitamins(app, settings);
+        new VitaminPickModal(app, allActive, async (vitamin) => {
+            new SameBottleModal(app, vitamin, async () => {
+                await resupplyVitamin(app, vitamin, null, null);
+            }, () => {
+                new NewBottleModal(app, vitamin, async (brand, count) => {
+                    await resupplyVitamin(app, vitamin, brand, count);
+                }).open();
+            }).open();
+        }).open();
+    });
+}
+// ─── Log Action ───────────────────────────────────────────────────────────────
+async function logVitamins(app, settings, vitamins, checkboxMap, today, container) {
+    const selected = vitamins.filter(v => { var _a; return (_a = checkboxMap.get(v.name)) === null || _a === void 0 ? void 0 : _a.checked; });
+    if (selected.length === 0) {
+        new obsidian.Notice("No vitamins selected.");
+        return;
+    }
+    // Update each selected vitamin note
+    for (const v of selected) {
+        const dose = parseDose(v.dose);
+        await app.vault.process(v.file, (content) => {
+            var _a, _b, _c;
+            let result = content;
+            const currentOnHand = Number((_c = (_b = (_a = app.metadataCache.getFileCache(v.file)) === null || _a === void 0 ? void 0 : _a.frontmatter) === null || _b === void 0 ? void 0 : _b.vitamin_on_hand) !== null && _c !== void 0 ? _c : v.onHand);
+            const newOnHand = Math.max(0, currentOnHand - dose);
+            result = updateFrontmatterField(result, "vitamin_on_hand", String(newOnHand));
+            result = updateFrontmatterField(result, "vitamin_last_taken", today);
+            return result;
+        });
+    }
+    // Build food log vitamin entries
+    const newMorning = [];
+    const newEvening = [];
+    for (const v of selected) {
+        const singleDose = doseDisplay(v.dose);
+        let line = `- ${v.name} — ${singleDose} ${v.form}`;
+        if (v.doseUnit)
+            line += `, ${v.doseUnit}`;
+        const entry = { name: v.name, line };
+        const time = v.time.toLowerCase();
+        if (time === "morning" || time === "morning/evening")
+            newMorning.push(entry);
+        if (time === "evening" || time === "morning/evening")
+            newEvening.push({ ...entry });
+    }
+    // Write to food log
+    const logPath = resolveTodayLogPath(settings);
+    let logFile = app.vault.getAbstractFileByPath(logPath);
+    if (!(logFile instanceof obsidian.TFile)) {
+        await ensureFolders$1(app, logPath);
+        await app.vault.create(logPath, buildBlankLogContent());
+        logFile = app.vault.getAbstractFileByPath(logPath);
+    }
+    if (!(logFile instanceof obsidian.TFile)) {
+        new obsidian.Notice("Could not create food log.");
+        return;
+    }
+    const logContent = await app.vault.read(logFile);
+    const { morning: existingMorning, evening: existingEvening } = parseVitaminsSection(logContent);
+    const mergedMorning = mergeVitaminEntries(existingMorning, newMorning);
+    const mergedEvening = mergeVitaminEntries(existingEvening, newEvening);
+    const vitBlock = buildVitaminsSection(mergedMorning, mergedEvening);
+    let newContent;
+    if (/^## Vitamins/m.test(logContent)) {
+        // Replace existing vitamins section
+        newContent = logContent.replace(/^## Vitamins[\s\S]*?(?=\n##\s|\n---\s*$|$)/m, vitBlock);
+    }
+    else {
+        // Append at end
+        newContent = logContent.trimEnd() + "\n\n" + vitBlock;
+    }
+    await app.vault.modify(logFile, newContent);
+    new obsidian.Notice("✓ Vitamins logged.");
+    // Re-render the block to update pre-deselect state
+    renderVitaminTrackerBlock(container, app, settings);
+}
+
 // ─── Error Display ────────────────────────────────────────────────────────────
 function renderErrors(container, errors) {
     container.empty();
@@ -20842,6 +21283,12 @@ async function renderChartContent(app, el, config, settings) {
             renderReadingChallengeBlock(el, app, settings, config);
         return;
     }
+    // ── Vitamins ───────────────────────────────────────────────────────────────
+    if (config.type === "vitamins") {
+        if (settings)
+            renderVitaminTrackerBlock(el, app, settings);
+        return;
+    }
     // ── Summary ───────────────────────────────────────────────────────────────
     if (config.type === "summary") {
         const entries = await collectRawEntries(app, config);
@@ -20938,7 +21385,7 @@ function renderDateSelector(selectorEl, chartEl, app, config, settings) {
     });
 }
 // ─── Main Render ──────────────────────────────────────────────────────────────
-const NO_HEIGHT_TYPES = ["summary", "table", "daily-table", "bills", "reading-challenge"];
+const NO_HEIGHT_TYPES = ["summary", "table", "daily-table", "bills", "reading-challenge", "vitamins"];
 async function renderTracker(app, container, config, settings) {
     container.empty();
     container.addClass("tracker-pro-container");
@@ -20972,6 +21419,8 @@ const DEFAULT_SETTINGS = {
     bookNotesFolder: "Data/Book Reviews",
     bookNotePrefix: "BR-",
     readingGoalFile: "Data/Reading Goals.md",
+    // ── Vitamins ──────────────────────────────────────────────────────────────
+    vitaminsFolder: "Data/Vitamins",
     // ── Tracker Pro General Settings ──────────────────────────────────────────
     folder: "/",
     dateFormat: "YYYY-MM-DD",
@@ -20989,7 +21438,7 @@ class TrackerSettingTab extends obsidian.PluginSettingTab {
         // Sections are ordered alphabetically by heading name.
         // When adding a new settings section, insert it in alphabetical order here
         // and add a matching entry to the interface comment block in DEFAULT_SETTINGS.
-        // Current order: Bills · Meal Logger · Reading Challenge · Tracker Pro General Settings
+        // Current order: Bills · Meal Logger · Reading Challenge · Vitamins · Tracker Pro General Settings
         // ─────────────────────────────────────────────────────────────────────
         // ── Bills ─────────────────────────────────────────────────────────────
         containerEl.createEl("h2", { text: "Bills" });
@@ -21101,6 +21550,18 @@ class TrackerSettingTab extends obsidian.PluginSettingTab {
             .setValue(this.plugin.settings.readingGoalFile)
             .onChange(async (value) => {
             this.plugin.settings.readingGoalFile = value.trim();
+            await this.plugin.saveSettings();
+        }));
+        // ── Vitamins ──────────────────────────────────────────────────────────
+        containerEl.createEl("h2", { text: "Vitamins" });
+        new obsidian.Setting(containerEl)
+            .setName("Vitamins folder")
+            .setDesc("Folder containing your vitamin notes.")
+            .addText((text) => text
+            .setPlaceholder("Data/Vitamins")
+            .setValue(this.plugin.settings.vitaminsFolder)
+            .onChange(async (value) => {
+            this.plugin.settings.vitaminsFolder = value.trim();
             await this.plugin.saveSettings();
         }));
         // ── Tracker Pro General Settings ──────────────────────────────────────
@@ -22480,6 +22941,12 @@ function isRelevantFile(changedPath, config, settings) {
         if (changedPath === goalFile)
             return true;
         const folder = settings.bookNotesFolder.replace(/\/$/, "");
+        if (changedPath.startsWith(folder + "/"))
+            return true;
+        return false;
+    }
+    if (config.type === "vitamins" && settings) {
+        const folder = settings.vitaminsFolder.replace(/\/$/, "");
         if (changedPath.startsWith(folder + "/"))
             return true;
         return false;
