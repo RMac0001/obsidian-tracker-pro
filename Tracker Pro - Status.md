@@ -4,6 +4,22 @@
 
 ---
 
+### v1.5.5 — Vitamin Tracker Display Fixes
+
+Four targeted improvements to the vitamin tracker.
+
+**Separator change:** em dash `—` replaced with plain hyphen `-` in checklist row labels and food log lines. Old logs (written with `—`) continue to parse correctly.
+
+**`vitaminPeriods` setting:** new `string[]` setting (default `["Morning", "Evening"]`) controls which time-of-day sections appear and in what order. Configured via a drag-to-reorder list in plugin settings — drag handle `⠿`, delete button `✕` per item, plus an Add field at the bottom.
+
+**Dynamic checklist sections:** vitamins are grouped by period section (filtered and sorted by `vitaminPeriods`). `vitamin_time` values with `/` separators (e.g. `Morning/Evening`) cause the vitamin to appear in each matching section with an independent checkbox. Already-taken vitamins are pre-deselected across all sections.
+
+**Dynamic food log sections:** the `## Vitamins` block in the food log uses `vitaminPeriods` order for `### Section` headings. Re-logging the same day merges by section name (not hardcoded keys). Vitamins with multiple time values appear under each matching heading.
+
+**Vitamin name links:** each name in the checklist is now a clickable internal link to the vitamin note.
+
+---
+
 ### v1.5.4 — Vitamin Tracker Inline Block
 
 New `type: vitamins` inline block for tracking daily vitamin intake.
