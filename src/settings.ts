@@ -19,6 +19,7 @@ export interface TrackerSettings {
 
     // ── Vitamins ──────────────────────────────────────────────────────────────
     vitaminsFolder: string;
+    vitaminPeriods: string[];
 
     // ── Tracker Pro General Settings ──────────────────────────────────────────
     folder: string;
@@ -44,6 +45,7 @@ export const DEFAULT_SETTINGS: TrackerSettings = {
 
     // ── Vitamins ──────────────────────────────────────────────────────────────
     vitaminsFolder: "Data/Vitamins",
+    vitaminPeriods: ["Morning", "Evening"],
 
     // ── Tracker Pro General Settings ──────────────────────────────────────────
     folder: "/",
@@ -245,6 +247,102 @@ export class TrackerSettingTab extends PluginSettingTab {
                         await this.plugin.saveSettings();
                     })
             );
+
+        // Vitamin periods drag-to-reorder list
+        new Setting(containerEl)
+            .setName("Vitamin periods")
+            .setDesc("Time-of-day sections for vitamin grouping. Drag to reorder, × to delete.");
+
+        const periodsListEl = containerEl.createEl("div", {
+            attr: {
+                style: "border:1px solid var(--background-modifier-border);border-radius:6px;" +
+                       "padding:6px 8px;margin:0 0 8px;",
+            },
+        });
+
+        const renderPeriodsList = () => {
+            periodsListEl.empty();
+            const periods = this.plugin.settings.vitaminPeriods;
+            let dragSrcIdx: number | null = null;
+
+            for (let i = 0; i < periods.length; i++) {
+                const item = periodsListEl.createEl("div", {
+                    attr: {
+                        draggable: "true",
+                        style: "display:flex;align-items:center;gap:8px;padding:4px 6px;" +
+                               "border-radius:4px;user-select:none;",
+                    },
+                });
+
+                item.createEl("span", {
+                    text: "⠿",
+                    attr: { style: "cursor:grab;color:var(--text-muted);font-size:1.1em;line-height:1;" },
+                });
+
+                item.createEl("span", { text: periods[i], attr: { style: "flex:1;" } });
+
+                const delBtn = item.createEl("button", { text: "✕" });
+                delBtn.setAttribute("style", "padding:1px 6px;font-size:0.8em;line-height:1.4;" +
+                    "background:none;border:1px solid var(--background-modifier-border);" +
+                    "border-radius:4px;cursor:pointer;color:var(--text-muted);");
+                delBtn.addEventListener("click", async () => {
+                    this.plugin.settings.vitaminPeriods.splice(i, 1);
+                    await this.plugin.saveSettings();
+                    renderPeriodsList();
+                });
+
+                item.addEventListener("dragstart", (e) => {
+                    dragSrcIdx = i;
+                    (e as DragEvent).dataTransfer!.effectAllowed = "move";
+                    item.style.opacity = "0.5";
+                });
+                item.addEventListener("dragend", () => { item.style.opacity = "1"; });
+                item.addEventListener("dragover", (e) => {
+                    e.preventDefault();
+                    (e as DragEvent).dataTransfer!.dropEffect = "move";
+                    item.style.background = "var(--background-modifier-hover)";
+                });
+                item.addEventListener("dragleave", () => { item.style.background = ""; });
+                item.addEventListener("drop", async (e) => {
+                    e.preventDefault();
+                    item.style.background = "";
+                    if (dragSrcIdx === null || dragSrcIdx === i) return;
+                    const arr = this.plugin.settings.vitaminPeriods;
+                    const [moved] = arr.splice(dragSrcIdx, 1);
+                    arr.splice(i, 0, moved);
+                    dragSrcIdx = null;
+                    await this.plugin.saveSettings();
+                    renderPeriodsList();
+                });
+            }
+        };
+
+        renderPeriodsList();
+
+        const addPeriodRow = containerEl.createEl("div", {
+            attr: { style: "display:flex;gap:8px;margin-bottom:16px;" },
+        });
+        const addPeriodInput = addPeriodRow.createEl("input", {
+            attr: {
+                type: "text",
+                placeholder: "New period name",
+                style: "flex:1;padding:4px 10px;" +
+                    "border:1px solid var(--background-modifier-border);" +
+                    "border-radius:6px;background:var(--background-primary);color:var(--text-normal);",
+            },
+        }) as HTMLInputElement;
+
+        const doAddPeriod = async () => {
+            const val = addPeriodInput.value.trim();
+            if (!val) return;
+            this.plugin.settings.vitaminPeriods.push(val);
+            await this.plugin.saveSettings();
+            addPeriodInput.value = "";
+            renderPeriodsList();
+        };
+
+        addPeriodRow.createEl("button", { text: "Add" }).addEventListener("click", doAddPeriod);
+        addPeriodInput.addEventListener("keydown", (e) => { if (e.key === "Enter") doAddPeriod(); });
 
         // ── Tracker Pro General Settings ──────────────────────────────────────
 
