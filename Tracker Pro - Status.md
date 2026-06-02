@@ -1,6 +1,64 @@
 # Tracker Pro — Status
 
-## What was done (v1.1.1 → v1.5.2)
+## What was done (v1.1.1 → v1.5.4)
+
+---
+
+### v1.5.4 — Vitamin Tracker Inline Block
+
+New `type: vitamins` inline block for tracking daily vitamin intake.
+
+**Codeblock:**
+```yaml
+type: vitamins
+```
+
+**Rendering:**
+- Checklist of all active vitamins (`vitamin_active: true`), sorted alphabetically by `vitamin_name`
+- Each row: `Vitamin Name — {dose} {form}, {dose_unit}`
+- Pre-deselects vitamins already taken today (based on `vitamin_last_taken`)
+- **Select All / Deselect All** toggle at the top; already-taken vitamins are never affected by this toggle
+- Two buttons at the bottom: **Log Vitamins** and **Resupply**
+
+**Log Vitamins:**
+- Decrements `vitamin_on_hand` by dose amount (floored at 0), sets `vitamin_last_taken` to today
+- Split-dose vitamins (`vitamin_dose: "1/1"`) deduct 2 from on-hand total, display as 1 per section
+- Appends/replaces a `## Vitamins` section in today's food log note (creates the log if it doesn't exist)
+- Merge logic: if vitamins were already logged today, existing and new entries are combined by name per section (no duplicates)
+- Section format:
+  ```markdown
+  ## Vitamins
+
+  ### Morning
+  - Omega-3 — 1 Softgel, 1000 mg
+
+  ### Evening
+  - Magnesium — 1 Veggie capsules, 180 mg
+  ```
+
+**Resupply (4-step flow):**
+1. Fuzzy-pick an active vitamin
+2. "Same bottle?" modal — confirms current count and brand
+3. If different: new bottle modal with editable brand and quantity fields
+4. Adds bottle count to `vitamin_on_hand`; updates `vitamin_brand` / `vitamin_count` if changed
+
+**Auto-refresh:** re-renders when any file in `vitaminsFolder` changes via `metadataCache.on("changed")`
+
+**New setting:** `vitaminsFolder` (default: `Data/Vitamins`) — inserted between Reading Challenge and Tracker Pro General Settings
+
+**Vitamin note schema:**
+```
+vitamin_active:      true | false
+vitamin_name:        string
+vitamin_brand:       string
+vitamin_count:       number
+vitamin_on_hand:     number
+vitamin_dose:        string  (e.g. "1" or "1/1" for morning+evening)
+vitamin_dose_unit:   string  (e.g. "1000 mg")
+vitamin_form:        string  (e.g. "Softgel")
+vitamin_time:        string  ("Morning", "Evening", or "Morning/Evening")
+vitamin_last_taken:  string  (YYYY-MM-DD)
+```
 
 ---
 

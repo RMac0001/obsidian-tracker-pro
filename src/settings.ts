@@ -17,6 +17,9 @@ export interface TrackerSettings {
     bookNotePrefix:   string;
     readingGoalFile:  string;
 
+    // ── Vitamins ──────────────────────────────────────────────────────────────
+    vitaminsFolder: string;
+
     // ── Tracker Pro General Settings ──────────────────────────────────────────
     folder: string;
     dateFormat: string;
@@ -38,6 +41,9 @@ export const DEFAULT_SETTINGS: TrackerSettings = {
     bookNotesFolder: "Data/Book Reviews",
     bookNotePrefix:  "BR-",
     readingGoalFile: "Data/Reading Goals.md",
+
+    // ── Vitamins ──────────────────────────────────────────────────────────────
+    vitaminsFolder: "Data/Vitamins",
 
     // ── Tracker Pro General Settings ──────────────────────────────────────────
     folder: "/",
@@ -61,7 +67,7 @@ export class TrackerSettingTab extends PluginSettingTab {
         // Sections are ordered alphabetically by heading name.
         // When adding a new settings section, insert it in alphabetical order here
         // and add a matching entry to the interface comment block in DEFAULT_SETTINGS.
-        // Current order: Bills · Meal Logger · Reading Challenge · Tracker Pro General Settings
+        // Current order: Bills · Meal Logger · Reading Challenge · Vitamins · Tracker Pro General Settings
         // ─────────────────────────────────────────────────────────────────────
 
         // ── Bills ─────────────────────────────────────────────────────────────
@@ -219,6 +225,23 @@ export class TrackerSettingTab extends PluginSettingTab {
                     .setValue(this.plugin.settings.readingGoalFile)
                     .onChange(async (value) => {
                         this.plugin.settings.readingGoalFile = value.trim();
+                        await this.plugin.saveSettings();
+                    })
+            );
+
+        // ── Vitamins ──────────────────────────────────────────────────────────
+
+        containerEl.createEl("h2", { text: "Vitamins" });
+
+        new Setting(containerEl)
+            .setName("Vitamins folder")
+            .setDesc("Folder containing your vitamin notes.")
+            .addText((text) =>
+                text
+                    .setPlaceholder("Data/Vitamins")
+                    .setValue(this.plugin.settings.vitaminsFolder)
+                    .onChange(async (value) => {
+                        this.plugin.settings.vitaminsFolder = value.trim();
                         await this.plugin.saveSettings();
                     })
             );
