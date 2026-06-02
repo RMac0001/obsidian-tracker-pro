@@ -2834,7 +2834,7 @@ var load                = loader.load;
 // ─── Valid Values ─────────────────────────────────────────────────────────────
 const VALID_CHART_TYPES = [
     "line", "bar", "pie", "donut", "heatmap",
-    "scatter", "radar", "gauge", "candlestick", "calendar", "summary", "table", "daily-table", "bills", "reading-challenge",
+    "scatter", "radar", "gauge", "candlestick", "calendar", "summary", "table", "daily-table", "bills", "reading-challenge", "vitamins",
 ];
 const VALID_AGGREGATES = [
     "daily", "weekly", "monthly", "cumulative", "moving-average",

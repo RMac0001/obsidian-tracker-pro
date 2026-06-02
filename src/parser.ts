@@ -5,7 +5,7 @@ import { TrackerConfig, ChartType, AggregateType, ParseError } from "./types";
 
 const VALID_CHART_TYPES: ChartType[] = [
   "line", "bar", "pie", "donut", "heatmap",
-  "scatter", "radar", "gauge", "candlestick", "calendar", "summary", "table", "daily-table", "bills", "reading-challenge",
+  "scatter", "radar", "gauge", "candlestick", "calendar", "summary", "table", "daily-table", "bills", "reading-challenge", "vitamins",
 ];
 
 const VALID_AGGREGATES: AggregateType[] = [
