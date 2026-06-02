@@ -2918,14 +2918,14 @@ function validateConfig(raw) {
             message: `Unknown chart type "${raw.type}". Valid types: ${VALID_CHART_TYPES.join(", ")}`,
         });
     }
-    // data source (bills and reading-challenge manage their own vault paths)
-    if (raw.type !== "bills" && raw.type !== "reading-challenge" && !raw.folder && !raw.file && !raw.files) {
+    // data source (bills, reading-challenge, and vitamins manage their own vault paths)
+    if (raw.type !== "bills" && raw.type !== "reading-challenge" && raw.type !== "vitamins" && !raw.folder && !raw.file && !raw.files) {
         errors.push({
             message: "Must specify at least one of: folder, file, or files",
         });
     }
     // properties (not required for summary, table, daily-table, bills, or reading-challenge)
-    if (raw.type !== "summary" && raw.type !== "table" && raw.type !== "daily-table" && raw.type !== "bills" && raw.type !== "reading-challenge" && raw.source !== "fileMeta") {
+    if (raw.type !== "summary" && raw.type !== "table" && raw.type !== "daily-table" && raw.type !== "bills" && raw.type !== "reading-challenge" && raw.type !== "vitamins" && raw.source !== "fileMeta") {
         if (!raw.properties) {
             errors.push({ message: "Missing required field: properties" });
         }
