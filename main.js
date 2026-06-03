@@ -20713,7 +20713,7 @@ function renderReadingChallengeBlock(el, app, settings, config) {
     render((_a = config.year) !== null && _a !== void 0 ? _a : new Date().getFullYear());
 }
 
-// ─── Helpers ──────────────────────────────────────────────────────────────────
+// ─── Date helpers ─────────────────────────────────────────────────────────────
 function todayYMD() {
     const d = new Date();
     const y = d.getFullYear();
@@ -20721,10 +20721,23 @@ function todayYMD() {
     const day = String(d.getDate()).padStart(2, "0");
     return `${y}-${m}-${day}`;
 }
-function isTakenToday(lastTaken) {
-    if (!lastTaken)
+function dateToYMD(val) {
+    if (!val)
+        return "";
+    if (val instanceof Date) {
+        const y = val.getFullYear();
+        const m = String(val.getMonth() + 1).padStart(2, "0");
+        const d = String(val.getDate()).padStart(2, "0");
+        return `${y}-${m}-${d}`;
+    }
+    return String(val);
+}
+function isTakenTodayForPeriod(lastTaken, period) {
+    const raw = lastTaken[period];
+    const dateStr = dateToYMD(raw);
+    if (!dateStr)
         return false;
-    const parts = String(lastTaken).match(/^(\d{4})-(\d{2})-(\d{2})/);
+    const parts = dateStr.match(/^(\d{4})-(\d{2})-(\d{2})/);
     if (!parts)
         return false;
     const today = new Date();
@@ -20732,6 +20745,63 @@ function isTakenToday(lastTaken) {
         today.getMonth() + 1 === parseInt(parts[2]) &&
         today.getDate() === parseInt(parts[3]));
 }
+// ─── vitamin_last_taken normalisation ─────────────────────────────────────────
+function normalizeLastTaken(raw, sections) {
+    if (!raw)
+        return {};
+    if (typeof raw === "string" || raw instanceof Date) {
+        // Scalar format — set every section to this date (migration handles persistence)
+        const dateStr = dateToYMD(raw);
+        const map = {};
+        for (const s of sections)
+            map[s] = dateStr;
+        return map;
+    }
+    if (typeof raw === "object") {
+        const map = {};
+        for (const [k, v] of Object.entries(raw))
+            map[k] = dateToYMD(v);
+        return map;
+    }
+    return {};
+}
+// Rewrites vitamin_last_taken in raw file content as a quoted multiline YAML map.
+function rewriteLastTakenMap(content, sections, lastTakenMap) {
+    const fmMatch = content.match(/^---\n([\s\S]*?)\n---/);
+    if (!fmMatch)
+        return content;
+    const fmBody = fmMatch[1];
+    const mapLines = sections.map(s => { var _a; return `  ${s}: "${(_a = lastTakenMap[s]) !== null && _a !== void 0 ? _a : ""}"`; }).join("\n");
+    const newField = `vitamin_last_taken:\n${mapLines}`;
+    // Match scalar or multiline map (key line + any subsequent indented lines)
+    const fieldRegex = /^vitamin_last_taken:[^\n]*(?:\n[ \t][^\n]*)*/m;
+    const newFmBody = fieldRegex.test(fmBody)
+        ? fmBody.replace(fieldRegex, newField)
+        : fmBody + `\n${newField}`;
+    return content.replace(/^---\n[\s\S]*?\n---/, `---\n${newFmBody}\n---`);
+}
+// Background migration: rewrite scalar vitamin_last_taken to per-period map.
+// Fire-and-forget — metadataCache event triggers re-render when write completes.
+async function migrateScalarLastTaken(app, v, scalarDate) {
+    const sections = vitaminTimeSections(v.time);
+    const migratedMap = {};
+    for (const s of sections)
+        migratedMap[s] = scalarDate;
+    try {
+        await app.vault.process(v.file, (content) => {
+            var _a, _b;
+            const fm = (_b = (_a = app.metadataCache.getFileCache(v.file)) === null || _a === void 0 ? void 0 : _a.frontmatter) !== null && _b !== void 0 ? _b : {};
+            // Guard: only migrate if still scalar
+            if (typeof fm.vitamin_last_taken !== "string")
+                return content;
+            return rewriteLastTakenMap(content, sections, migratedMap);
+        });
+    }
+    catch (_a) {
+        // Non-destructive: if write fails we keep using the in-memory normalised map
+    }
+}
+// ─── General helpers ──────────────────────────────────────────────────────────
 function parseDose(dose) {
     const str = String(dose !== null && dose !== void 0 ? dose : "1");
     if (str.includes("/")) {
@@ -20760,7 +20830,7 @@ async function ensureFolders$1(app, filePath) {
             try {
                 await app.vault.createFolder(current);
             }
-            catch ( /* already exists */_a) { /* already exists */ }
+            catch ( /* exists */_a) { /* exists */ }
         }
     }
 }
@@ -20784,21 +20854,22 @@ function buildBlankLogContent() {
 function getVitaminMeta(app, file) {
     var _a, _b, _c, _d, _e, _f, _g, _h, _j, _k, _l;
     const fm = (_b = (_a = app.metadataCache.getFileCache(file)) === null || _a === void 0 ? void 0 : _a.frontmatter) !== null && _b !== void 0 ? _b : {};
+    const timeSections = vitaminTimeSections(String((_c = fm.vitamin_time) !== null && _c !== void 0 ? _c : ""));
     return {
         file,
-        name: String((_c = fm.vitamin_name) !== null && _c !== void 0 ? _c : file.basename),
-        brand: String((_d = fm.vitamin_brand) !== null && _d !== void 0 ? _d : ""),
-        count: Number((_e = fm.vitamin_count) !== null && _e !== void 0 ? _e : 0),
-        onHand: Number((_f = fm.vitamin_on_hand) !== null && _f !== void 0 ? _f : 0),
-        dose: String((_g = fm.vitamin_dose) !== null && _g !== void 0 ? _g : "1"),
-        doseUnit: String((_h = fm.vitamin_dose_unit) !== null && _h !== void 0 ? _h : ""),
-        form: String((_j = fm.vitamin_form) !== null && _j !== void 0 ? _j : ""),
-        time: String((_k = fm.vitamin_time) !== null && _k !== void 0 ? _k : ""),
-        lastTaken: String((_l = fm.vitamin_last_taken) !== null && _l !== void 0 ? _l : ""),
+        name: String((_d = fm.vitamin_name) !== null && _d !== void 0 ? _d : file.basename),
+        brand: String((_e = fm.vitamin_brand) !== null && _e !== void 0 ? _e : ""),
+        count: Number((_f = fm.vitamin_count) !== null && _f !== void 0 ? _f : 0),
+        onHand: Number((_g = fm.vitamin_on_hand) !== null && _g !== void 0 ? _g : 0),
+        dose: String((_h = fm.vitamin_dose) !== null && _h !== void 0 ? _h : "1"),
+        doseUnit: String((_j = fm.vitamin_dose_unit) !== null && _j !== void 0 ? _j : ""),
+        form: String((_k = fm.vitamin_form) !== null && _k !== void 0 ? _k : ""),
+        time: String((_l = fm.vitamin_time) !== null && _l !== void 0 ? _l : ""),
+        lastTaken: normalizeLastTaken(fm.vitamin_last_taken, timeSections),
     };
 }
 function loadActiveVitamins(app, settings) {
-    var _a, _b;
+    var _a, _b, _c, _d;
     const folder = settings.vitaminsFolder.replace(/\/$/, "");
     const result = [];
     for (const file of app.vault.getMarkdownFiles()) {
@@ -20810,9 +20881,16 @@ function loadActiveVitamins(app, settings) {
         result.push(getVitaminMeta(app, file));
     }
     result.sort((a, b) => a.name.localeCompare(b.name));
+    // Background-migrate any scalar vitamin_last_taken to per-period map
+    for (const v of result) {
+        const raw = (_d = (_c = app.metadataCache.getFileCache(v.file)) === null || _c === void 0 ? void 0 : _c.frontmatter) === null || _d === void 0 ? void 0 : _d.vitamin_last_taken;
+        if (typeof raw === "string" && raw) {
+            migrateScalarLastTaken(app, v, raw).catch(() => { });
+        }
+    }
     return result;
 }
-// ─── Active sections (filtered + sorted by vitaminPeriods) ────────────────────
+// ─── Active sections ──────────────────────────────────────────────────────────
 function getActiveSections(vitamins, periods) {
     const seen = new Set();
     for (const v of vitamins) {
@@ -20821,7 +20899,7 @@ function getActiveSections(vitamins, periods) {
     }
     return periods.filter(p => seen.has(p));
 }
-// ─── Merge / Build logic ──────────────────────────────────────────────────────
+// ─── Food log merge / build ───────────────────────────────────────────────────
 function parseVitaminsSection(content) {
     var _a;
     const result = new Map();
@@ -20842,7 +20920,6 @@ function parseVitaminsSection(content) {
             break;
         if (!line.startsWith("- ") || !currentSection)
             continue;
-        // Match name before " — " (em dash, old format) or " - " (hyphen, new format)
         const nameMatch = line.match(/^- (.+?)(?:\s+—\s+|\s+-\s+)/);
         if (!nameMatch)
             continue;
@@ -20883,7 +20960,7 @@ function mergeVitaminEntries(existing, incoming) {
     }
     return merged;
 }
-// ─── Frontmatter helper ───────────────────────────────────────────────────────
+// ─── Frontmatter helpers ──────────────────────────────────────────────────────
 function updateFrontmatterField(content, key, value) {
     const fmMatch = content.match(/^---\n([\s\S]*?)\n---/);
     if (!fmMatch)
@@ -21002,7 +21079,8 @@ function renderVitaminTrackerBlock(el, app, settings) {
             attr: { style: "margin:12px 0 6px;font-size:0.95em;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.05em;" },
         });
         for (const v of vitamins.filter(x => vitaminTimeSections(x.time).includes(section))) {
-            const taken = isTakenToday(v.lastTaken);
+            // Pre-deselect based on this specific period's last-taken date
+            const taken = isTakenTodayForPeriod(v.lastTaken, section);
             const dose = doseDisplay(v.dose);
             const row = wrapper.createEl("div", {
                 attr: {
@@ -21013,12 +21091,10 @@ function renderVitaminTrackerBlock(el, app, settings) {
             const cb = row.createEl("input", { attr: { type: "checkbox" } });
             cb.disabled = taken;
             cb.checked = !taken;
-            // Vitamin name as internal link to the note
             const linkPath = v.file.path.replace(/\.md$/, "");
             const nameLink = row.createEl("a", { cls: "internal-link", text: v.name });
             nameLink.setAttribute("href", linkPath);
             nameLink.setAttribute("data-href", linkPath);
-            // Dose detail
             let doseInfo = ` - ${dose} ${v.form}`;
             if (v.doseUnit)
                 doseInfo += `, ${v.doseUnit}`;
@@ -21075,21 +21151,34 @@ async function logVitamins(app, settings, vitamins, checkboxMap, today, containe
         new obsidian.Notice("No vitamins selected.");
         return;
     }
-    // Update each vitamin note once (full dose decrement regardless of sections checked)
-    for (const [name] of vitaminSectionsMap.entries()) {
+    // Update each vitamin note once
+    for (const [name, loggedSections] of vitaminSectionsMap.entries()) {
         const v = vitamins.find(x => x.name === name);
         if (!v)
             continue;
         const dose = parseDose(v.dose);
+        const sections = vitaminTimeSections(v.time);
         await app.vault.process(v.file, (content) => {
             var _a, _b, _c;
-            const currentOnHand = Number((_c = (_b = (_a = app.metadataCache.getFileCache(v.file)) === null || _a === void 0 ? void 0 : _a.frontmatter) === null || _b === void 0 ? void 0 : _b.vitamin_on_hand) !== null && _c !== void 0 ? _c : v.onHand);
+            const fm = (_b = (_a = app.metadataCache.getFileCache(v.file)) === null || _a === void 0 ? void 0 : _a.frontmatter) !== null && _b !== void 0 ? _b : {};
+            // Build updated lastTaken map: start from current, set logged sections to today
+            const currentMap = normalizeLastTaken(fm.vitamin_last_taken, sections);
+            for (const section of loggedSections)
+                currentMap[section] = today;
+            // Ensure all vitamin sections have an entry
+            for (const s of sections) {
+                if (!(s in currentMap))
+                    currentMap[s] = "";
+            }
+            // Decrement on_hand
+            const currentOnHand = Number((_c = fm.vitamin_on_hand) !== null && _c !== void 0 ? _c : v.onHand);
             let result = updateFrontmatterField(content, "vitamin_on_hand", String(Math.max(0, currentOnHand - dose)));
-            result = updateFrontmatterField(result, "vitamin_last_taken", today);
+            // Write lastTaken as per-period map
+            result = rewriteLastTakenMap(result, sections, currentMap);
             return result;
         });
     }
-    // Build new section map for the log
+    // Build food log section map
     const newSectionMap = new Map();
     for (const [name, sections] of vitaminSectionsMap.entries()) {
         const v = vitamins.find(x => x.name === name);
@@ -21105,7 +21194,7 @@ async function logVitamins(app, settings, vitamins, checkboxMap, today, containe
             newSectionMap.set(section, arr);
         }
     }
-    // Resolve food log path, create if missing
+    // Resolve food log, create if missing
     const logPath = resolveTodayLogPath(settings);
     let logFile = app.vault.getAbstractFileByPath(logPath);
     if (!(logFile instanceof obsidian.TFile)) {
@@ -21119,7 +21208,6 @@ async function logVitamins(app, settings, vitamins, checkboxMap, today, containe
     }
     const logContent = await app.vault.read(logFile);
     const existingSectionMap = parseVitaminsSection(logContent);
-    // Merge existing + new per section
     const mergedSectionMap = new Map();
     for (const section of new Set([...existingSectionMap.keys(), ...newSectionMap.keys()])) {
         mergedSectionMap.set(section, mergeVitaminEntries((_c = existingSectionMap.get(section)) !== null && _c !== void 0 ? _c : [], (_d = newSectionMap.get(section)) !== null && _d !== void 0 ? _d : []));
