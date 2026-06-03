@@ -4,6 +4,25 @@
 
 ---
 
+### v1.5.6 — Vitamin Tracker Per-Period Last Taken
+
+Fixed a bug where a `Morning/Evening` vitamin became fully pre-deselected after logging only one period, because `vitamin_last_taken` was a single shared date field.
+
+**`vitamin_last_taken` is now a per-period YAML map:**
+```yaml
+vitamin_last_taken:
+  Morning: "2026-06-03"
+  Evening: ""
+```
+
+- Each period key is set to `YYYY-MM-DD` when that period is logged; other periods are unchanged
+- Empty string `""` means not yet taken for that period
+- Pre-deselect in the checklist is now per-period: a `Morning/Evening` vitamin can have Morning greyed out while Evening stays selectable
+
+**Transparent scalar migration:** existing notes with the old `vitamin_last_taken: 2026-06-03` scalar format are migrated automatically in the background on first render — treated in memory as if every period was last taken on that date, then rewritten to the new map format via `vault.process`. No user action required; migration is non-destructive and silent.
+
+---
+
 ### v1.5.5 — Vitamin Tracker Display Fixes
 
 Four targeted improvements to the vitamin tracker.
