@@ -21761,6 +21761,8 @@ class TrackerSettingTab extends obsidian.PluginSettingTab {
 
 const MEAL_TYPES = ["Breakfast", "Lunch", "Dinner", "Snacks"];
 const MACROS = ["cal", "protein", "fat", "carbs"];
+/** ## sections that recalcAndSave owns and rebuilds itself. */
+const OWNED_HEADINGS = new Set([...MEAL_TYPES, "Vitamins", "Notes"]);
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 function mealKey(mealType) {
     return mealType.toLowerCase();
@@ -22310,6 +22312,34 @@ function parseNotesLines(body) {
         notes.pop();
     return notes;
 }
+function parseUnknownSections(body) {
+    const result = [];
+    const lines = body.split("\n");
+    let current = null;
+    for (const line of lines) {
+        const hm = line.match(/^##\s+(.+)/);
+        if (hm) {
+            if (current)
+                result.push(current);
+            const heading = hm[1].trim();
+            current = OWNED_HEADINGS.has(heading) ? null : { heading, lines: [] };
+            continue;
+        }
+        if (current)
+            current.lines.push(line);
+    }
+    if (current)
+        result.push(current);
+    for (const sec of result) {
+        while (sec.lines.length && sec.lines[sec.lines.length - 1].trim() === "")
+            sec.lines.pop();
+    }
+    return result;
+}
+function parseVitaminsSectionRaw(body) {
+    const match = body.match(/^(## Vitamins[\s\S]*?)(?=\n##\s|\n---\s*$|$)/m);
+    return match ? match[1].trimEnd() : null;
+}
 // ─── File Lookup ──────────────────────────────────────────────────────────────
 function findItemFile(app, name, settings) {
     const allMd = app.vault.getMarkdownFiles();
@@ -22365,7 +22395,7 @@ function getRecentLogFiles(app, settings, limit) {
         .slice(0, limit);
 }
 // ─── Recalculate and Save ─────────────────────────────────────────────────────
-async function recalcAndSave(app, settings, file, meals, notesLines) {
+async function recalcAndSave(app, settings, file, meals, notesLines, unknownSections = [], vitaminsRaw = null) {
     var _a, _b;
     const allKeys = ["breakfast", "lunch", "dinner", "snacks"];
     const mealTotals = {
@@ -22427,10 +22457,11 @@ async function recalcAndSave(app, settings, file, meals, notesLines) {
         fm.fat_total = round1(allKeys.reduce((s, m) => s + mealTotals[m].fat, 0));
         fm.carbs_total = round1(allKeys.reduce((s, m) => s + mealTotals[m].carbs, 0));
     });
-    // Rebuild body (meal sections + Notes)
+    // Rebuild body: meal sections → unknown sections → Vitamins (if present) → Notes
     const d = new Date();
     const dateStr = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
     let body = "";
+    // 1. Meal sections (always present)
     for (const mealType of MEAL_TYPES) {
         body += `## ${mealType}\n`;
         const lines = (_b = freshLines.get(mealType)) !== null && _b !== void 0 ? _b : [];
@@ -22438,6 +22469,18 @@ async function recalcAndSave(app, settings, file, meals, notesLines) {
             body += lines.join("\n") + "\n";
         body += "\n";
     }
+    // 2. Unknown sections (preserved verbatim in original order)
+    for (const sec of unknownSections) {
+        body += `## ${sec.heading}\n`;
+        if (sec.lines.length > 0)
+            body += sec.lines.join("\n") + "\n";
+        body += "\n";
+    }
+    // 3. Vitamins (preserved verbatim, omitted if absent)
+    if (vitaminsRaw) {
+        body += vitaminsRaw + "\n\n";
+    }
+    // 4. Notes (always last)
     body += `## Notes\n`;
     if (notesLines.length > 0)
         body += notesLines.join("\n") + "\n";
@@ -22465,6 +22508,8 @@ class EditMealLogModal extends obsidian.Modal {
         this.file = file;
         this.meals = new Map(MEAL_TYPES.map((mt) => [mt, []]));
         this.notesLines = [];
+        this.unknownSections = [];
+        this.vitaminsRaw = null;
     }
     onOpen() {
         this.contentEl.setText("Loading…");
@@ -22475,6 +22520,8 @@ class EditMealLogModal extends obsidian.Modal {
         const body = extractBody(content);
         this.meals = parseMealSections(body);
         this.notesLines = parseNotesLines(body);
+        this.unknownSections = parseUnknownSections(body);
+        this.vitaminsRaw = parseVitaminsSectionRaw(body);
     }
     render() {
         var _a;
@@ -22647,7 +22694,7 @@ class EditMealLogModal extends obsidian.Modal {
         }).open();
     }
     save() {
-        recalcAndSave(this.app, this.settings, this.file, this.meals, this.notesLines)
+        recalcAndSave(this.app, this.settings, this.file, this.meals, this.notesLines, this.unknownSections, this.vitaminsRaw)
             .then(() => {
             new obsidian.Notice(`✓ ${this.file.basename} saved and recalculated`);
             this.close();
