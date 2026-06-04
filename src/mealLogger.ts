@@ -45,6 +45,9 @@ type MealKey  = "breakfast" | "lunch" | "dinner" | "snacks";
 const MEAL_TYPES: MealType[] = ["Breakfast", "Lunch", "Dinner", "Snacks"];
 const MACROS = ["cal", "protein", "fat", "carbs"] as const;
 
+/** ## sections that recalcAndSave owns and rebuilds itself. */
+const OWNED_HEADINGS = new Set([...MEAL_TYPES, "Vitamins", "Notes"]);
+
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
 function mealKey(mealType: MealType): MealKey {
@@ -690,6 +693,39 @@ function parseNotesLines(body: string): string[] {
     return notes;
 }
 
+interface UnknownSection {
+    heading: string;
+    lines: string[];
+}
+
+function parseUnknownSections(body: string): UnknownSection[] {
+    const result: UnknownSection[] = [];
+    const lines = body.split("\n");
+    let current: UnknownSection | null = null;
+
+    for (const line of lines) {
+        const hm = line.match(/^##\s+(.+)/);
+        if (hm) {
+            if (current) result.push(current);
+            const heading = hm[1].trim();
+            current = OWNED_HEADINGS.has(heading) ? null : { heading, lines: [] };
+            continue;
+        }
+        if (current) current.lines.push(line);
+    }
+    if (current) result.push(current);
+
+    for (const sec of result) {
+        while (sec.lines.length && sec.lines[sec.lines.length - 1].trim() === "") sec.lines.pop();
+    }
+    return result;
+}
+
+function parseVitaminsSectionRaw(body: string): string | null {
+    const match = body.match(/^(## Vitamins[\s\S]*?)(?=\n##\s|\n---\s*$|$)/m);
+    return match ? match[1].trimEnd() : null;
+}
+
 // ─── File Lookup ──────────────────────────────────────────────────────────────
 
 function findItemFile(
@@ -764,7 +800,9 @@ async function recalcAndSave(
     settings: TrackerSettings,
     file: TFile,
     meals: Map<MealType, ParsedEntry[]>,
-    notesLines: string[]
+    notesLines: string[],
+    unknownSections: UnknownSection[] = [],
+    vitaminsRaw: string | null = null
 ): Promise<void> {
     const allKeys = ["breakfast", "lunch", "dinner", "snacks"] as MealKey[];
 
@@ -841,17 +879,33 @@ async function recalcAndSave(
         }
     );
 
-    // Rebuild body (meal sections + Notes)
+    // Rebuild body: meal sections → unknown sections → Vitamins (if present) → Notes
     const d       = new Date();
     const dateStr = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 
     let body = "";
+
+    // 1. Meal sections (always present)
     for (const mealType of MEAL_TYPES) {
         body += `## ${mealType}\n`;
         const lines = freshLines.get(mealType) ?? [];
         if (lines.length > 0) body += lines.join("\n") + "\n";
         body += "\n";
     }
+
+    // 2. Unknown sections (preserved verbatim in original order)
+    for (const sec of unknownSections) {
+        body += `## ${sec.heading}\n`;
+        if (sec.lines.length > 0) body += sec.lines.join("\n") + "\n";
+        body += "\n";
+    }
+
+    // 3. Vitamins (preserved verbatim, omitted if absent)
+    if (vitaminsRaw) {
+        body += vitaminsRaw + "\n\n";
+    }
+
+    // 4. Notes (always last)
     body += `## Notes\n`;
     if (notesLines.length > 0) body += notesLines.join("\n") + "\n";
     body += `- ${dateStr} — Log recalculated\n`;
@@ -876,6 +930,8 @@ class EditMealLogModal extends Modal {
         MEAL_TYPES.map((mt) => [mt, []])
     );
     private notesLines: string[] = [];
+    private unknownSections: UnknownSection[] = [];
+    private vitaminsRaw: string | null = null;
 
     constructor(
         app: App,
@@ -891,10 +947,12 @@ class EditMealLogModal extends Modal {
     }
 
     private async loadFile(): Promise<void> {
-        const content   = await this.app.vault.read(this.file);
-        const body      = extractBody(content);
-        this.meals      = parseMealSections(body);
-        this.notesLines = parseNotesLines(body);
+        const content          = await this.app.vault.read(this.file);
+        const body             = extractBody(content);
+        this.meals             = parseMealSections(body);
+        this.notesLines        = parseNotesLines(body);
+        this.unknownSections   = parseUnknownSections(body);
+        this.vitaminsRaw       = parseVitaminsSectionRaw(body);
     }
 
     render(): void {
@@ -1155,15 +1213,19 @@ class EditMealLogModal extends Modal {
     }
 
     private save(): void {
-        recalcAndSave(this.app, this.settings, this.file, this.meals, this.notesLines)
-            .then(() => {
-                new Notice(`✓ ${this.file.basename} saved and recalculated`);
-                this.close();
-            })
-            .catch((e) => {
-                new Notice(`Error saving: ${String(e)}`);
-                console.error(e);
-            });
+        recalcAndSave(
+            this.app, this.settings, this.file,
+            this.meals, this.notesLines,
+            this.unknownSections, this.vitaminsRaw
+        )
+        .then(() => {
+            new Notice(`✓ ${this.file.basename} saved and recalculated`);
+            this.close();
+        })
+        .catch((e) => {
+            new Notice(`Error saving: ${String(e)}`);
+            console.error(e);
+        });
     }
 
     onClose(): void { this.contentEl.empty(); }

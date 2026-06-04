@@ -4,6 +4,21 @@
 
 ---
 
+### v1.5.7 — Preserve Unknown Sections on Edit Meal Log Save
+
+Fixed a bug where "Save and recalculate" in the Edit Meal Log modal silently
+discarded any `##` section it did not own — in practice, the `## Vitamins`
+block written by the vitamin tracker was wiped out on every save.
+
+**Changes to `src/mealLogger.ts`:**
+- Added `OWNED_HEADINGS` constant (meal types + Vitamins + Notes)
+- Added `parseUnknownSections(body)` — collects every unowned `##` section verbatim, in document order
+- Added `parseVitaminsSectionRaw(body)` — extracts the raw `## Vitamins` block as a string, or null if absent
+- `EditMealLogModal` now captures `unknownSections` and `vitaminsRaw` in `loadFile` and passes them to `recalcAndSave`
+- `recalcAndSave` body rebuild order: meal sections → unknown sections → Vitamins (if present) → Notes
+
+---
+
 ### v1.5.6 — Vitamin Tracker Per-Period Last Taken
 
 Fixed a bug where a `Morning/Evening` vitamin became fully pre-deselected after logging only one period, because `vitamin_last_taken` was a single shared date field.
