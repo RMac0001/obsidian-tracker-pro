@@ -20929,6 +20929,18 @@ function parseVitaminsSection(content) {
     }
     return result;
 }
+function replaceVitaminsBlock(content, newBlock) {
+    const startIndex = content.search(/^## Vitamins/m);
+    if (startIndex === -1) {
+        return content.trimEnd() + "\n\n" + newBlock;
+    }
+    const afterBlock = content.slice(startIndex + "## Vitamins".length);
+    const nextSectionMatch = afterBlock.search(/\n## /);
+    const before = content.slice(0, startIndex).trimEnd() + "\n\n";
+    const after = nextSectionMatch === -1 ? "" : afterBlock.slice(nextSectionMatch);
+    const trailing = after.length > 0 ? "\n" + after.trimStart() : "";
+    return before + newBlock + trailing;
+}
 function buildVitaminsSection(sectionMap, periods) {
     var _a;
     const orderedSections = [
@@ -21213,9 +21225,7 @@ async function logVitamins(app, settings, vitamins, checkboxMap, today, containe
         mergedSectionMap.set(section, mergeVitaminEntries((_c = existingSectionMap.get(section)) !== null && _c !== void 0 ? _c : [], (_d = newSectionMap.get(section)) !== null && _d !== void 0 ? _d : []));
     }
     const vitBlock = buildVitaminsSection(mergedSectionMap, periods);
-    const newContent = /^## Vitamins/m.test(logContent)
-        ? logContent.replace(/^## Vitamins[\s\S]*?(?=\n##\s|\n---\s*$|$)/m, vitBlock)
-        : logContent.trimEnd() + "\n\n" + vitBlock;
+    const newContent = replaceVitaminsBlock(logContent, vitBlock);
     await app.vault.modify(logFile, newContent);
     new obsidian.Notice("✓ Vitamins logged.");
     renderVitaminTrackerBlock(container, app, settings);
