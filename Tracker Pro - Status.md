@@ -4,6 +4,22 @@
 
 ---
 
+### v1.5.8 — Fix Vitamins Double-Write on Second Log Action
+
+Fixed a bug where logging a second vitamin period (e.g. Evening after Morning was already logged) caused the first period's entries to appear twice in the `## Vitamins` block of the food log.
+
+**Root cause:** The regex `/^## Vitamins[\s\S]*?(?=\n##\s|\n---\s*$|$)/m` had the `m` flag active, which makes `$` match end-of-line rather than end-of-string. The lazy `[\s\S]*?` would stop at the very first newline after `## Vitamins`, leaving the old `### Morning` / `### Evening` content in place. The new merged block was then inserted after only the header line, producing a duplicate.
+
+**Fix:** Replaced the regex-based replacement with a new `replaceVitaminsBlock()` helper in `src/vitaminTracker.ts` that uses string-index slicing:
+- `content.search(/^## Vitamins/m)` locates the block start
+- A second search on the remainder (`/\n## /`) finds the next `##` section (e.g. `## Notes`)
+- `before` / `after` slices are computed exactly, then reassembled with the new block in between
+- If no `## Vitamins` block exists, appends as before
+
+The `m`-flag pitfall is entirely avoided. `## Notes` and all subsequent content are preserved verbatim.
+
+---
+
 ### v1.5.7 — Preserve Unknown Sections on Edit Meal Log Save
 
 Fixed a bug where "Save and recalculate" in the Edit Meal Log modal silently

@@ -249,6 +249,22 @@ function parseVitaminsSection(content: string): Map<string, ParsedVitaminEntry[]
     return result;
 }
 
+function replaceVitaminsBlock(content: string, newBlock: string): string {
+    const startIndex = content.search(/^## Vitamins/m);
+    if (startIndex === -1) {
+        return content.trimEnd() + "\n\n" + newBlock;
+    }
+
+    const afterBlock = content.slice(startIndex + "## Vitamins".length);
+    const nextSectionMatch = afterBlock.search(/\n## /);
+
+    const before  = content.slice(0, startIndex).trimEnd() + "\n\n";
+    const after    = nextSectionMatch === -1 ? "" : afterBlock.slice(nextSectionMatch);
+    const trailing = after.length > 0 ? "\n" + after.trimStart() : "";
+
+    return before + newBlock + trailing;
+}
+
 function buildVitaminsSection(sectionMap: Map<string, ParsedVitaminEntry[]>, periods: string[]): string {
     const orderedSections = [
         ...periods.filter(p => (sectionMap.get(p)?.length ?? 0) > 0),
@@ -573,9 +589,7 @@ async function logVitamins(
     }
 
     const vitBlock = buildVitaminsSection(mergedSectionMap, periods);
-    const newContent = /^## Vitamins/m.test(logContent)
-        ? logContent.replace(/^## Vitamins[\s\S]*?(?=\n##\s|\n---\s*$|$)/m, vitBlock)
-        : logContent.trimEnd() + "\n\n" + vitBlock;
+    const newContent = replaceVitaminsBlock(logContent, vitBlock);
 
     await app.vault.modify(logFile as TFile, newContent);
     new Notice("✓ Vitamins logged.");
