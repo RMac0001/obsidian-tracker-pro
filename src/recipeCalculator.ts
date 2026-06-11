@@ -189,6 +189,42 @@ function calcRatio(
     return `unit not convertible (used "${unit}", food note uses "${servingUnit || "unknown"}")`;
 }
 
+// ─── Macro Percent Write-Back ─────────────────────────────────────────────────
+
+function applyMacroPercents(content: string, carbs: number, fat: number, protein: number): string {
+    const totalCal = carbs * 4 + fat * 9 + protein * 4;
+    if (totalCal === 0) return content;
+
+    const cp = Math.round((carbs   * 4) / totalCal * 100);
+    const fp = Math.round((fat     * 9) / totalCal * 100);
+    const pp = Math.round((protein * 4) / totalCal * 100);
+
+    const fmMatch = content.match(/^---\n([\s\S]*?)\n---/);
+    if (!fmMatch) return content;
+    const fmBody = fmMatch[1];
+    const rest   = content.slice(fmMatch[0].length);
+
+    let newFm = fmBody
+        .replace(/^carbs_percent:.*\n?/m,   "")
+        .replace(/^fat_percent:.*\n?/m,     "")
+        .replace(/^protein_percent:.*\n?/m, "");
+
+    const lines = newFm.split("\n");
+    let lastMacroIdx = -1;
+    for (let i = 0; i < lines.length; i++) {
+        if (/^(carbs|fat|protein):/.test(lines[i])) lastMacroIdx = i;
+    }
+    if (lastMacroIdx === -1) return content;
+
+    lines.splice(lastMacroIdx + 1, 0,
+        `carbs_percent: ${cp}`,
+        `fat_percent: ${fp}`,
+        `protein_percent: ${pp}`
+    );
+
+    return `---\n${lines.join("\n")}\n---${rest}`;
+}
+
 // ─── Notes Section Write-Back ─────────────────────────────────────────────────
 
 function applyNotesSection(content: string, skipped: Skipped[]): string {
@@ -353,13 +389,21 @@ export async function calculateRecipeNutrition(app: App): Promise<void> {
             await app.vault.modify(file, applyNotesSection(content, skipped));
         }
 
+        const perCarbs   = Math.round(totals.carbs   / servings);
+        const perFat     = Math.round(totals.fat     / servings);
+        const perProtein = Math.round(totals.protein / servings);
+
         await app.fileManager.processFrontMatter(file, (fm) => {
-            fm.carbs    = Math.round(totals.carbs    / servings);
-            fm.fat      = Math.round(totals.fat      / servings);
-            fm.protein  = Math.round(totals.protein  / servings);
-            fm.calories = fm.carbs * 4 + fm.fat * 9 + fm.protein * 4;
+            fm.carbs    = perCarbs;
+            fm.fat      = perFat;
+            fm.protein  = perProtein;
+            fm.calories = perCarbs * 4 + perFat * 9 + perProtein * 4;
             fm.servings = servings;
         });
+
+        // Write percent fields via raw string to preserve key order
+        const afterFm = await app.vault.read(file);
+        await app.vault.modify(file, applyMacroPercents(afterFm, perCarbs, perFat, perProtein));
 
         new Notice("Recipe nutrition calculated.");
     }).open();
@@ -395,6 +439,10 @@ export async function recalcFoodNoteCalories(app: App): Promise<void> {
     await app.fileManager.processFrontMatter(file, (frontmatter) => {
         frontmatter.calories = newCalories;
     });
+
+    // Write percent fields via raw string to preserve key order
+    const afterFm = await app.vault.read(file);
+    await app.vault.modify(file, applyMacroPercents(afterFm, carbs, fat, protein));
 
     new Notice(`Calories updated: ${oldCalories} → ${newCalories}`);
 }
