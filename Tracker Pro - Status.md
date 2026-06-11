@@ -4,6 +4,30 @@
 
 ---
 
+### v1.5.9 — Macro Percent Fields in Nutrition Commands
+
+Both nutrition commands in `src/recipeCalculator.ts` now calculate and write
+`carbs_percent`, `fat_percent`, and `protein_percent` to frontmatter after
+every run.
+
+**Formula:** Atwater macro-calorie basis — `Math.round((macro × factor) / totalCal × 100)`
+where factors are carbs × 4, fat × 9, protein × 4.
+
+**Key order enforced:** Percent fields are written via raw string manipulation
+(not `processFrontMatter`) to guarantee they appear immediately after `protein`
+in frontmatter.
+
+New private helper `applyMacroPercents(content, carbs, fat, protein)` added to
+`src/recipeCalculator.ts` — removes any existing percent lines then inserts the
+three fields after the last macro line (carbs/fat/protein), regardless of macro
+key order in the note.
+
+**Affected commands:**
+- Tracker Pro: Calculate Recipe Nutrition
+- Tracker Pro: Recalculate Food Note Calories
+
+---
+
 ### v1.5.8 — Fix Vitamins Double-Write on Second Log Action
 
 Fixed a bug where logging a second vitamin period (e.g. Evening after Morning was already logged) caused the first period's entries to appear twice in the `## Vitamins` block of the food log.
