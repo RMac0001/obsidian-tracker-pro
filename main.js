@@ -2834,7 +2834,7 @@ var load                = loader.load;
 // ─── Valid Values ─────────────────────────────────────────────────────────────
 const VALID_CHART_TYPES = [
     "line", "bar", "pie", "donut", "heatmap",
-    "scatter", "radar", "gauge", "candlestick", "calendar", "summary", "table", "daily-table", "bills", "reading-challenge", "vitamins",
+    "scatter", "radar", "gauge", "candlestick", "calendar", "summary", "table", "daily-table", "bills", "reading-challenge", "vitamins", "achievements",
 ];
 const VALID_AGGREGATES = [
     "daily", "weekly", "monthly", "cumulative", "moving-average",
@@ -2919,13 +2919,13 @@ function validateConfig(raw) {
         });
     }
     // data source (bills, reading-challenge, and vitamins manage their own vault paths)
-    if (raw.type !== "bills" && raw.type !== "reading-challenge" && raw.type !== "vitamins" && !raw.folder && !raw.file && !raw.files) {
+    if (raw.type !== "bills" && raw.type !== "reading-challenge" && raw.type !== "vitamins" && raw.type !== "achievements" && !raw.folder && !raw.file && !raw.files) {
         errors.push({
             message: "Must specify at least one of: folder, file, or files",
         });
     }
     // properties (not required for summary, table, daily-table, bills, or reading-challenge)
-    if (raw.type !== "summary" && raw.type !== "table" && raw.type !== "daily-table" && raw.type !== "bills" && raw.type !== "reading-challenge" && raw.type !== "vitamins" && raw.source !== "fileMeta") {
+    if (raw.type !== "summary" && raw.type !== "table" && raw.type !== "daily-table" && raw.type !== "bills" && raw.type !== "reading-challenge" && raw.type !== "vitamins" && raw.type !== "achievements" && raw.source !== "fileMeta") {
         if (!raw.properties) {
             errors.push({ message: "Missing required field: properties" });
         }
@@ -3070,7 +3070,7 @@ function collectFiles(folder, out) {
 // IMPORTANT: bare ISO date strings like "2026-04-09" are parsed by JavaScript
 // as UTC midnight. In any timezone behind UTC this shifts the local date back
 // by one day. We always parse date-only strings as LOCAL midnight instead.
-function parseLocalDate(raw) {
+function parseLocalDate$1(raw) {
     if (!raw)
         return null;
     const str = String(raw).trim();
@@ -3089,14 +3089,14 @@ function parseLocalDate(raw) {
 function extractDate(file, frontmatter, dateProperty) {
     // 1. Explicit dateProperty in frontmatter
     if (dateProperty && frontmatter[dateProperty]) {
-        const d = parseLocalDate(frontmatter[dateProperty]);
+        const d = parseLocalDate$1(frontmatter[dateProperty]);
         if (d)
             return d;
     }
     // 2. Common frontmatter date fields
     for (const key of ["date", "created", "day", "timestamp"]) {
         if (frontmatter[key]) {
-            const d = parseLocalDate(frontmatter[key]);
+            const d = parseLocalDate$1(frontmatter[key]);
             if (d)
                 return d;
         }
@@ -3104,7 +3104,7 @@ function extractDate(file, frontmatter, dateProperty) {
     // 3. File name pattern: YYYY-MM-DD anywhere in basename
     const nameMatch = file.basename.match(/(\d{4}-\d{2}-\d{2})/);
     if (nameMatch) {
-        const d = parseLocalDate(nameMatch[1]);
+        const d = parseLocalDate$1(nameMatch[1]);
         if (d)
             return d;
     }
@@ -19864,7 +19864,7 @@ function isRowEmpty(rowKey, fm, columns) {
     return !isNaN(n) && n === 0;
 }
 // ─── Date Formatter ────────────────────────────────────────────────────────────
-function formatDate(date, format) {
+function formatDate$1(date, format) {
     const win = window;
     if (typeof window !== "undefined" && win.moment) {
         return win.moment(date).format(format);
@@ -19915,7 +19915,7 @@ function renderDailyTable(container, entries, config) {
     for (const dateKey of sortedDates) {
         const entry = byDate.get(dateKey);
         const fm = entry.frontmatter;
-        const dateStr = formatDate(entry.date, dateFormat);
+        const dateStr = formatDate$1(entry.date, dateFormat);
         if (isExpanded) {
             const visible = showEmpty
                 ? rowDefs
@@ -21231,6 +21231,301 @@ async function logVitamins(app, settings, vitamins, checkboxMap, today, containe
     renderVitaminTrackerBlock(container, app, settings);
 }
 
+// ─── Date Helpers ─────────────────────────────────────────────────────────────
+function dateToKey(d) {
+    const y = d.getFullYear();
+    const m = String(d.getMonth() + 1).padStart(2, "0");
+    const day = String(d.getDate()).padStart(2, "0");
+    return `${y}-${m}-${day}`;
+}
+function parseLocalDate(s) {
+    const m = s.match(/^(\d{4})-(\d{2})-(\d{2})/);
+    if (!m)
+        return null;
+    return new Date(+m[1], +m[2] - 1, +m[3]);
+}
+function getFileDate(app, file) {
+    var _a, _b;
+    const fm = (_b = (_a = app.metadataCache.getFileCache(file)) === null || _a === void 0 ? void 0 : _a.frontmatter) !== null && _b !== void 0 ? _b : {};
+    const cd = fm.creation_date;
+    if (cd) {
+        const s = cd instanceof Date ? dateToKey(cd) : String(cd);
+        const d = parseLocalDate(s);
+        if (d)
+            return d;
+    }
+    const m = file.basename.match(/(\d{4})-(\d{2})-(\d{2})/);
+    if (m)
+        return new Date(+m[1], +m[2] - 1, +m[3]);
+    return null;
+}
+function formatDate(d) {
+    return d.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
+}
+// ─── Stat Helpers ─────────────────────────────────────────────────────────────
+function consecutiveStreak(sortedDates) {
+    if (sortedDates.length === 0)
+        return 0;
+    let maxStreak = 1;
+    let cur = 1;
+    for (let i = 1; i < sortedDates.length; i++) {
+        const diffDays = Math.round((sortedDates[i].getTime() - sortedDates[i - 1].getTime()) / 86400000);
+        if (diffDays === 1) {
+            cur++;
+            if (cur > maxStreak)
+                maxStreak = cur;
+        }
+        else {
+            cur = 1;
+        }
+    }
+    return maxStreak;
+}
+function findStreakEarnedDate(sortedDates, tier) {
+    let i = 0;
+    while (i < sortedDates.length) {
+        let runLen = 1;
+        let j = i + 1;
+        while (j < sortedDates.length) {
+            const diff = Math.round((sortedDates[j].getTime() - sortedDates[j - 1].getTime()) / 86400000);
+            if (diff === 1) {
+                runLen++;
+                j++;
+            }
+            else
+                break;
+        }
+        if (runLen >= tier)
+            return sortedDates[i + tier - 1];
+        i = j;
+    }
+    return null;
+}
+function macroPercent(grams, calsPerGram, totalCal) {
+    if (totalCal === 0)
+        return 0;
+    return (grams * calsPerGram / totalCal) * 100;
+}
+// ─── Data Collection ──────────────────────────────────────────────────────────
+function collectWeightData(app, settings) {
+    var _a, _b;
+    const folder = settings.achievementsDailyNotesFolder.replace(/\/$/, "");
+    const result = [];
+    for (const file of app.vault.getMarkdownFiles()) {
+        if (!file.path.startsWith(folder + "/"))
+            continue;
+        const fm = (_b = (_a = app.metadataCache.getFileCache(file)) === null || _a === void 0 ? void 0 : _a.frontmatter) !== null && _b !== void 0 ? _b : {};
+        const weight = Number(fm.weight);
+        if (!weight || isNaN(weight))
+            continue;
+        const date = getFileDate(app, file);
+        if (!date)
+            continue;
+        result.push({ date, weight });
+    }
+    result.sort((a, b) => a.date.getTime() - b.date.getTime());
+    return result;
+}
+function collectFoodLogData(app, settings) {
+    var _a, _b;
+    const folder = settings.achievementsFoodLogFolder.replace(/\/$/, "");
+    const result = [];
+    for (const file of app.vault.getMarkdownFiles()) {
+        if (!file.path.startsWith(folder + "/"))
+            continue;
+        const fm = (_b = (_a = app.metadataCache.getFileCache(file)) === null || _a === void 0 ? void 0 : _a.frontmatter) !== null && _b !== void 0 ? _b : {};
+        if (fm.cal_total === undefined || fm.cal_total === null)
+            continue;
+        const date = getFileDate(app, file);
+        if (!date)
+            continue;
+        result.push({
+            date,
+            cal: Number(fm.cal_total) || 0,
+            carbs: Number(fm.carbs_total) || 0,
+            fat: Number(fm.fat_total) || 0,
+            protein: Number(fm.protein_total) || 0,
+        });
+    }
+    result.sort((a, b) => a.date.getTime() - b.date.getTime());
+    return result;
+}
+function collectExerciseDates(app, settings) {
+    const folder = settings.achievementsExerciseFolder.replace(/\/$/, "");
+    const result = new Set();
+    for (const file of app.vault.getMarkdownFiles()) {
+        if (!file.path.startsWith(folder + "/"))
+            continue;
+        const date = getFileDate(app, file);
+        if (date)
+            result.add(dateToKey(date));
+    }
+    return result;
+}
+function collectResistanceWins(app, settings) {
+    var _a, _b;
+    const folder = settings.achievementsWnFolder.replace(/\/$/, "");
+    let total = 0;
+    for (const file of app.vault.getMarkdownFiles()) {
+        if (!file.path.startsWith(folder + "/"))
+            continue;
+        const fm = (_b = (_a = app.metadataCache.getFileCache(file)) === null || _a === void 0 ? void 0 : _a.frontmatter) !== null && _b !== void 0 ? _b : {};
+        total += Math.max(0, Math.round(Number(fm.resistance_wins) || 0));
+    }
+    return total;
+}
+// ─── Badge Builders ───────────────────────────────────────────────────────────
+function buildWeightBadges(weightData, settings) {
+    const { achievementsStartWeight: start, achievementsGoalWeight: goal } = settings;
+    const thresholds = [];
+    let t = start - 20;
+    while (t >= goal) {
+        thresholds.push(Math.round(t));
+        t -= 20;
+    }
+    return thresholds.map(threshold => {
+        const hit = weightData.find(e => e.weight <= threshold);
+        return {
+            label: `${threshold} lbs`,
+            unlocked: !!hit,
+            earnedDate: hit ? hit.date : null,
+            hint: `Reach ${threshold} lbs`,
+        };
+    });
+}
+function buildStreakBadges(sortedDates, tiers, labelFn, hintFn) {
+    const longest = consecutiveStreak(sortedDates);
+    return tiers.map(tier => {
+        const unlocked = longest >= tier;
+        return {
+            label: labelFn(tier),
+            unlocked,
+            earnedDate: unlocked ? findStreakEarnedDate(sortedDates, tier) : null,
+            hint: hintFn(tier),
+        };
+    });
+}
+function buildCountBadges(qualifyingDays, tiers, labelFn, hintFn) {
+    return tiers.map(tier => ({
+        label: labelFn(tier),
+        unlocked: qualifyingDays.length >= tier,
+        earnedDate: qualifyingDays.length >= tier ? qualifyingDays[tier - 1] : null,
+        hint: hintFn(tier),
+    }));
+}
+function buildResistanceBadges(total) {
+    return [1, 5, 10, 25, 50].map(tier => ({
+        label: `${tier} Resistance Win${tier > 1 ? "s" : ""}`,
+        unlocked: total >= tier,
+        earnedDate: null,
+        hint: `${tier} win${tier > 1 ? "s" : ""}`,
+    }));
+}
+// ─── Rendering ────────────────────────────────────────────────────────────────
+function renderCategory(container, category) {
+    const unlocked = category.badges.filter(b => b.unlocked).length;
+    const catEl = container.createEl("div", { cls: "tracker-pro-achievements-category" });
+    const headerEl = catEl.createEl("div", { cls: "tracker-pro-achievements-category-header" });
+    headerEl.createEl("h3", { text: category.name });
+    headerEl.createEl("span", {
+        text: `${unlocked} of ${category.badges.length} unlocked`,
+        cls: "tracker-pro-achievements-category-count",
+    });
+    const grid = catEl.createEl("div", { cls: "tracker-pro-achievements-grid" });
+    for (const badge of category.badges) {
+        const badgeEl = grid.createEl("div", { cls: "tracker-pro-achievement-badge" });
+        badgeEl.createEl("div", {
+            cls: `tracker-pro-achievement-icon ${badge.unlocked ? "unlocked" : "locked"}`,
+            text: badge.unlocked ? category.icon : "🔒",
+        });
+        badgeEl.createEl("div", { cls: "tracker-pro-achievement-label", text: badge.label });
+        const dateText = badge.unlocked
+            ? (badge.earnedDate ? formatDate(badge.earnedDate) : "Earned")
+            : badge.hint;
+        badgeEl.createEl("div", { cls: "tracker-pro-achievement-date", text: dateText });
+    }
+}
+// ─── Main Export ──────────────────────────────────────────────────────────────
+function renderAchievementsBlock(el, app, settings) {
+    const weightData = collectWeightData(app, settings);
+    const foodLogData = collectFoodLogData(app, settings);
+    const exerciseDateSet = collectExerciseDates(app, settings);
+    const totalResistanceWins = collectResistanceWins(app, settings);
+    // Deduplicate food log entries by date (first per day; data already sorted ascending)
+    const uniqueFoodLogMap = new Map();
+    for (const e of foodLogData) {
+        const key = dateToKey(e.date);
+        if (!uniqueFoodLogMap.has(key))
+            uniqueFoodLogMap.set(key, e);
+    }
+    const uniqueFoodLog = [...uniqueFoodLogMap.values()];
+    // Sorted unique food log dates for streak computation
+    const foodLogDates = uniqueFoodLog.map(e => e.date);
+    // Sorted unique exercise date objects
+    const sortedExerciseDates = [...exerciseDateSet]
+        .sort()
+        .map(s => { const m = s.match(/(\d{4})-(\d{2})-(\d{2})/); return m ? new Date(+m[1], +m[2] - 1, +m[3]) : null; })
+        .filter((d) => d !== null);
+    // Calorie qualifying days (sorted, deduped)
+    const calorieQualDays = uniqueFoodLog
+        .filter(e => e.cal <= settings.achievementsCalorieGoal)
+        .map(e => e.date);
+    // Macro balance qualifying days
+    const macroQualDays = uniqueFoodLog
+        .filter(e => {
+        if (e.cal <= 0)
+            return false;
+        const tol = settings.achievementsMacroTolerance;
+        return (Math.abs(macroPercent(e.protein, 4, e.cal) - settings.achievementsProteinPct) <= tol &&
+            Math.abs(macroPercent(e.fat, 9, e.cal) - settings.achievementsFatPct) <= tol &&
+            Math.abs(macroPercent(e.carbs, 4, e.cal) - settings.achievementsCarbPct) <= tol);
+    })
+        .map(e => e.date);
+    const categories = [
+        {
+            name: "Weight Milestones",
+            icon: "⚖️",
+            badges: buildWeightBadges(weightData, settings),
+        },
+        {
+            name: "Tracked Day Streaks",
+            icon: "📋",
+            badges: buildStreakBadges(foodLogDates, [3, 7, 14, 30, 60, 90], t => `${t}-Day Tracking Streak`, t => `${t}-day streak`),
+        },
+        {
+            name: "Exercise Streaks",
+            icon: "🚴",
+            badges: buildStreakBadges(sortedExerciseDates, [3, 7, 14, 21, 30], t => `${t}-Day Exercise Streak`, t => `${t}-day streak`),
+        },
+        {
+            name: "Calorie Goal",
+            icon: "🎯",
+            badges: buildCountBadges(calorieQualDays, [7, 14, 30, 60, 90], t => `${t} Days Under Calorie Goal`, t => `${t} days`),
+        },
+        {
+            name: "Macro Balance",
+            icon: "🥗",
+            badges: buildCountBadges(macroQualDays, [7, 14, 30, 60, 90], t => `${t} Days Macro Balanced`, t => `${t} days`),
+        },
+        {
+            name: "Resistance Wins",
+            icon: "💪",
+            badges: buildResistanceBadges(totalResistanceWins),
+        },
+    ];
+    el.empty();
+    const wrapper = el.createEl("div", { cls: "tracker-pro-achievements" });
+    wrapper.createEl("p", {
+        text: `Macro balance target: ${settings.achievementsProteinPct}% protein / ${settings.achievementsFatPct}% fat / ${settings.achievementsCarbPct}% carbs  ±${settings.achievementsMacroTolerance}%`,
+        attr: { style: "font-size: 0.8em; color: var(--text-muted); margin-bottom: 16px;" },
+    });
+    for (const category of categories) {
+        if (category.badges.length === 0)
+            continue;
+        renderCategory(wrapper, category);
+    }
+}
+
 // ─── Error Display ────────────────────────────────────────────────────────────
 function renderErrors(container, errors) {
     container.empty();
@@ -21366,6 +21661,12 @@ async function renderChartContent(app, el, config, settings) {
             renderVitaminTrackerBlock(el, app, settings);
         return;
     }
+    // ── Achievements ───────────────────────────────────────────────────────────
+    if (config.type === "achievements") {
+        if (settings)
+            renderAchievementsBlock(el, app, settings);
+        return;
+    }
     // ── Summary ───────────────────────────────────────────────────────────────
     if (config.type === "summary") {
         const entries = await collectRawEntries(app, config);
@@ -21462,7 +21763,7 @@ function renderDateSelector(selectorEl, chartEl, app, config, settings) {
     });
 }
 // ─── Main Render ──────────────────────────────────────────────────────────────
-const NO_HEIGHT_TYPES = ["summary", "table", "daily-table", "bills", "reading-challenge", "vitamins"];
+const NO_HEIGHT_TYPES = ["summary", "table", "daily-table", "bills", "reading-challenge", "vitamins", "achievements"];
 async function renderTracker(app, container, config, settings) {
     container.empty();
     container.addClass("tracker-pro-container");
@@ -21484,6 +21785,18 @@ async function renderTracker(app, container, config, settings) {
 }
 
 const DEFAULT_SETTINGS = {
+    // ── Achievements ──────────────────────────────────────────────────────────
+    achievementsDailyNotesFolder: "Data/Daily Notes",
+    achievementsFoodLogFolder: "Data/Food Logs",
+    achievementsExerciseFolder: "Data/Exercise Notes",
+    achievementsWnFolder: "Data/Weight Loss Notes",
+    achievementsStartWeight: 366.2,
+    achievementsGoalWeight: 180,
+    achievementsCalorieGoal: 1750,
+    achievementsProteinPct: 40,
+    achievementsFatPct: 30,
+    achievementsCarbPct: 30,
+    achievementsMacroTolerance: 5,
     // ── Bills ─────────────────────────────────────────────────────────────────
     billsMasterFolder: "Data/Bills",
     billsPaymentFolder: "Data/Bills/Payments/BP-{{DATE:YYYY}}/BP-{{DATE:YYYY-MM}}",
@@ -21516,8 +21829,134 @@ class TrackerSettingTab extends obsidian.PluginSettingTab {
         // Sections are ordered alphabetically by heading name.
         // When adding a new settings section, insert it in alphabetical order here
         // and add a matching entry to the interface comment block in DEFAULT_SETTINGS.
-        // Current order: Bills · Meal Logger · Reading Challenge · Vitamins · Tracker Pro General Settings
+        // Current order: Achievements · Bills · Meal Logger · Reading Challenge · Vitamins · Tracker Pro General Settings
         // ─────────────────────────────────────────────────────────────────────
+        // ── Achievements ──────────────────────────────────────────────────────
+        containerEl.createEl("h2", { text: "Achievements" });
+        new obsidian.Setting(containerEl)
+            .setName("Daily notes folder")
+            .setDesc("Folder containing daily notes with a `weight` frontmatter property.")
+            .addText(text => text
+            .setPlaceholder("Data/Daily Notes")
+            .setValue(this.plugin.settings.achievementsDailyNotesFolder)
+            .onChange(async (value) => {
+            this.plugin.settings.achievementsDailyNotesFolder = value.trim();
+            await this.plugin.saveSettings();
+        }));
+        new obsidian.Setting(containerEl)
+            .setName("Food log folder")
+            .setDesc("Folder containing daily food log notes with `cal_total`, `carbs_total`, `fat_total`, `protein_total` frontmatter properties.")
+            .addText(text => text
+            .setPlaceholder("Data/Food Logs")
+            .setValue(this.plugin.settings.achievementsFoodLogFolder)
+            .onChange(async (value) => {
+            this.plugin.settings.achievementsFoodLogFolder = value.trim();
+            await this.plugin.saveSettings();
+        }));
+        new obsidian.Setting(containerEl)
+            .setName("Exercise notes folder")
+            .setDesc("Folder containing exercise notes. Any note in this folder counts as an exercise day.")
+            .addText(text => text
+            .setPlaceholder("Data/Exercise Notes")
+            .setValue(this.plugin.settings.achievementsExerciseFolder)
+            .onChange(async (value) => {
+            this.plugin.settings.achievementsExerciseFolder = value.trim();
+            await this.plugin.saveSettings();
+        }));
+        new obsidian.Setting(containerEl)
+            .setName("Weight loss notes folder")
+            .setDesc("Folder containing weight loss session notes with an optional `resistance_wins` frontmatter property (integer).")
+            .addText(text => text
+            .setPlaceholder("Data/Weight Loss Notes")
+            .setValue(this.plugin.settings.achievementsWnFolder)
+            .onChange(async (value) => {
+            this.plugin.settings.achievementsWnFolder = value.trim();
+            await this.plugin.saveSettings();
+        }));
+        new obsidian.Setting(containerEl)
+            .setName("Starting weight (lbs)")
+            .setDesc("Your official starting weight. Used to calculate weight milestone badges.")
+            .addText(text => text
+            .setValue(String(this.plugin.settings.achievementsStartWeight))
+            .onChange(async (value) => {
+            const n = parseFloat(value);
+            if (!isNaN(n)) {
+                this.plugin.settings.achievementsStartWeight = n;
+                await this.plugin.saveSettings();
+            }
+        }));
+        new obsidian.Setting(containerEl)
+            .setName("Goal weight (lbs)")
+            .setDesc("Your target weight. Milestones are calculated between start and goal.")
+            .addText(text => text
+            .setValue(String(this.plugin.settings.achievementsGoalWeight))
+            .onChange(async (value) => {
+            const n = parseFloat(value);
+            if (!isNaN(n)) {
+                this.plugin.settings.achievementsGoalWeight = n;
+                await this.plugin.saveSettings();
+            }
+        }));
+        new obsidian.Setting(containerEl)
+            .setName("Calorie goal (kcal)")
+            .setDesc("Days at or below this value count toward calorie badge progress.")
+            .addText(text => text
+            .setValue(String(this.plugin.settings.achievementsCalorieGoal))
+            .onChange(async (value) => {
+            const n = parseFloat(value);
+            if (!isNaN(n)) {
+                this.plugin.settings.achievementsCalorieGoal = n;
+                await this.plugin.saveSettings();
+            }
+        }));
+        new obsidian.Setting(containerEl)
+            .setName("Protein target (%)")
+            .setDesc("Target percentage of calories from protein.")
+            .addText(text => text
+            .setValue(String(this.plugin.settings.achievementsProteinPct))
+            .onChange(async (value) => {
+            const n = parseFloat(value);
+            if (!isNaN(n)) {
+                this.plugin.settings.achievementsProteinPct = n;
+                await this.plugin.saveSettings();
+            }
+        }));
+        new obsidian.Setting(containerEl)
+            .setName("Fat target (%)")
+            .setDesc("Target percentage of calories from fat.")
+            .addText(text => text
+            .setValue(String(this.plugin.settings.achievementsFatPct))
+            .onChange(async (value) => {
+            const n = parseFloat(value);
+            if (!isNaN(n)) {
+                this.plugin.settings.achievementsFatPct = n;
+                await this.plugin.saveSettings();
+            }
+        }));
+        new obsidian.Setting(containerEl)
+            .setName("Carb target (%)")
+            .setDesc("Target percentage of calories from carbohydrates.")
+            .addText(text => text
+            .setValue(String(this.plugin.settings.achievementsCarbPct))
+            .onChange(async (value) => {
+            const n = parseFloat(value);
+            if (!isNaN(n)) {
+                this.plugin.settings.achievementsCarbPct = n;
+                await this.plugin.saveSettings();
+            }
+        }));
+        new obsidian.Setting(containerEl)
+            .setName("Macro tolerance (%)")
+            .setDesc("Allowed deviation from each macro target. A day counts as balanced if all three macros are within this many percentage points of their targets.")
+            .addText(text => text
+            .setValue(String(this.plugin.settings.achievementsMacroTolerance))
+            .onChange(async (value) => {
+            const n = parseFloat(value);
+            if (!isNaN(n)) {
+                this.plugin.settings.achievementsMacroTolerance = n;
+                await this.plugin.saveSettings();
+            }
+        }));
         // ── Bills ─────────────────────────────────────────────────────────────
         containerEl.createEl("h2", { text: "Bills" });
         containerEl.createEl("p", {
@@ -23197,6 +23636,17 @@ function isRelevantFile(changedPath, config, settings) {
     if (config.type === "vitamins" && settings) {
         const folder = settings.vitaminsFolder.replace(/\/$/, "");
         if (changedPath.startsWith(folder + "/"))
+            return true;
+        return false;
+    }
+    if (config.type === "achievements" && settings) {
+        const folders = [
+            settings.achievementsDailyNotesFolder,
+            settings.achievementsFoodLogFolder,
+            settings.achievementsExerciseFolder,
+            settings.achievementsWnFolder,
+        ].map(f => f.replace(/\/$/, ""));
+        if (folders.some(f => changedPath.startsWith(f + "/")))
             return true;
         return false;
     }

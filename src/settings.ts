@@ -2,6 +2,19 @@ import { App, PluginSettingTab, Setting } from "obsidian";
 import Tracker from "./main";
 
 export interface TrackerSettings {
+    // ── Achievements ──────────────────────────────────────────────────────────
+    achievementsDailyNotesFolder: string;
+    achievementsFoodLogFolder:    string;
+    achievementsExerciseFolder:   string;
+    achievementsWnFolder:         string;
+    achievementsStartWeight:      number;
+    achievementsGoalWeight:       number;
+    achievementsCalorieGoal:      number;
+    achievementsProteinPct:       number;
+    achievementsFatPct:           number;
+    achievementsCarbPct:          number;
+    achievementsMacroTolerance:   number;
+
     // ── Bills ─────────────────────────────────────────────────────────────────
     billsMasterFolder:  string;
     billsPaymentFolder: string;
@@ -28,6 +41,19 @@ export interface TrackerSettings {
 }
 
 export const DEFAULT_SETTINGS: TrackerSettings = {
+    // ── Achievements ──────────────────────────────────────────────────────────
+    achievementsDailyNotesFolder: "Data/Daily Notes",
+    achievementsFoodLogFolder:    "Data/Food Logs",
+    achievementsExerciseFolder:   "Data/Exercise Notes",
+    achievementsWnFolder:         "Data/Weight Loss Notes",
+    achievementsStartWeight:      366.2,
+    achievementsGoalWeight:       180,
+    achievementsCalorieGoal:      1750,
+    achievementsProteinPct:       40,
+    achievementsFatPct:           30,
+    achievementsCarbPct:          30,
+    achievementsMacroTolerance:   5,
+
     // ── Bills ─────────────────────────────────────────────────────────────────
     billsMasterFolder:  "Data/Bills",
     billsPaymentFolder: "Data/Bills/Payments/BP-{{DATE:YYYY}}/BP-{{DATE:YYYY-MM}}",
@@ -69,8 +95,126 @@ export class TrackerSettingTab extends PluginSettingTab {
         // Sections are ordered alphabetically by heading name.
         // When adding a new settings section, insert it in alphabetical order here
         // and add a matching entry to the interface comment block in DEFAULT_SETTINGS.
-        // Current order: Bills · Meal Logger · Reading Challenge · Vitamins · Tracker Pro General Settings
+        // Current order: Achievements · Bills · Meal Logger · Reading Challenge · Vitamins · Tracker Pro General Settings
         // ─────────────────────────────────────────────────────────────────────
+
+        // ── Achievements ──────────────────────────────────────────────────────
+
+        containerEl.createEl("h2", { text: "Achievements" });
+
+        new Setting(containerEl)
+            .setName("Daily notes folder")
+            .setDesc("Folder containing daily notes with a `weight` frontmatter property.")
+            .addText(text => text
+                .setPlaceholder("Data/Daily Notes")
+                .setValue(this.plugin.settings.achievementsDailyNotesFolder)
+                .onChange(async value => {
+                    this.plugin.settings.achievementsDailyNotesFolder = value.trim();
+                    await this.plugin.saveSettings();
+                }));
+
+        new Setting(containerEl)
+            .setName("Food log folder")
+            .setDesc("Folder containing daily food log notes with `cal_total`, `carbs_total`, `fat_total`, `protein_total` frontmatter properties.")
+            .addText(text => text
+                .setPlaceholder("Data/Food Logs")
+                .setValue(this.plugin.settings.achievementsFoodLogFolder)
+                .onChange(async value => {
+                    this.plugin.settings.achievementsFoodLogFolder = value.trim();
+                    await this.plugin.saveSettings();
+                }));
+
+        new Setting(containerEl)
+            .setName("Exercise notes folder")
+            .setDesc("Folder containing exercise notes. Any note in this folder counts as an exercise day.")
+            .addText(text => text
+                .setPlaceholder("Data/Exercise Notes")
+                .setValue(this.plugin.settings.achievementsExerciseFolder)
+                .onChange(async value => {
+                    this.plugin.settings.achievementsExerciseFolder = value.trim();
+                    await this.plugin.saveSettings();
+                }));
+
+        new Setting(containerEl)
+            .setName("Weight loss notes folder")
+            .setDesc("Folder containing weight loss session notes with an optional `resistance_wins` frontmatter property (integer).")
+            .addText(text => text
+                .setPlaceholder("Data/Weight Loss Notes")
+                .setValue(this.plugin.settings.achievementsWnFolder)
+                .onChange(async value => {
+                    this.plugin.settings.achievementsWnFolder = value.trim();
+                    await this.plugin.saveSettings();
+                }));
+
+        new Setting(containerEl)
+            .setName("Starting weight (lbs)")
+            .setDesc("Your official starting weight. Used to calculate weight milestone badges.")
+            .addText(text => text
+                .setValue(String(this.plugin.settings.achievementsStartWeight))
+                .onChange(async value => {
+                    const n = parseFloat(value);
+                    if (!isNaN(n)) { this.plugin.settings.achievementsStartWeight = n; await this.plugin.saveSettings(); }
+                }));
+
+        new Setting(containerEl)
+            .setName("Goal weight (lbs)")
+            .setDesc("Your target weight. Milestones are calculated between start and goal.")
+            .addText(text => text
+                .setValue(String(this.plugin.settings.achievementsGoalWeight))
+                .onChange(async value => {
+                    const n = parseFloat(value);
+                    if (!isNaN(n)) { this.plugin.settings.achievementsGoalWeight = n; await this.plugin.saveSettings(); }
+                }));
+
+        new Setting(containerEl)
+            .setName("Calorie goal (kcal)")
+            .setDesc("Days at or below this value count toward calorie badge progress.")
+            .addText(text => text
+                .setValue(String(this.plugin.settings.achievementsCalorieGoal))
+                .onChange(async value => {
+                    const n = parseFloat(value);
+                    if (!isNaN(n)) { this.plugin.settings.achievementsCalorieGoal = n; await this.plugin.saveSettings(); }
+                }));
+
+        new Setting(containerEl)
+            .setName("Protein target (%)")
+            .setDesc("Target percentage of calories from protein.")
+            .addText(text => text
+                .setValue(String(this.plugin.settings.achievementsProteinPct))
+                .onChange(async value => {
+                    const n = parseFloat(value);
+                    if (!isNaN(n)) { this.plugin.settings.achievementsProteinPct = n; await this.plugin.saveSettings(); }
+                }));
+
+        new Setting(containerEl)
+            .setName("Fat target (%)")
+            .setDesc("Target percentage of calories from fat.")
+            .addText(text => text
+                .setValue(String(this.plugin.settings.achievementsFatPct))
+                .onChange(async value => {
+                    const n = parseFloat(value);
+                    if (!isNaN(n)) { this.plugin.settings.achievementsFatPct = n; await this.plugin.saveSettings(); }
+                }));
+
+        new Setting(containerEl)
+            .setName("Carb target (%)")
+            .setDesc("Target percentage of calories from carbohydrates.")
+            .addText(text => text
+                .setValue(String(this.plugin.settings.achievementsCarbPct))
+                .onChange(async value => {
+                    const n = parseFloat(value);
+                    if (!isNaN(n)) { this.plugin.settings.achievementsCarbPct = n; await this.plugin.saveSettings(); }
+                }));
+
+        new Setting(containerEl)
+            .setName("Macro tolerance (%)")
+            .setDesc("Allowed deviation from each macro target. A day counts as balanced if all three macros are within this many percentage points of their targets.")
+            .addText(text => text
+                .setValue(String(this.plugin.settings.achievementsMacroTolerance))
+                .onChange(async value => {
+                    const n = parseFloat(value);
+                    if (!isNaN(n)) { this.plugin.settings.achievementsMacroTolerance = n; await this.plugin.saveSettings(); }
+                }));
 
         // ── Bills ─────────────────────────────────────────────────────────────
 
