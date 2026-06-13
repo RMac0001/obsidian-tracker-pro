@@ -26,6 +26,17 @@ function isRelevantFile(changedPath: string, config: TrackerConfig, settings?: T
         return false;
     }
 
+    if (config.type === "achievements" && settings) {
+        const folders = [
+            settings.achievementsDailyNotesFolder,
+            settings.achievementsFoodLogFolder,
+            settings.achievementsExerciseFolder,
+            settings.achievementsWnFolder,
+        ].map(f => f.replace(/\/$/, ""));
+        if (folders.some(f => changedPath.startsWith(f + "/"))) return true;
+        return false;
+    }
+
     if (config.folder) {
         const folder = config.folder.replace(/^\//, "").replace(/\/$/, "");
         if (changedPath.startsWith(folder + "/") || changedPath === folder) {

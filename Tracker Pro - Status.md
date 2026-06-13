@@ -4,6 +4,45 @@
 
 ---
 
+### v1.6.0 — Achievements Block
+
+New `type: achievements` inline block for tracking gamified progress badges.
+
+**Codeblock:**
+```yaml
+type: achievements
+```
+
+No additional configuration in the codeblock — all data sources and targets are read from plugin settings.
+
+**Six badge categories:**
+
+| Category | Tiers | Data source |
+|---|---|---|
+| Weight Milestones | every 20 lbs from start → goal | `weight` property in daily notes |
+| Tracked Day Streaks | 3, 7, 14, 30, 60, 90 days | food log notes (consecutive days) |
+| Exercise Streaks | 3, 7, 14, 21, 30 days | exercise notes (consecutive days) |
+| Calorie Goal | 7, 14, 30, 60, 90 days | `cal_total` ≤ calorie goal setting |
+| Macro Balance | 7, 14, 30, 60, 90 days | Atwater % within ±tolerance of targets |
+| Resistance Wins | 1, 5, 10, 25, 50 wins | `resistance_wins` summed across WN notes |
+
+**New Achievements settings section (11 fields):**
+- Daily notes folder, food log folder, exercise notes folder, weight loss notes folder
+- Starting weight, goal weight, calorie goal
+- Protein %, fat %, carb % targets, macro tolerance %
+
+**`resistance_wins` frontmatter property:** Optional integer on any weight loss note. The achievements block sums this value across all notes in the WN folder. Add `resistance_wins: 1` (or higher) to log wins.
+
+**Macro balance formula:** Atwater — `(macro_g × factor / cal_total) × 100` where factors are protein × 4, fat × 9, carbs × 4. A day qualifies if all three macros are within `±achievementsMacroTolerance` percentage points of their targets.
+
+**Rendering:** Each badge shows a circular icon (accent color when unlocked, grey lock when locked), the tier label, and either the earned date or a hint for locked badges.
+
+**Auto-refresh:** re-renders on any file change in any of the four configured folders.
+
+**New file:** `src/charts/achievementsChart.ts`
+
+---
+
 ### v1.5.9 — Macro Percent Fields in Nutrition Commands
 
 Both nutrition commands in `src/recipeCalculator.ts` now calculate and write
