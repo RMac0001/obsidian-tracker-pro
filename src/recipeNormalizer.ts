@@ -430,7 +430,7 @@ export async function normalizeRecipeIngredients(app: App, settings: TrackerSett
 
     for (let i = range.start; i < range.end; i++) {
         const line = lines[i];
-        const bulletM = line.match(/^(\s*[-*]\s+)(.*)/);
+        const bulletM = line.match(/^(\s*[-*]\s+(?:\[[ xX]\]\s+)?)(.*)/);
         if (!bulletM) continue;
 
         const bulletPrefix  = bulletM[1];
