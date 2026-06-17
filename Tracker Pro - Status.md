@@ -4,6 +4,18 @@
 
 ---
 
+### v1.6.2 — Fix: Normalize Recipe Ingredients ignoring checklist lines
+
+The bullet-stripping regex in `normalizeRecipeIngredients` only consumed `- ` / `* `, leaving the checkbox marker `[ ] ` attached to the content. This caused `classifyContent()` to see `[ ] 3/4 c. ...` (starts with `[`, not a digit), routing every checklist-format line to case (b) — no normalization, no linking. Fixed by extending the regex to optionally consume the checkbox as part of the bullet prefix:
+
+```
+/^(\s*[-*]\s+(?:\[[ xX]\]\s+)?)(.*)/
+```
+
+The checkbox is written back untouched in Step 7, same as the bullet character always was.
+
+---
+
 ### v1.6.1 — Normalize Recipe Ingredients
 
 New command: **Normalize Recipe Ingredients** (id: `normalize-recipe-ingredients`).
