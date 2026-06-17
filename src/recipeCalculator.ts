@@ -1,4 +1,5 @@
 import { App, Modal, Notice } from "obsidian";
+import { findSectionRange } from "./utils";
 
 // ─── Unit Conversion Tables ───────────────────────────────────────────────────
 
@@ -63,7 +64,7 @@ interface Nutrition {
     protein: number;
 }
 
-interface Skipped {
+export interface Skipped {
     name: string;
     reason: string;
 }
@@ -80,18 +81,9 @@ function parseAmount(s: string): number {
 
 function extractSection(content: string, header: string): string | null {
     const lines = content.split("\n");
-    const headerRe = new RegExp(`^#{1,6}\\s+${header}\\s*$`, "i");
-    let start = -1;
-    for (let i = 0; i < lines.length; i++) {
-        if (headerRe.test(lines[i])) { start = i + 1; break; }
-    }
-    if (start === -1) return null;
-    const out: string[] = [];
-    for (let i = start; i < lines.length; i++) {
-        if (/^#{1,6}\s/.test(lines[i])) break;
-        out.push(lines[i]);
-    }
-    return out.join("\n");
+    const range = findSectionRange(lines, header);
+    if (!range) return null;
+    return lines.slice(range.start, range.end).join("\n");
 }
 
 function parseIngredientLine(line: string): Ingredient | null {
@@ -227,7 +219,7 @@ function applyMacroPercents(content: string, carbs: number, fat: number, protein
 
 // ─── Notes Section Write-Back ─────────────────────────────────────────────────
 
-function applyNotesSection(content: string, skipped: Skipped[]): string {
+export function applyNotesSection(content: string, skipped: Skipped[]): string {
     const bulletLines = skipped.map(s => `- ${s.name} — ${s.reason}`);
     const newSection =
         "## Notes\n" +

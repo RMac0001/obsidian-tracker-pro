@@ -4,6 +4,44 @@
 
 ---
 
+### v1.6.1 — Normalize Recipe Ingredients
+
+New command: **Normalize Recipe Ingredients** (id: `normalize-recipe-ingredients`).
+
+Cleans up freshly web-clipped ingredient lists in two phases: quantity/unit normalization then wikilink insertion. Nothing is written until every modal is resolved — cancel at any point and the note is untouched.
+
+**Phase 1 — Quantity & unit normalization:**
+- Converts vulgar/Unicode fractions (`3/4`, `¾`) to decimals (`0.75`)
+- Strips trailing periods from unit abbreviations (`tbsp.` → `tbsp`, `oz.` → `oz`)
+- Collapses packaged-quantity notation (`4 (6-oz.) cans` → `24 oz cans`)
+- Normalizes unit names to canonical form via the shared `UNIT_CANONICAL` map (now in `utils.ts`)
+- Ambiguous lines (ranges, unrecognized patterns) are queued for a sequential review modal
+
+**Phase 2 — Wikilink insertion:**
+- Lines already containing `[[` are skipped
+- Common seasonings (salt, pepper, dried herbs, explicit list) are skipped — no link attempted, no Notes entry
+- Each remaining ingredient's "core name" is extracted by stripping leading prep-action words and trailing comma-clauses/parentheticals/serving notes
+- Exact case-insensitive match against food notes (`settings.foodFolder`) and recipes (`settings.recipeFolder`): auto-linked, no modal
+- Fuzzy match (Obsidian `prepareFuzzySearch`, top 5, score > -1): shown in a modal with candidate buttons and an editable search box
+- No match at all: added directly to `## Notes` as "needs creation"
+- Modal also offers "Create new food note" (→ Notes) and "Leave unlinked"
+
+**Link format:**
+- Exact casing/plurality match: `[[Title]]`
+- Otherwise: `[[Title|core-as-written]]`
+
+**Utility additions (`src/utils.ts`):**
+- `UNIT_CANONICAL` map relocated from `mealLogger.ts` and extended with `c`, `pint`/`pt`, `quart`/`qt` aliases
+- `normalizeUnit()`, `fmt2()` relocated from `mealLogger.ts`
+- New `findSectionRange(lines, header)` — shared section-range lookup
+- New `getCandidateFiles(app, settings)` — enumerates food + recipe note pool
+
+**`src/mealLogger.ts`:** local `UNIT_CANONICAL` / `normalizeUnit` / `fmt2` removed; imported from `utils` instead (no behavior change).
+
+**`src/recipeCalculator.ts`:** `extractSection` now delegates to `findSectionRange`; `Skipped` interface and `applyNotesSection` exported for reuse.
+
+---
+
 ### v1.6.0 — Achievements Block
 
 New `type: achievements` inline block for tracking gamified progress badges.

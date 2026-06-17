@@ -19982,6 +19982,70 @@ function resolveDateTemplate(template, date) {
         : window.moment();
     return template.replace(/\{\{DATE:([^}]+)\}\}/g, (_, fmt) => m.format(fmt));
 }
+// ─── Unit Normalization ────────────────────────────────────────────────────────
+const UNIT_CANONICAL = {
+    c: "cup",
+    cup: "cup", cups: "cup",
+    oz: "oz", ounce: "oz", ounces: "oz",
+    "fl oz": "fl oz", "fl. oz": "fl oz", "fluid oz": "fl oz",
+    "fluid ounce": "fl oz", "fluid ounces": "fl oz",
+    tbsp: "tbsp", tablespoon: "tbsp", tablespoons: "tbsp",
+    tsp: "tsp", teaspoon: "tsp", teaspoons: "tsp",
+    lb: "lb", lbs: "lb", pound: "lb", pounds: "lb",
+    g: "g", gram: "g", grams: "g",
+    kg: "kg", kilogram: "kg", kilograms: "kg",
+    ml: "ml", milliliter: "ml", milliliters: "ml",
+    l: "l", liter: "l", liters: "l",
+    slice: "slice", slices: "slice",
+    piece: "piece", pieces: "piece",
+    serving: "serving", servings: "serving",
+    pint: "pint", pints: "pint", pt: "pint",
+    quart: "quart", quarts: "quart", qt: "quart",
+};
+function normalizeUnit(unit) {
+    var _a;
+    const key = unit.toLowerCase().trim();
+    return (_a = UNIT_CANONICAL[key]) !== null && _a !== void 0 ? _a : key;
+}
+function fmt2(n) {
+    return parseFloat(n.toFixed(2)).toString();
+}
+// ─── Section Range ─────────────────────────────────────────────────────────────
+function findSectionRange(lines, header) {
+    const headerRe = new RegExp(`^#{1,6}\\s+${header}\\s*$`, "i");
+    let start = -1;
+    for (let i = 0; i < lines.length; i++) {
+        if (headerRe.test(lines[i])) {
+            start = i + 1;
+            break;
+        }
+    }
+    if (start === -1)
+        return null;
+    let end = lines.length;
+    for (let i = start; i < lines.length; i++) {
+        if (/^#{1,6}\s/.test(lines[i])) {
+            end = i;
+            break;
+        }
+    }
+    return { start, end };
+}
+// ─── Candidate Files ───────────────────────────────────────────────────────────
+function getCandidateFiles(app, settings) {
+    const foodFolder = settings.foodFolder.replace(/\/$/, "");
+    const recipeFolder = settings.recipeFolder.replace(/\/$/, "");
+    const result = [];
+    for (const file of app.vault.getMarkdownFiles()) {
+        if (file.path.startsWith(foodFolder + "/")) {
+            result.push({ file, isFood: true });
+        }
+        else if (file.path.startsWith(recipeFolder + "/")) {
+            result.push({ file, isFood: false });
+        }
+    }
+    return result;
+}
 
 // ─── Defaults ──────────────────────────────────────────────────────────────────
 const DEFAULT_MASTER_FOLDER = "Data/Bills";
@@ -22219,30 +22283,6 @@ function mealKey(mealType) {
 function round1(n) {
     return Math.round(n * 10) / 10;
 }
-const UNIT_CANONICAL = {
-    cup: "cup", cups: "cup",
-    oz: "oz", ounce: "oz", ounces: "oz",
-    "fl oz": "fl oz", "fl. oz": "fl oz", "fluid oz": "fl oz",
-    "fluid ounce": "fl oz", "fluid ounces": "fl oz",
-    tbsp: "tbsp", tablespoon: "tbsp", tablespoons: "tbsp",
-    tsp: "tsp", teaspoon: "tsp", teaspoons: "tsp",
-    lb: "lb", lbs: "lb", pound: "lb", pounds: "lb",
-    g: "g", gram: "g", grams: "g",
-    kg: "kg", kilogram: "kg", kilograms: "kg",
-    ml: "ml", milliliter: "ml", milliliters: "ml",
-    l: "l", liter: "l", liters: "l",
-    slice: "slice", slices: "slice",
-    piece: "piece", pieces: "piece",
-    serving: "serving", servings: "serving",
-};
-function normalizeUnit(unit) {
-    var _a;
-    const key = unit.toLowerCase().trim();
-    return (_a = UNIT_CANONICAL[key]) !== null && _a !== void 0 ? _a : key;
-}
-function fmt2(n) {
-    return parseFloat(n.toFixed(2)).toString();
-}
 function getFoodMeta(app, file) {
     var _a, _b, _c, _d, _e, _f, _g, _h;
     const fm = (_b = (_a = app.metadataCache.getFileCache(file)) === null || _a === void 0 ? void 0 : _a.frontmatter) !== null && _b !== void 0 ? _b : {};
@@ -23303,23 +23343,10 @@ function parseAmount(s) {
 }
 function extractSection(content, header) {
     const lines = content.split("\n");
-    const headerRe = new RegExp(`^#{1,6}\\s+${header}\\s*$`, "i");
-    let start = -1;
-    for (let i = 0; i < lines.length; i++) {
-        if (headerRe.test(lines[i])) {
-            start = i + 1;
-            break;
-        }
-    }
-    if (start === -1)
+    const range = findSectionRange(lines, header);
+    if (!range)
         return null;
-    const out = [];
-    for (let i = start; i < lines.length; i++) {
-        if (/^#{1,6}\s/.test(lines[i]))
-            break;
-        out.push(lines[i]);
-    }
-    return out.join("\n");
+    return lines.slice(range.start, range.end).join("\n");
 }
 function parseIngredientLine(line) {
     var _a;
@@ -23623,6 +23650,468 @@ async function recalcFoodNoteCalories(app) {
     new obsidian.Notice(`Calories updated: ${oldCalories} → ${newCalories}`);
 }
 
+// ─── Seasoning Detection ───────────────────────────────────────────────────────
+const SEASONING_EXPLICIT = new Set([
+    "garlic powder", "onion powder", "paprika", "smoked paprika", "cumin",
+    "chili powder", "cayenne", "bay leaves", "bay leaf", "nutmeg", "cinnamon", "allspice",
+]);
+function isSeasoning(desc) {
+    const lower = desc.toLowerCase().trim();
+    if (/\b(salt|pepper)\b/.test(lower))
+        return true;
+    if (/seasoning\s*$/.test(lower))
+        return true;
+    if (/^(dried|ground)\s+/.test(lower))
+        return true;
+    if (SEASONING_EXPLICIT.has(lower))
+        return true;
+    return false;
+}
+// ─── Unicode Fraction Map ──────────────────────────────────────────────────────
+const UNICODE_FRACTIONS = {
+    "¼": 0.25, "½": 0.5, "¾": 0.75,
+    "⅓": 1 / 3, "⅔": 2 / 3,
+    "⅕": 0.2, "⅖": 0.4, "⅗": 0.6, "⅘": 0.8,
+    "⅙": 1 / 6, "⅚": 5 / 6,
+    "⅛": 0.125, "⅜": 0.375, "⅝": 0.625, "⅞": 0.875,
+};
+const UNICODE_FRAC_RE = /^[¼½¾⅓⅔⅕⅖⅗⅘⅙⅚⅛⅜⅝⅞]/;
+function parseFraction(s) {
+    const parts = s.split("/");
+    return parseInt(parts[0]) / parseInt(parts[1]);
+}
+// ─── Prep-Action Lists ─────────────────────────────────────────────────────────
+const PREP_ACTIONS = [
+    "drained and rinsed", "finely chopped", "roughly chopped", "coarsely chopped",
+    "finely diced", "thinly sliced", "finely grated",
+    "chopped", "diced", "sliced", "minced", "grated", "shredded", "crushed",
+    "melted", "softened", "torn", "drained", "rinsed", "peeled", "trimmed",
+    "julienned", "cubed", "halved", "quartered", "zested", "juiced",
+].sort((a, b) => b.length - a.length);
+const TRAILING_PHRASES = [
+    "plus more for serving", "plus more", "for garnish", "for serving",
+    "to taste", "as needed",
+].sort((a, b) => b.length - a.length);
+// ─── Core Extraction ───────────────────────────────────────────────────────────
+function extractCore(desc) {
+    let text = desc;
+    let leading = "";
+    let trailing = "";
+    // Strip one leading prep action (longest first)
+    for (const action of PREP_ACTIONS) {
+        if (text.toLowerCase().startsWith(action + " ")) {
+            leading = text.slice(0, action.length + 1);
+            text = text.slice(action.length + 1);
+            break;
+        }
+    }
+    // Repeatedly strip trailing parentheticals and comma-clauses
+    let changed = true;
+    while (changed) {
+        changed = false;
+        // Trailing parenthetical
+        const parenM = text.match(/^(.*?)(\s*\([^)]*\))$/);
+        if (parenM && parenM[2]) {
+            trailing = parenM[2] + trailing;
+            text = parenM[1].trimEnd();
+            changed = true;
+            continue;
+        }
+        // Trailing comma-clause (prep action or trailing-only phrase)
+        const commaIdx = text.lastIndexOf(",");
+        if (commaIdx !== -1) {
+            const afterComma = text.slice(commaIdx + 1).trim().toLowerCase();
+            if (TRAILING_PHRASES.some(p => afterComma === p) ||
+                PREP_ACTIONS.some(p => afterComma === p)) {
+                trailing = text.slice(commaIdx) + trailing;
+                text = text.slice(0, commaIdx);
+                changed = true;
+            }
+        }
+    }
+    return { leading, core: text.trim(), trailing };
+}
+// ─── Quantity Normalization ────────────────────────────────────────────────────
+function normalizeQtyRest(qtyStr, rest) {
+    // Two-word unit: "fl oz"
+    const flOzM = rest.match(/^(fl\.?\s*oz\.?)\s*(.*)/i);
+    if (flOzM) {
+        const remainder = flOzM[2];
+        return {
+            normalized: `${qtyStr} fl oz${remainder ? " " + remainder : ""}`,
+            foodDesc: remainder,
+        };
+    }
+    // Single-word unit with optional trailing period
+    const wordM = rest.match(/^([a-zA-Z.]+)\s*(.*)/);
+    if (wordM) {
+        const rawUnit = wordM[1].replace(/\./g, "").toLowerCase();
+        const canonical = UNIT_CANONICAL[rawUnit];
+        if (canonical) {
+            const remainder = wordM[2];
+            return {
+                normalized: `${qtyStr} ${canonical}${remainder ? " " + remainder : ""}`,
+                foodDesc: remainder,
+            };
+        }
+    }
+    // No recognizable unit — just normalize the number
+    return { normalized: `${qtyStr}${rest ? " " + rest : ""}`, foodDesc: rest };
+}
+function classifyContent(content) {
+    // (a) Already linked
+    if (content.includes("[[")) {
+        return { type: "a", qtyPrefix: "", foodDesc: content };
+    }
+    // (b) No quantity — doesn't start with digit or unicode fraction
+    if (!/^\d/.test(content) && !UNICODE_FRAC_RE.test(content)) {
+        return { type: "b", qtyPrefix: "", foodDesc: content };
+    }
+    // (c) Packaged-quantity: count (amount-unit)
+    const packedM = content.match(/^(\d+(?:\.\d+)?)\s+\((\d+(?:\.\d+)?)-([a-zA-Z.]+)\)(.*)/);
+    if (packedM) {
+        const count = parseFloat(packedM[1]);
+        const amount = parseFloat(packedM[2]);
+        const unitRaw = packedM[3].replace(/\./g, "").toLowerCase();
+        const canonical = UNIT_CANONICAL[unitRaw];
+        if (canonical) {
+            const total = count * amount;
+            const rest = packedM[4].trim();
+            return {
+                type: "c",
+                qtyPrefix: `${fmt2(total)} ${canonical} `,
+                foodDesc: rest,
+            };
+        }
+        // Unit doesn't resolve → (e)
+    }
+    // Range check → (e)
+    if (/^\d+(?:\.\d+)?[-]\d+/.test(content) || /^\d+(?:\.\d+)?\s+to\s+\d+/i.test(content)) {
+        return { type: "e", qtyPrefix: "", foodDesc: content };
+    }
+    // (d) Simple quantity + optional unit
+    // Mixed number: "1 1/2 cups ..."
+    const mixedM = content.match(/^(\d+)\s+(\d+\/\d+)\s+(.*)/);
+    if (mixedM) {
+        const qty = parseInt(mixedM[1]) + parseFraction(mixedM[2]);
+        const { normalized, foodDesc } = normalizeQtyRest(fmt2(qty), mixedM[3]);
+        const qtyPrefix = normalized.slice(0, normalized.length - foodDesc.length);
+        return { type: "d", qtyPrefix, foodDesc };
+    }
+    // ASCII fraction: "1/2 cup ..."
+    const fracM = content.match(/^(\d+\/\d+)\s+(.*)/);
+    if (fracM) {
+        const qty = parseFraction(fracM[1]);
+        const { normalized, foodDesc } = normalizeQtyRest(fmt2(qty), fracM[2]);
+        const qtyPrefix = normalized.slice(0, normalized.length - foodDesc.length);
+        return { type: "d", qtyPrefix, foodDesc };
+    }
+    // Unicode fraction: "½ cup ..."
+    const uniChar = content[0];
+    if (UNICODE_FRACTIONS[uniChar] !== undefined) {
+        const qty = UNICODE_FRACTIONS[uniChar];
+        const rest = content.slice(1).trimStart();
+        const { normalized, foodDesc } = normalizeQtyRest(fmt2(qty), rest);
+        const qtyPrefix = normalized.slice(0, normalized.length - foodDesc.length);
+        return { type: "d", qtyPrefix, foodDesc };
+    }
+    // Decimal/integer: "2 tbsp ..."
+    const numM = content.match(/^(\d+(?:\.\d+)?)\s*(.*)/);
+    if (numM) {
+        const qty = parseFloat(numM[1]);
+        const rest = numM[2];
+        const { normalized, foodDesc } = normalizeQtyRest(fmt2(qty), rest);
+        const qtyPrefix = normalized.slice(0, normalized.length - foodDesc.length);
+        return { type: "d", qtyPrefix, foodDesc };
+    }
+    return { type: "e", qtyPrefix: "", foodDesc: content };
+}
+// Heuristically re-extract foodDesc from text that may have an unknown qty format
+function extractFoodDescFromText(text) {
+    const numM = text.match(/^(\d+(?:\.\d+)?)\s+([a-zA-Z]+)\s+(.*)/);
+    if (numM) {
+        return { qtyPrefix: `${numM[1]} ${numM[2]} `, foodDesc: numM[3] };
+    }
+    const numOnly = text.match(/^(\d+(?:\.\d+)?)\s+(.*)/);
+    if (numOnly) {
+        return { qtyPrefix: `${numOnly[1]} `, foodDesc: numOnly[2] };
+    }
+    return { qtyPrefix: "", foodDesc: text };
+}
+// ─── Link Helpers ──────────────────────────────────────────────────────────────
+function naiveSingularPlural(s) {
+    if (s.endsWith("s") && s.length > 1)
+        return [s, s.slice(0, -1)];
+    return [s, s + "s"];
+}
+function buildLink(basename, core) {
+    const variants = naiveSingularPlural(core);
+    if (variants.includes(basename))
+        return `[[${basename}]]`;
+    return `[[${basename}|${core}]]`;
+}
+// ─── Review Modal (Step 3) ─────────────────────────────────────────────────────
+class IngredientReviewModal extends obsidian.Modal {
+    constructor(app, line, current, total, resolve) {
+        super(app);
+        this.line = line;
+        this.current = current;
+        this.total = total;
+        this.resolve = resolve;
+    }
+    onOpen() {
+        const { contentEl } = this;
+        contentEl.empty();
+        contentEl.createEl("h3", {
+            text: `Review ingredient (${this.current} of ${this.total})`,
+        });
+        contentEl.createEl("p", {
+            text: this.line,
+            attr: { style: "font-family:monospace;color:var(--text-muted);margin-bottom:12px;" },
+        });
+        const input = contentEl.createEl("input");
+        input.type = "text";
+        input.value = this.line;
+        input.style.cssText = "width:100%;margin-bottom:16px;font-family:monospace;";
+        const btnRow = contentEl.createDiv({ attr: { style: "display:flex;gap:8px;" } });
+        const confirmBtn = btnRow.createEl("button", { text: "Confirm", cls: "mod-cta" });
+        confirmBtn.addEventListener("click", () => {
+            this.close();
+            this.resolve(input.value);
+        });
+        btnRow.createEl("button", { text: "Cancel" }).addEventListener("click", () => {
+            this.close();
+            this.resolve(null);
+        });
+        input.focus();
+        input.select();
+    }
+    onClose() { this.contentEl.empty(); }
+}
+class IngredientLinkModal extends obsidian.Modal {
+    constructor(app, item, current, total, allCandidates, resolve) {
+        super(app);
+        this.item = item;
+        this.current = current;
+        this.total = total;
+        this.resolve = resolve;
+        this.candidatePool = allCandidates;
+    }
+    onOpen() {
+        const { contentEl } = this;
+        contentEl.empty();
+        contentEl.createEl("h3", {
+            text: `Link ingredient (${this.current} of ${this.total})`,
+        });
+        contentEl.createEl("p", {
+            text: this.item.cl.currentContent,
+            attr: { style: "font-family:monospace;color:var(--text-muted);margin-bottom:12px;" },
+        });
+        // Search input + button
+        const searchRow = contentEl.createDiv({ attr: { style: "display:flex;gap:8px;margin-bottom:12px;" } });
+        this.searchInput = searchRow.createEl("input");
+        this.searchInput.type = "text";
+        this.searchInput.value = this.item.core;
+        this.searchInput.style.cssText = "flex:1;font-family:monospace;";
+        const searchBtn = searchRow.createEl("button", { text: "Search" });
+        searchBtn.addEventListener("click", () => this.renderCandidates(this.searchInput.value));
+        this.searchInput.addEventListener("keydown", (e) => {
+            if (e.key === "Enter")
+                this.renderCandidates(this.searchInput.value);
+        });
+        // Candidate buttons container
+        this.candidatesEl = contentEl.createDiv({ attr: { style: "margin-bottom:12px;" } });
+        this.renderCandidates(this.item.core);
+        // Action buttons
+        const btnRow = contentEl.createDiv({ attr: { style: "display:flex;gap:8px;flex-wrap:wrap;" } });
+        const createBtn = btnRow.createEl("button", { text: "Create new food note" });
+        createBtn.addEventListener("click", () => {
+            this.close();
+            this.resolve({ action: "create", name: this.searchInput.value });
+        });
+        const skipBtn = btnRow.createEl("button", { text: "Leave unlinked" });
+        skipBtn.addEventListener("click", () => {
+            this.close();
+            this.resolve({ action: "unlinked" });
+        });
+        const cancelBtn = btnRow.createEl("button", { text: "Cancel" });
+        cancelBtn.addEventListener("click", () => {
+            this.close();
+            this.resolve(null);
+        });
+    }
+    renderCandidates(query) {
+        this.candidatesEl.empty();
+        const searcher = obsidian.prepareFuzzySearch(query);
+        const results = this.candidatePool
+            .map(c => ({ ...c, result: searcher(c.file.basename) }))
+            .filter(c => c.result !== null && c.result.score > -1)
+            .sort((a, b) => { var _a, _b, _c, _d; return ((_b = (_a = b.result) === null || _a === void 0 ? void 0 : _a.score) !== null && _b !== void 0 ? _b : -Infinity) - ((_d = (_c = a.result) === null || _c === void 0 ? void 0 : _c.score) !== null && _d !== void 0 ? _d : -Infinity); })
+            .slice(0, 5);
+        if (results.length === 0) {
+            this.candidatesEl.createEl("p", {
+                text: "No matches found.",
+                attr: { style: "color:var(--text-muted);font-size:0.85em;" },
+            });
+            return;
+        }
+        for (const r of results) {
+            const btn = this.candidatesEl.createEl("button");
+            btn.style.cssText = "display:block;width:100%;text-align:left;margin-bottom:4px;";
+            const label = r.isFood ? r.file.basename : `${r.file.basename} (Recipe)`;
+            btn.setText(label);
+            btn.addEventListener("click", () => {
+                this.close();
+                this.resolve({ action: "link", file: r.file });
+            });
+        }
+    }
+    onClose() { this.contentEl.empty(); }
+}
+// ─── Main Command ──────────────────────────────────────────────────────────────
+async function normalizeRecipeIngredients(app, settings) {
+    var _a;
+    const file = app.workspace.getActiveFile();
+    if (!file) {
+        new obsidian.Notice("No active note.");
+        return;
+    }
+    const content = await app.vault.read(file);
+    const lines = content.split("\n");
+    const range = findSectionRange(lines, "Ingredients");
+    if (!range) {
+        new obsidian.Notice("No Ingredients section found.");
+        return;
+    }
+    // ── Step 2: Classify and normalize quantities ─────────────────────────────
+    const processedLines = [];
+    const toReview = [];
+    for (let i = range.start; i < range.end; i++) {
+        const line = lines[i];
+        const bulletM = line.match(/^(\s*[-*]\s+)(.*)/);
+        if (!bulletM)
+            continue;
+        const bulletPrefix = bulletM[1];
+        const originalContent = bulletM[2];
+        const cls = classifyContent(originalContent);
+        const cl = {
+            idx: i,
+            bulletPrefix,
+            originalContent,
+            type: cls.type,
+            qtyPrefix: cls.qtyPrefix,
+            foodDesc: cls.foodDesc,
+            currentContent: cls.type === "e" ? originalContent : cls.qtyPrefix + cls.foodDesc,
+            isSeasoning: false,
+            linked: false,
+            leftUnlinked: false,
+        };
+        processedLines.push(cl);
+        if (cls.type === "e")
+            toReview.push(cl);
+    }
+    // ── Step 3: Resolve ambiguous quantities ──────────────────────────────────
+    for (let i = 0; i < toReview.length; i++) {
+        const item = toReview[i];
+        const result = await new Promise((res) => {
+            new IngredientReviewModal(app, item.originalContent, i + 1, toReview.length, res).open();
+        });
+        if (result === null) {
+            new obsidian.Notice("Normalize Recipe Ingredients cancelled.");
+            return;
+        }
+        item.currentContent = result;
+        const reparsed = extractFoodDescFromText(result);
+        item.qtyPrefix = reparsed.qtyPrefix;
+        item.foodDesc = reparsed.foodDesc;
+    }
+    // ── Step 4: Seasoning classification ──────────────────────────────────────
+    for (const cl of processedLines) {
+        if (cl.type === "a")
+            continue;
+        cl.isSeasoning = isSeasoning(cl.foodDesc);
+    }
+    // ── Step 5: Core extraction and exact/fuzzy matching ──────────────────────
+    const candidateFiles = getCandidateFiles(app, settings);
+    const toLink = [];
+    const skipped = [];
+    for (const cl of processedLines) {
+        if (cl.type === "a" || cl.isSeasoning)
+            continue;
+        const { leading, core, trailing } = extractCore(cl.foodDesc);
+        // Exact case-insensitive match (with naive singular/plural)
+        const variants = naiveSingularPlural(core);
+        const exactMatch = candidateFiles.find(c => variants.some(v => c.file.basename.toLowerCase() === v.toLowerCase()));
+        if (exactMatch) {
+            const link = buildLink(exactMatch.file.basename, core);
+            cl.currentContent = cl.qtyPrefix + leading + link + trailing;
+            cl.linked = true;
+            continue;
+        }
+        // Fuzzy search
+        const searcher = obsidian.prepareFuzzySearch(core);
+        const fuzzyResults = candidateFiles
+            .map(c => ({ ...c, result: searcher(c.file.basename) }))
+            .filter(c => c.result !== null && c.result.score > -1)
+            .sort((a, b) => { var _a, _b, _c, _d; return ((_b = (_a = b.result) === null || _a === void 0 ? void 0 : _a.score) !== null && _b !== void 0 ? _b : -Infinity) - ((_d = (_c = a.result) === null || _c === void 0 ? void 0 : _c.score) !== null && _d !== void 0 ? _d : -Infinity); })
+            .slice(0, 5);
+        if (fuzzyResults.length > 0) {
+            toLink.push({
+                cl,
+                leading,
+                core,
+                trailing,
+                candidates: fuzzyResults.map(r => ({ file: r.file, isFood: r.isFood })),
+            });
+        }
+        else {
+            skipped.push({ name: core, reason: "no food note found, needs creation" });
+        }
+    }
+    // ── Step 6: Resolve fuzzy-link candidates ─────────────────────────────────
+    let leftUnlinkedCount = 0;
+    for (let i = 0; i < toLink.length; i++) {
+        const item = toLink[i];
+        const result = await new Promise((res) => {
+            new IngredientLinkModal(app, item, i + 1, toLink.length, candidateFiles, res).open();
+        });
+        if (result === null) {
+            new obsidian.Notice("Normalize Recipe Ingredients cancelled.");
+            return;
+        }
+        if (result.action === "link" && result.file) {
+            const link = buildLink(result.file.basename, item.core);
+            item.cl.currentContent = item.cl.qtyPrefix + item.leading + link + item.trailing;
+            item.cl.linked = true;
+        }
+        else if (result.action === "create") {
+            skipped.push({
+                name: (_a = result.name) !== null && _a !== void 0 ? _a : item.core,
+                reason: "no food note found, needs creation",
+            });
+        }
+        else {
+            leftUnlinkedCount++;
+        }
+    }
+    // ── Step 7: Write ─────────────────────────────────────────────────────────
+    const contentLines = content.split("\n");
+    for (const cl of processedLines) {
+        if (cl.type === "a")
+            continue;
+        contentLines[cl.idx] = cl.bulletPrefix + cl.currentContent;
+    }
+    let newContent = contentLines.join("\n");
+    if (skipped.length > 0) {
+        newContent = applyNotesSection(newContent, skipped);
+    }
+    await app.vault.modify(file, newContent);
+    const normalizedCount = processedLines.filter(cl => cl.type !== "a" && cl.type !== "b" && cl.type !== "e" && cl.currentContent !== cl.originalContent).length;
+    const linkedCount = processedLines.filter(cl => cl.linked).length;
+    const flaggedCount = skipped.length;
+    new obsidian.Notice(`Normalized ${normalizedCount} lines, linked ${linkedCount}, ${flaggedCount} flagged for new food notes, ${leftUnlinkedCount} left unlinked.`);
+}
+
 function isRelevantFile(changedPath, config, settings) {
     if (config.type === "reading-challenge" && settings) {
         const goalFile = obsidian.normalizePath(settings.readingGoalFile);
@@ -23703,6 +24192,11 @@ class Tracker extends obsidian.Plugin {
             id: "recalc-food-note-calories",
             name: "Recalculate Food Note Calories",
             callback: () => recalcFoodNoteCalories(this.app),
+        });
+        this.addCommand({
+            id: "normalize-recipe-ingredients",
+            name: "Normalize Recipe Ingredients",
+            callback: () => normalizeRecipeIngredients(this.app, this.settings),
         });
         // ── Bill Tracker commands ─────────────────────────────────────────────
         this.addCommand({
