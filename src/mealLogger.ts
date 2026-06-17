@@ -7,7 +7,7 @@ import {
     normalizePath,
 } from "obsidian";
 import { TrackerSettings } from "./settings";
-import { resolveDateTemplate } from "./utils";
+import { resolveDateTemplate, UNIT_CANONICAL, normalizeUnit, fmt2 } from "./utils";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -58,31 +58,6 @@ function round1(n: number): number {
     return Math.round(n * 10) / 10;
 }
 
-const UNIT_CANONICAL: Record<string, string> = {
-    cup: "cup",       cups: "cup",
-    oz: "oz",         ounce: "oz",      ounces: "oz",
-    "fl oz": "fl oz", "fl. oz": "fl oz", "fluid oz": "fl oz",
-    "fluid ounce": "fl oz", "fluid ounces": "fl oz",
-    tbsp: "tbsp",     tablespoon: "tbsp", tablespoons: "tbsp",
-    tsp: "tsp",       teaspoon: "tsp",    teaspoons: "tsp",
-    lb: "lb",         lbs: "lb",          pound: "lb",   pounds: "lb",
-    g: "g",           gram: "g",          grams: "g",
-    kg: "kg",         kilogram: "kg",     kilograms: "kg",
-    ml: "ml",         milliliter: "ml",   milliliters: "ml",
-    l: "l",           liter: "l",         liters: "l",
-    slice: "slice",   slices: "slice",
-    piece: "piece",   pieces: "piece",
-    serving: "serving", servings: "serving",
-};
-
-function normalizeUnit(unit: string): string {
-    const key = unit.toLowerCase().trim();
-    return UNIT_CANONICAL[key] ?? key;
-}
-
-function fmt2(n: number): string {
-    return parseFloat(n.toFixed(2)).toString();
-}
 
 function getFoodMeta(app: App, file: TFile): FoodMeta {
     const fm = app.metadataCache.getFileCache(file)?.frontmatter ?? {};

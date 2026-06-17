@@ -9,6 +9,7 @@ import {
 import { logMeal, clearMeal, editMealLog } from "./mealLogger";
 import { generateMonthlyBills } from "./charts/billsChart";
 import { calculateRecipeNutrition, recalcFoodNoteCalories } from "./recipeCalculator";
+import { normalizeRecipeIngredients } from "./recipeNormalizer";
 import { TrackerConfig } from "./types";
 
 function isRelevantFile(changedPath: string, config: TrackerConfig, settings?: TrackerSettings): boolean {
@@ -100,6 +101,12 @@ export default class Tracker extends Plugin {
             id: "recalc-food-note-calories",
             name: "Recalculate Food Note Calories",
             callback: () => recalcFoodNoteCalories(this.app),
+        });
+
+        this.addCommand({
+            id: "normalize-recipe-ingredients",
+            name: "Normalize Recipe Ingredients",
+            callback: () => normalizeRecipeIngredients(this.app, this.settings),
         });
 
         // ── Bill Tracker commands ─────────────────────────────────────────────
