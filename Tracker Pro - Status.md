@@ -4,6 +4,18 @@
 
 ---
 
+### v1.6.3 — Fix: Normalize Recipe Ingredients — core extraction and packaged-quantity cleanup
+
+Three bugs in `src/recipeNormalizer.ts` identified against a real recipe (White Chicken Chili):
+
+**Bug 1 — Recipe adjectives not stripped.** `medium yellow onion`, `frozen corn`, `low-sodium chicken broth` wouldn't match vault notes named `Yellow Onion`, `Corn`, `Chicken Broth`. Added `RECIPE_ADJECTIVES` list and a second leading-strip pass in `extractCore()` (adjective discarded, not added to `leading`).
+
+**Bug 2 — Container word leftover after packaged-quantity collapse.** `3 (15-oz.) cans green chiles` → `45 oz cans green chiles` → core was `cans green chiles`. Added `CONTAINER_WORDS` set; case (c) now strips a leading container word from `rest` before assigning `foodDesc`.
+
+**Bug 3 — Missing trailing phrases.** `, cut into thirds`, `, divided`, `, at room temperature`, `, thawed` etc. weren't in `TRAILING_PHRASES`, so they stuck to the core name. Expanded `TRAILING_PHRASES` with the common missing patterns.
+
+---
+
 ### v1.6.2 — Fix: Normalize Recipe Ingredients ignoring checklist lines
 
 The bullet-stripping regex in `normalizeRecipeIngredients` only consumed `- ` / `* `, leaving the checkbox marker `[ ] ` attached to the content. This caused `classifyContent()` to see `[ ] 3/4 c. ...` (starts with `[`, not a digit), routing every checklist-format line to case (b) — no normalization, no linking. Fixed by extending the regex to optionally consume the checkbox as part of the bullet prefix:

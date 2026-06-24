@@ -49,7 +49,24 @@ const PREP_ACTIONS = [
 const TRAILING_PHRASES = [
     "plus more for serving", "plus more", "for garnish", "for serving",
     "to taste", "as needed",
+    "cut into thirds", "cut into pieces", "cut into chunks",
+    "cut in half", "cut into cubes", "cut into strips",
+    "divided", "at room temperature", "room temperature",
+    "thawed", "well drained", "lightly beaten",
 ].sort((a, b) => b.length - a.length);
+
+const RECIPE_ADJECTIVES = [
+    "extra-large", "low-sodium", "low sodium",
+    "medium", "large", "small", "whole",
+    "fresh", "frozen", "raw", "cooked",
+    "extra large",
+].sort((a, b) => b.length - a.length);
+
+const CONTAINER_WORDS = new Set([
+    "can", "cans", "jar", "jars",
+    "bottle", "bottles", "package", "packages", "pkg",
+    "carton", "cartons", "bag", "bags",
+]);
 
 // ─── Core Extraction ───────────────────────────────────────────────────────────
 
@@ -63,6 +80,14 @@ function extractCore(desc: string): { leading: string; core: string; trailing: s
         if (text.toLowerCase().startsWith(action + " ")) {
             leading = text.slice(0, action.length + 1);
             text = text.slice(action.length + 1);
+            break;
+        }
+    }
+
+    // Strip one leading recipe adjective (discarded, not added to leading)
+    for (const adj of RECIPE_ADJECTIVES) {
+        if (text.toLowerCase().startsWith(adj + " ")) {
+            text = text.slice(adj.length + 1);
             break;
         }
     }
@@ -164,12 +189,16 @@ function classifyContent(content: string): {
         const unitRaw = packedM[3].replace(/\./g, "").toLowerCase();
         const canonical = UNIT_CANONICAL[unitRaw];
         if (canonical) {
-            const total   = count * amount;
-            const rest    = packedM[4].trim();
+            const total     = count * amount;
+            const restRaw   = packedM[4].trim();
+            const restWords = restRaw.split(/\s+/);
+            const foodDesc  = CONTAINER_WORDS.has(restWords[0]?.toLowerCase())
+                ? restWords.slice(1).join(" ")
+                : restRaw;
             return {
                 type: "c",
                 qtyPrefix: `${fmt2(total)} ${canonical} `,
-                foodDesc: rest,
+                foodDesc,
             };
         }
         // Unit doesn't resolve → (e)
