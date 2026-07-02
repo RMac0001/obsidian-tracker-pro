@@ -925,6 +925,37 @@ These operate on a single named property. The property must be listed in `proper
 | `{{carbPct(macroProp, calProp)}}` | Carb calories as % of total (macro × 4 / cal mean × 100) |
 | `{{fatPct(macroProp, calProp)}}` | Fat calories as % of total (macro × 9 / cal mean × 100) |
 | `{{proteinPct(macroProp, calProp)}}` | Protein calories as % of total (macro × 4 / cal mean × 100) |
+| `{{tdee(calProp)}}` | Estimated TDEE (kcal) derived from calorie intake and weight change over the display range. Uses `weight` from the Achievements daily-notes folder by default — override with a `tdee:` block (see below). Returns `N/A` when fewer than two weight readings are available. |
+| `{{deficit(calProp)}}` | Estimated daily calorie deficit (positive = deficit, negative = surplus). Calculated as `tdee − avgCal`. Returns `N/A` when TDEE data is unavailable. |
+
+**TDEE and deficit configuration**
+
+Both `{{tdee(calProp)}}` and `{{deficit(calProp)}}` derive TDEE from the weight-change-over-calories formula:
+
+```
+tdee = avgCal − (weightChange_lbs × 3500 / daysInPeriod)
+deficit = tdee − avgCal
+```
+
+By default the weight readings are pulled from the **Achievements › Daily notes folder** setting using the `weight` frontmatter property. Override either with an optional `tdee:` block inside the tracker code fence:
+
+```yaml
+type: summary
+folder: Data/Food Logs
+dateRange: last-30-days
+properties:
+  - cal_total
+summary:
+  template: |
+    Avg calories: {{mean(cal_total)}}
+    Est. TDEE: {{tdee(cal_total)}}
+    Est. deficit: {{deficit(cal_total)}} kcal/day
+tdee:
+  weightFolder: Data/Daily Notes   # optional — overrides the Achievements setting
+  weightProperty: weight           # optional — defaults to "weight"
+```
+
+Weight readings are matched first to notes whose date falls within the chart's display range. If fewer than two readings exist in the range, the two most-recent readings from the entire folder are used as a fallback.
 
 Unrecognised property names render as `?` rather than crashing.
 

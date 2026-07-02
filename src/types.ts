@@ -101,6 +101,7 @@ export interface TrackerConfig {
   // Misc
   showLegend?: boolean;
   summary?: { template?: string };
+  tdee?: { weightFolder?: string; weightProperty?: string };
 
   // FileMeta source
   source?: "frontmatter" | "fileMeta";
