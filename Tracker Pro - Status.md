@@ -4,6 +4,27 @@
 
 ---
 
+### v1.6.4 — TDEE & Deficit Summary Template Functions
+
+New template functions for `type: summary` blocks:
+
+- **`{{tdee(calProp)}}`** — Estimates TDEE (kcal) by combining average calorie intake with measured weight change over the display range. Algorithm: `tdee = avgCal − (weightChange_lbs × 3500 / daysInPeriod)`. Returns `N/A` if fewer than two weight readings are available.
+- **`{{deficit(calProp)}}`** — Estimated daily calorie deficit (`tdee − avgCal`). Positive = deficit, negative = surplus. Returns `N/A` when TDEE data is unavailable.
+
+Weight readings are pulled from the Achievements daily-notes folder (`weight` property) by default. Override with an optional `tdee:` config block inside the tracker code fence:
+
+```yaml
+tdee:
+  weightFolder: Data/Daily Notes   # optional
+  weightProperty: weight           # optional — default: "weight"
+```
+
+Weight lookups prefer readings within the chart's display date range (first vs last). Falls back to the two most-recent readings vault-wide if fewer than two fall in range.
+
+**Files changed:** `src/types.ts` (new `tdee` field on `TrackerConfig`), `src/charts/summaryChart.ts` (new `calcTdeeCore`, new imports, `renderSummaryChart` now accepts `app` and `settings`), `src/renderer.ts` (passes `app` and `settings` to `renderSummaryChart`), `Documentation.md`.
+
+---
+
 ### v1.6.3 — Fix: Normalize Recipe Ingredients — core extraction and packaged-quantity cleanup
 
 Three bugs in `src/recipeNormalizer.ts` identified against a real recipe (White Chicken Chili):

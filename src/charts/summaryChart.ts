@@ -1,4 +1,6 @@
+import { App, TFile } from "obsidian";
 import { SeriesData, TrackerConfig, RawEntry } from "../types";
+import { TrackerSettings } from "../settings";
 import { resolveStartEnd } from "../parser";
 
 // ─── Streak / Break Calculations ──────────────────────────────────────────────
@@ -267,6 +269,78 @@ function calcMeanHM(series: SeriesData[]): string {
   return `${hours} hour${hours !== 1 ? "s" : ""}, ${minutes} minute${minutes !== 1 ? "s" : ""}`;
 }
 
+// ─── TDEE / Deficit Helpers ───────────────────────────────────────────────────
+
+function getFileDateTdee(app: App, file: TFile): Date | null {
+  const fm = app.metadataCache.getFileCache(file)?.frontmatter ?? {};
+  if (fm.creation_date) {
+    const raw = fm.creation_date instanceof Date
+      ? `${fm.creation_date.getFullYear()}-${String(fm.creation_date.getMonth()+1).padStart(2,"0")}-${String(fm.creation_date.getDate()).padStart(2,"0")}`
+      : String(fm.creation_date);
+    const m = raw.match(/^(\d{4})-(\d{2})-(\d{2})/);
+    if (m) return new Date(+m[1], +m[2] - 1, +m[3]);
+  }
+  const m = file.basename.match(/(\d{4})-(\d{2})-(\d{2})/);
+  return m ? new Date(+m[1], +m[2] - 1, +m[3]) : null;
+}
+
+function calcTdeeCore(
+  app: App,
+  settings: TrackerSettings,
+  config: TrackerConfig,
+  series: SeriesData[],
+  start: Date,
+  end: Date,
+  calProp: string
+): { tdee: number; deficit: number; dataAvailable: boolean } {
+  const NA = { tdee: 0, deficit: 0, dataAvailable: false };
+
+  const tdeeConf = config.tdee;
+  const weightFolder = (tdeeConf?.weightFolder ?? settings.achievementsDailyNotesFolder).replace(/\/$/, "");
+  const weightProp   = tdeeConf?.weightProperty ?? "weight";
+
+  interface WPt { date: Date; weight: number }
+  const allWeights: WPt[] = [];
+  for (const file of app.vault.getMarkdownFiles()) {
+    if (!file.path.startsWith(weightFolder + "/")) continue;
+    const fm = app.metadataCache.getFileCache(file)?.frontmatter ?? {};
+    const w = Number(fm[weightProp]);
+    if (!w || isNaN(w)) continue;
+    const date = getFileDateTdee(app, file);
+    if (!date) continue;
+    allWeights.push({ date, weight: w });
+  }
+  allWeights.sort((a, b) => a.date.getTime() - b.date.getTime());
+  if (allWeights.length < 2) return NA;
+
+  const startMs = start.getTime();
+  const endMs   = end.getTime() + 86400000;
+  const inRange  = allWeights.filter(e => e.date.getTime() >= startMs && e.date.getTime() <= endMs);
+
+  const pair = inRange.length >= 2
+    ? [inRange[0], inRange[inRange.length - 1]]
+    : [allWeights[allWeights.length - 2], allWeights[allWeights.length - 1]];
+
+  const daysInPeriod = (pair[1].date.getTime() - pair[0].date.getTime()) / 86400000;
+  if (daysInPeriod === 0) return NA;
+
+  const weightChange = pair[1].weight - pair[0].weight;
+
+  const calSeries = series.find(s => s.name === calProp);
+  if (!calSeries) return NA;
+  let calTotal = 0, calCount = 0;
+  for (const pt of calSeries.points) {
+    if (pt.value !== null) { calTotal += pt.value; calCount++; }
+  }
+  if (calCount === 0) return NA;
+
+  const avgCal  = calTotal / calCount;
+  const tdee    = avgCal - (weightChange * 3500 / daysInPeriod);
+  const deficit = tdee - avgCal;
+
+  return { tdee, deficit, dataAvailable: true };
+}
+
 // ─── Template Engine ──────────────────────────────────────────────────────────
 
 function applyTemplate(
@@ -315,16 +389,34 @@ export function renderSummaryChart(
   container: HTMLElement,
   series: SeriesData[],
   config: TrackerConfig,
-  entries: RawEntry[] = []
+  entries: RawEntry[] = [],
+  app?: App,
+  settings?: TrackerSettings
 ): void {
   const summaryConfig = (config as any).summary as { template?: string } | undefined;
-  const template = summaryConfig?.template ?? "Total: {{sum()}} days active";
+  let template = summaryConfig?.template ?? "Total: {{sum()}} days active";
 
   const active  = getActiveDays(series);
   const days    = getSortedDays(active);
 
-  const { start } = resolveStartEnd(config);
+  const { start, end } = resolveStartEnd(config);
   const rangeStartMs = toDateOnly(start);
+
+  // Pre-compute {{tdee(calProp)}} and {{deficit(calProp)}} tokens
+  if (app && settings) {
+    const tdeeCache = new Map<string, { tdee: number; deficit: number; dataAvailable: boolean }>();
+    template = template.replace(
+      /\{\{(tdee|deficit)\((\w+)\)\}\}/g,
+      (_, fn: string, calProp: string) => {
+        if (!tdeeCache.has(calProp)) {
+          tdeeCache.set(calProp, calcTdeeCore(app, settings, config, series, start, end, calProp));
+        }
+        const r = tdeeCache.get(calProp)!;
+        if (!r.dataAvailable) return "N/A";
+        return fn === "tdee" ? r.tdee.toFixed(0) : r.deficit.toFixed(0);
+      }
+    );
+  }
 
   const currentBreak = calcCurrentBreak(days);
 

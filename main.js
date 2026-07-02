@@ -19405,6 +19405,70 @@ function calcMeanHM(series) {
         return `${minutes} minute${minutes !== 1 ? "s" : ""}`;
     return `${hours} hour${hours !== 1 ? "s" : ""}, ${minutes} minute${minutes !== 1 ? "s" : ""}`;
 }
+// ─── TDEE / Deficit Helpers ───────────────────────────────────────────────────
+function getFileDateTdee(app, file) {
+    var _a, _b;
+    const fm = (_b = (_a = app.metadataCache.getFileCache(file)) === null || _a === void 0 ? void 0 : _a.frontmatter) !== null && _b !== void 0 ? _b : {};
+    if (fm.creation_date) {
+        const raw = fm.creation_date instanceof Date
+            ? `${fm.creation_date.getFullYear()}-${String(fm.creation_date.getMonth() + 1).padStart(2, "0")}-${String(fm.creation_date.getDate()).padStart(2, "0")}`
+            : String(fm.creation_date);
+        const m = raw.match(/^(\d{4})-(\d{2})-(\d{2})/);
+        if (m)
+            return new Date(+m[1], +m[2] - 1, +m[3]);
+    }
+    const m = file.basename.match(/(\d{4})-(\d{2})-(\d{2})/);
+    return m ? new Date(+m[1], +m[2] - 1, +m[3]) : null;
+}
+function calcTdeeCore(app, settings, config, series, start, end, calProp) {
+    var _a, _b, _c, _d;
+    const NA = { tdee: 0, deficit: 0, dataAvailable: false };
+    const tdeeConf = config.tdee;
+    const weightFolder = ((_a = tdeeConf === null || tdeeConf === void 0 ? void 0 : tdeeConf.weightFolder) !== null && _a !== void 0 ? _a : settings.achievementsDailyNotesFolder).replace(/\/$/, "");
+    const weightProp = (_b = tdeeConf === null || tdeeConf === void 0 ? void 0 : tdeeConf.weightProperty) !== null && _b !== void 0 ? _b : "weight";
+    const allWeights = [];
+    for (const file of app.vault.getMarkdownFiles()) {
+        if (!file.path.startsWith(weightFolder + "/"))
+            continue;
+        const fm = (_d = (_c = app.metadataCache.getFileCache(file)) === null || _c === void 0 ? void 0 : _c.frontmatter) !== null && _d !== void 0 ? _d : {};
+        const w = Number(fm[weightProp]);
+        if (!w || isNaN(w))
+            continue;
+        const date = getFileDateTdee(app, file);
+        if (!date)
+            continue;
+        allWeights.push({ date, weight: w });
+    }
+    allWeights.sort((a, b) => a.date.getTime() - b.date.getTime());
+    if (allWeights.length < 2)
+        return NA;
+    const startMs = start.getTime();
+    const endMs = end.getTime() + 86400000;
+    const inRange = allWeights.filter(e => e.date.getTime() >= startMs && e.date.getTime() <= endMs);
+    const pair = inRange.length >= 2
+        ? [inRange[0], inRange[inRange.length - 1]]
+        : [allWeights[allWeights.length - 2], allWeights[allWeights.length - 1]];
+    const daysInPeriod = (pair[1].date.getTime() - pair[0].date.getTime()) / 86400000;
+    if (daysInPeriod === 0)
+        return NA;
+    const weightChange = pair[1].weight - pair[0].weight;
+    const calSeries = series.find(s => s.name === calProp);
+    if (!calSeries)
+        return NA;
+    let calTotal = 0, calCount = 0;
+    for (const pt of calSeries.points) {
+        if (pt.value !== null) {
+            calTotal += pt.value;
+            calCount++;
+        }
+    }
+    if (calCount === 0)
+        return NA;
+    const avgCal = calTotal / calCount;
+    const tdee = avgCal - (weightChange * 3500 / daysInPeriod);
+    const deficit = tdee - avgCal;
+    return { tdee, deficit, dataAvailable: true };
+}
 // ─── Template Engine ──────────────────────────────────────────────────────────
 function applyTemplate(template, vars, twoArgResolver, latestVal = 0, series = []) {
     // Two-argument calls: {{fn(arg1, arg2)}}
@@ -19441,14 +19505,27 @@ function applyTemplate(template, vars, twoArgResolver, latestVal = 0, series = [
     return result;
 }
 // ─── Renderer ─────────────────────────────────────────────────────────────────
-function renderSummaryChart(container, series, config, entries = []) {
+function renderSummaryChart(container, series, config, entries = [], app, settings) {
     var _a;
     const summaryConfig = config.summary;
-    const template = (_a = summaryConfig === null || summaryConfig === void 0 ? void 0 : summaryConfig.template) !== null && _a !== void 0 ? _a : "Total: {{sum()}} days active";
+    let template = (_a = summaryConfig === null || summaryConfig === void 0 ? void 0 : summaryConfig.template) !== null && _a !== void 0 ? _a : "Total: {{sum()}} days active";
     const active = getActiveDays(series);
     const days = getSortedDays(active);
-    const { start } = resolveStartEnd(config);
+    const { start, end } = resolveStartEnd(config);
     const rangeStartMs = toDateOnly(start);
+    // Pre-compute {{tdee(calProp)}} and {{deficit(calProp)}} tokens
+    if (app && settings) {
+        const tdeeCache = new Map();
+        template = template.replace(/\{\{(tdee|deficit)\((\w+)\)\}\}/g, (_, fn, calProp) => {
+            if (!tdeeCache.has(calProp)) {
+                tdeeCache.set(calProp, calcTdeeCore(app, settings, config, series, start, end, calProp));
+            }
+            const r = tdeeCache.get(calProp);
+            if (!r.dataAvailable)
+                return "N/A";
+            return fn === "tdee" ? r.tdee.toFixed(0) : r.deficit.toFixed(0);
+        });
+    }
     const currentBreak = calcCurrentBreak(days);
     const latestVal = calcLatest(series);
     const firstVal = calcFirst(series);
@@ -21741,7 +21818,7 @@ async function renderChartContent(app, el, config, settings) {
             renderEmpty(el);
             return;
         }
-        renderSummaryChart(el, raw, config, entries);
+        renderSummaryChart(el, raw, config, entries, app, settings);
         return;
     }
     // ── Line / Bar ─────────────────────────────────────────────────────────────
