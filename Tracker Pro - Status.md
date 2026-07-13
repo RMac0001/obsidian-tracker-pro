@@ -4,6 +4,24 @@
 
 ---
 
+### v1.6.5 — `{{tdeeCalories(calProp)}}` Summary Template Function
+
+New companion to `{{tdee()}}` and `{{deficit()}}` for `type: summary` blocks.
+
+`tdeeCalories = tdee − deficit`, which algebraically equals the period average calorie intake (`avgCal`). Renders as a whole number rather than one decimal place. Intended for grouping alongside the TDEE/deficit stats in a template — e.g.:
+
+```
+Est. TDEE: {{tdee(cal_total)}}
+Est. deficit: {{deficit(cal_total)}}
+Est. intake: {{tdeeCalories(cal_total)}}
+```
+
+Reuses the existing `tdeeCache` in `renderSummaryChart` — `calcTdeeCore` is not called a third time for the same `calProp`. Same `N/A` fallback when fewer than two weight readings are available.
+
+**Files changed:** `src/charts/summaryChart.ts` (regex extended, new branch in callback), `Documentation.md`.
+
+---
+
 ### v1.6.4 — TDEE & Deficit Summary Template Functions
 
 New template functions for `type: summary` blocks:

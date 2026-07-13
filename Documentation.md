@@ -927,6 +927,7 @@ These operate on a single named property. The property must be listed in `proper
 | `{{proteinPct(macroProp, calProp)}}` | Protein calories as % of total (macro × 4 / cal mean × 100) |
 | `{{tdee(calProp)}}` | Estimated TDEE (kcal) derived from calorie intake and weight change over the display range. Uses `weight` from the Achievements daily-notes folder by default — override with a `tdee:` block (see below). Returns `N/A` when fewer than two weight readings are available. |
 | `{{deficit(calProp)}}` | Estimated daily calorie deficit (positive = deficit, negative = surplus). Calculated as `tdee − avgCal`. Returns `N/A` when TDEE data is unavailable. |
+| `{{tdeeCalories(calProp)}}` | Average daily intake as a whole number (`tdee − deficit`, which algebraically equals `avgCal`). Shares the same TDEE cache and `N/A` fallback as `{{tdee()}}` and `{{deficit()}}`. Useful for grouping the intake figure alongside the TDEE/deficit stats without a separate decimal-formatted `{{mean()}}` call. |
 
 **TDEE and deficit configuration**
 

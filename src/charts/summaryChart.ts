@@ -402,18 +402,20 @@ export function renderSummaryChart(
   const { start, end } = resolveStartEnd(config);
   const rangeStartMs = toDateOnly(start);
 
-  // Pre-compute {{tdee(calProp)}} and {{deficit(calProp)}} tokens
+  // Pre-compute {{tdee(calProp)}}, {{deficit(calProp)}}, {{tdeeCalories(calProp)}} tokens
   if (app && settings) {
     const tdeeCache = new Map<string, { tdee: number; deficit: number; dataAvailable: boolean }>();
     template = template.replace(
-      /\{\{(tdee|deficit)\((\w+)\)\}\}/g,
+      /\{\{(tdee|deficit|tdeeCalories)\((\w+)\)\}\}/g,
       (_, fn: string, calProp: string) => {
         if (!tdeeCache.has(calProp)) {
           tdeeCache.set(calProp, calcTdeeCore(app, settings, config, series, start, end, calProp));
         }
         const r = tdeeCache.get(calProp)!;
         if (!r.dataAvailable) return "N/A";
-        return fn === "tdee" ? r.tdee.toFixed(0) : r.deficit.toFixed(0);
+        if (fn === "tdee") return r.tdee.toFixed(0);
+        if (fn === "deficit") return r.deficit.toFixed(0);
+        return (r.tdee - r.deficit).toFixed(0); // tdeeCalories
       }
     );
   }
