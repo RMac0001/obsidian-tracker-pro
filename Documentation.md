@@ -928,17 +928,21 @@ These operate on a single named property. The property must be listed in `proper
 | `{{tdee(calProp)}}` | Estimated TDEE (kcal) derived from calorie intake and weight change over the display range. Uses `weight` from the Achievements daily-notes folder by default — override with a `tdee:` block (see below). Returns `N/A` when fewer than two weight readings are available. |
 | `{{deficit(calProp)}}` | Estimated daily calorie deficit (positive = deficit, negative = surplus). Calculated as `tdee − avgCal`. Returns `N/A` when TDEE data is unavailable. |
 | `{{tdeeCalories(calProp)}}` | Average daily intake as a whole number (`tdee − deficit`, which algebraically equals `avgCal`). Shares the same TDEE cache and `N/A` fallback as `{{tdee()}}` and `{{deficit()}}`. Useful for grouping the intake figure alongside the TDEE/deficit stats without a separate decimal-formatted `{{mean()}}` call. |
+| `{{targetIntake(calProp, ratePerWeek)}}` | Forward-looking daily calorie target: `tdee − (ratePerWeek × 3500 / 7)`. `ratePerWeek` is signed: positive = loss target (e.g. `1.5` for 1.5 lb/wk loss), `0` = maintenance, negative = deliberate surplus. Shares the same TDEE cache. Returns `N/A` when TDEE data is unavailable. |
 
 **TDEE and deficit configuration**
 
-Both `{{tdee(calProp)}}` and `{{deficit(calProp)}}` derive TDEE from the weight-change-over-calories formula:
+`{{tdee()}}`, `{{deficit()}}`, `{{tdeeCalories()}}`, and `{{targetIntake()}}` all derive TDEE from the weight-change-over-calories formula:
 
 ```
 tdee = avgCal − (weightChange_lbs × 3500 / daysInPeriod)
 deficit = tdee − avgCal
+targetIntake = tdee − (ratePerWeek × 3500 / 7)
 ```
 
-By default the weight readings are pulled from the **Achievements › Daily notes folder** setting using the `weight` frontmatter property. Override either with an optional `tdee:` block inside the tracker code fence:
+Endpoint weight values are smoothed by averaging a small cluster of readings around each anchor date to reduce single-day noise (water, sodium, food volume). All four functions share one weight-folder scan and TDEE computation per unique `calProp`.
+
+By default weight readings are pulled from the **Achievements › Daily notes folder** setting using the `weight` frontmatter property. Override with an optional `tdee:` block inside the tracker code fence:
 
 ```yaml
 type: summary
@@ -951,12 +955,14 @@ summary:
     Avg calories: {{mean(cal_total)}}
     Est. TDEE: {{tdee(cal_total)}}
     Est. deficit: {{deficit(cal_total)}} kcal/day
+    Target intake (1.5 lb/wk loss): {{targetIntake(cal_total, 1.5)}}
 tdee:
   weightFolder: Data/Daily Notes   # optional — overrides the Achievements setting
   weightProperty: weight           # optional — defaults to "weight"
+  avgWindowDays: 3                 # optional — cluster size for endpoint averaging (default: 3)
 ```
 
-Weight readings are matched first to notes whose date falls within the chart's display range. If fewer than two readings exist in the range, the two most-recent readings from the entire folder are used as a fallback.
+Weight readings are matched first to notes whose date falls within the chart's display range. If fewer than two readings exist in the range, the two most-recent readings from the entire folder are used as a fallback. Each anchor's weight is then averaged over a `avgWindowDays`-day window (default 3) to smooth out daily fluctuations; `daysInPeriod` is always the gap between the anchor dates and is not affected by the window.
 
 Unrecognised property names render as `?` rather than crashing.
 

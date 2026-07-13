@@ -4,6 +4,36 @@
 
 ---
 
+### v1.6.6 — `{{targetIntake()}}` + Weight Endpoint Averaging
+
+**`{{targetIntake(calProp, ratePerWeek)}}`** — forward-looking daily calorie target based on real TDEE and a chosen rate of loss/gain:
+
+```
+dailyDeficitTarget = ratePerWeek × 3500 / 7
+targetIntake       = tdee − dailyDeficitTarget
+```
+
+`ratePerWeek` is signed (positive = loss, 0 = maintenance, negative = surplus). Shares the existing `tdeeCache` — `calcTdeeCore` is not re-run for the same `calProp`. Same `N/A` fallback. Multiple calls with different rates in one template each get their own regex match; only one vault scan per `calProp` regardless.
+
+**Weight endpoint averaging** — `calcTdeeCore` now smooths each anchor by averaging a small cluster of readings instead of using a single day's value. This reduces distortion from water/sodium/food-volume swings that can move a single day's weigh-in several pounds. Config:
+
+```yaml
+tdee:
+  avgWindowDays: 3   # optional, default 3
+```
+
+- **Early cluster**: all weight readings from the early anchor date through `+avgWindowDays` days.
+- **Late cluster**: all weight readings from `−avgWindowDays` days through the late anchor date.
+- `daysInPeriod` = gap between anchor dates — unchanged by the window.
+- If a reading falls in both clusters it contributes to each average independently.
+- A cluster of one (single reading near an anchor) averages to that value — no special-casing.
+
+`{{targetIntake()}}` automatically benefits from the smoothed TDEE since it reads the same cache.
+
+**Files changed:** `src/types.ts` (`avgWindowDays` on `tdee` config), `src/charts/summaryChart.ts` (averaging logic in `calcTdeeCore`, `ensureTdee` helper, `targetIntake` pre-pass), `Documentation.md`.
+
+---
+
 ### v1.6.5 — `{{tdeeCalories(calProp)}}` Summary Template Function
 
 New companion to `{{tdee()}}` and `{{deficit()}}` for `type: summary` blocks.
