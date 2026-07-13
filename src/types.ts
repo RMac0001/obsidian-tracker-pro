@@ -101,7 +101,7 @@ export interface TrackerConfig {
   // Misc
   showLegend?: boolean;
   summary?: { template?: string };
-  tdee?: { weightFolder?: string; weightProperty?: string };
+  tdee?: { weightFolder?: string; weightProperty?: string; avgWindowDays?: number };
 
   // FileMeta source
   source?: "frontmatter" | "fileMeta";

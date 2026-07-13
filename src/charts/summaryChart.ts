@@ -324,7 +324,19 @@ function calcTdeeCore(
   const daysInPeriod = (pair[1].date.getTime() - pair[0].date.getTime()) / 86400000;
   if (daysInPeriod === 0) return NA;
 
-  const weightChange = pair[1].weight - pair[0].weight;
+  // Smooth endpoints by averaging a cluster of readings around each anchor
+  const avgWindowDays = tdeeConf?.avgWindowDays ?? 3;
+  const windowMs      = avgWindowDays * 86400000;
+  const earlyMs       = pair[0].date.getTime();
+  const lateMs        = pair[1].date.getTime();
+
+  const earlyCluster = allWeights.filter(e => { const t = e.date.getTime(); return t >= earlyMs && t <= earlyMs + windowMs; });
+  const lateCluster  = allWeights.filter(e => { const t = e.date.getTime(); return t >= lateMs - windowMs && t <= lateMs; });
+
+  const avgCluster = (pts: { date: Date; weight: number }[]) =>
+    pts.reduce((s, e) => s + e.weight, 0) / pts.length;
+
+  const weightChange = avgCluster(lateCluster) - avgCluster(earlyCluster);
 
   const calSeries = series.find(s => s.name === calProp);
   if (!calSeries) return NA;
@@ -402,20 +414,35 @@ export function renderSummaryChart(
   const { start, end } = resolveStartEnd(config);
   const rangeStartMs = toDateOnly(start);
 
-  // Pre-compute {{tdee(calProp)}}, {{deficit(calProp)}}, {{tdeeCalories(calProp)}} tokens
+  // Pre-compute TDEE-family tokens — shared cache avoids rerunning calcTdeeCore per calProp
   if (app && settings) {
     const tdeeCache = new Map<string, { tdee: number; deficit: number; dataAvailable: boolean }>();
+    const ensureTdee = (calProp: string) => {
+      if (!tdeeCache.has(calProp)) {
+        tdeeCache.set(calProp, calcTdeeCore(app, settings, config, series, start, end, calProp));
+      }
+      return tdeeCache.get(calProp)!;
+    };
+
+    // {{tdee(calProp)}}, {{deficit(calProp)}}, {{tdeeCalories(calProp)}}
     template = template.replace(
       /\{\{(tdee|deficit|tdeeCalories)\((\w+)\)\}\}/g,
       (_, fn: string, calProp: string) => {
-        if (!tdeeCache.has(calProp)) {
-          tdeeCache.set(calProp, calcTdeeCore(app, settings, config, series, start, end, calProp));
-        }
-        const r = tdeeCache.get(calProp)!;
+        const r = ensureTdee(calProp);
         if (!r.dataAvailable) return "N/A";
         if (fn === "tdee") return r.tdee.toFixed(0);
         if (fn === "deficit") return r.deficit.toFixed(0);
         return (r.tdee - r.deficit).toFixed(0); // tdeeCalories
+      }
+    );
+
+    // {{targetIntake(calProp, ratePerWeek)}}
+    template = template.replace(
+      /\{\{targetIntake\((\w+),\s*(-?[\d.]+)\)\}\}/g,
+      (_, calProp: string, rateStr: string) => {
+        const r = ensureTdee(calProp);
+        if (!r.dataAvailable) return "N/A";
+        return (r.tdee - (parseFloat(rateStr) * 3500 / 7)).toFixed(0);
       }
     );
   }

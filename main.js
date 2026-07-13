@@ -19421,7 +19421,7 @@ function getFileDateTdee(app, file) {
     return m ? new Date(+m[1], +m[2] - 1, +m[3]) : null;
 }
 function calcTdeeCore(app, settings, config, series, start, end, calProp) {
-    var _a, _b, _c, _d;
+    var _a, _b, _c, _d, _e;
     const NA = { tdee: 0, deficit: 0, dataAvailable: false };
     const tdeeConf = config.tdee;
     const weightFolder = ((_a = tdeeConf === null || tdeeConf === void 0 ? void 0 : tdeeConf.weightFolder) !== null && _a !== void 0 ? _a : settings.achievementsDailyNotesFolder).replace(/\/$/, "");
@@ -19451,7 +19451,15 @@ function calcTdeeCore(app, settings, config, series, start, end, calProp) {
     const daysInPeriod = (pair[1].date.getTime() - pair[0].date.getTime()) / 86400000;
     if (daysInPeriod === 0)
         return NA;
-    const weightChange = pair[1].weight - pair[0].weight;
+    // Smooth endpoints by averaging a cluster of readings around each anchor
+    const avgWindowDays = (_e = tdeeConf === null || tdeeConf === void 0 ? void 0 : tdeeConf.avgWindowDays) !== null && _e !== void 0 ? _e : 3;
+    const windowMs = avgWindowDays * 86400000;
+    const earlyMs = pair[0].date.getTime();
+    const lateMs = pair[1].date.getTime();
+    const earlyCluster = allWeights.filter(e => { const t = e.date.getTime(); return t >= earlyMs && t <= earlyMs + windowMs; });
+    const lateCluster = allWeights.filter(e => { const t = e.date.getTime(); return t >= lateMs - windowMs && t <= lateMs; });
+    const avgCluster = (pts) => pts.reduce((s, e) => s + e.weight, 0) / pts.length;
+    const weightChange = avgCluster(lateCluster) - avgCluster(earlyCluster);
     const calSeries = series.find(s => s.name === calProp);
     if (!calSeries)
         return NA;
@@ -19513,14 +19521,18 @@ function renderSummaryChart(container, series, config, entries = [], app, settin
     const days = getSortedDays(active);
     const { start, end } = resolveStartEnd(config);
     const rangeStartMs = toDateOnly(start);
-    // Pre-compute {{tdee(calProp)}}, {{deficit(calProp)}}, {{tdeeCalories(calProp)}} tokens
+    // Pre-compute TDEE-family tokens — shared cache avoids rerunning calcTdeeCore per calProp
     if (app && settings) {
         const tdeeCache = new Map();
-        template = template.replace(/\{\{(tdee|deficit|tdeeCalories)\((\w+)\)\}\}/g, (_, fn, calProp) => {
+        const ensureTdee = (calProp) => {
             if (!tdeeCache.has(calProp)) {
                 tdeeCache.set(calProp, calcTdeeCore(app, settings, config, series, start, end, calProp));
             }
-            const r = tdeeCache.get(calProp);
+            return tdeeCache.get(calProp);
+        };
+        // {{tdee(calProp)}}, {{deficit(calProp)}}, {{tdeeCalories(calProp)}}
+        template = template.replace(/\{\{(tdee|deficit|tdeeCalories)\((\w+)\)\}\}/g, (_, fn, calProp) => {
+            const r = ensureTdee(calProp);
             if (!r.dataAvailable)
                 return "N/A";
             if (fn === "tdee")
@@ -19528,6 +19540,13 @@ function renderSummaryChart(container, series, config, entries = [], app, settin
             if (fn === "deficit")
                 return r.deficit.toFixed(0);
             return (r.tdee - r.deficit).toFixed(0); // tdeeCalories
+        });
+        // {{targetIntake(calProp, ratePerWeek)}}
+        template = template.replace(/\{\{targetIntake\((\w+),\s*(-?[\d.]+)\)\}\}/g, (_, calProp, rateStr) => {
+            const r = ensureTdee(calProp);
+            if (!r.dataAvailable)
+                return "N/A";
+            return (r.tdee - (parseFloat(rateStr) * 3500 / 7)).toFixed(0);
         });
     }
     const currentBreak = calcCurrentBreak(days);
