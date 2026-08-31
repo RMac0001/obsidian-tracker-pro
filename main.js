@@ -3033,6 +3033,101 @@ function resolveStartEnd(config) {
     return { start, end };
 }
 
+/**
+ * Resolves {{DATE:FORMAT}} tokens in a template string using moment.js.
+ * If a date is provided it is used; otherwise the current date is used.
+ * FORMAT is any moment.js format string (e.g. YYYY, MM, YYYY-MM, MMMM).
+ */
+function resolveDateTemplate(template, date) {
+    const m = date
+        ? window.moment(date)
+        : window.moment();
+    return template.replace(/\{\{DATE:([^}]+)\}\}/g, (_, fmt) => m.format(fmt));
+}
+// ─── Unit Normalization ────────────────────────────────────────────────────────
+const UNIT_CANONICAL = {
+    c: "cup",
+    cup: "cup", cups: "cup",
+    oz: "oz", ounce: "oz", ounces: "oz",
+    "fl oz": "fl oz", "fl. oz": "fl oz", "fluid oz": "fl oz",
+    "fluid ounce": "fl oz", "fluid ounces": "fl oz",
+    tbsp: "tbsp", tablespoon: "tbsp", tablespoons: "tbsp",
+    tsp: "tsp", teaspoon: "tsp", teaspoons: "tsp",
+    lb: "lb", lbs: "lb", pound: "lb", pounds: "lb",
+    g: "g", gram: "g", grams: "g",
+    kg: "kg", kilogram: "kg", kilograms: "kg",
+    ml: "ml", milliliter: "ml", milliliters: "ml",
+    l: "l", liter: "l", liters: "l",
+    slice: "slice", slices: "slice",
+    piece: "piece", pieces: "piece",
+    serving: "serving", servings: "serving",
+    pint: "pint", pints: "pint", pt: "pint",
+    quart: "quart", quarts: "quart", qt: "quart",
+};
+function normalizeUnit(unit) {
+    var _a;
+    const key = unit.toLowerCase().trim();
+    return (_a = UNIT_CANONICAL[key]) !== null && _a !== void 0 ? _a : key;
+}
+function fmt2(n) {
+    return parseFloat(n.toFixed(2)).toString();
+}
+// ─── Time Value Helpers ────────────────────────────────────────────────────────
+const TIME_VALUE_RE = /^\d{1,3}:\d{2}$/;
+function parseTimeToSeconds(raw) {
+    const trimmed = raw.trim();
+    if (!TIME_VALUE_RE.test(trimmed))
+        return null;
+    const [minutesStr, secondsStr] = trimmed.split(":");
+    const minutes = parseInt(minutesStr, 10);
+    const seconds = parseInt(secondsStr, 10);
+    if (seconds > 59)
+        return null;
+    return minutes * 60 + seconds;
+}
+function formatSecondsAsTime(totalSeconds) {
+    const rounded = Math.round(totalSeconds);
+    const m = Math.floor(rounded / 60);
+    const s = rounded % 60;
+    return `${m}:${String(s).padStart(2, "0")}`;
+}
+// ─── Section Range ─────────────────────────────────────────────────────────────
+function findSectionRange(lines, header) {
+    const headerRe = new RegExp(`^#{1,6}\\s+${header}\\s*$`, "i");
+    let start = -1;
+    for (let i = 0; i < lines.length; i++) {
+        if (headerRe.test(lines[i])) {
+            start = i + 1;
+            break;
+        }
+    }
+    if (start === -1)
+        return null;
+    let end = lines.length;
+    for (let i = start; i < lines.length; i++) {
+        if (/^#{1,6}\s/.test(lines[i])) {
+            end = i;
+            break;
+        }
+    }
+    return { start, end };
+}
+// ─── Candidate Files ───────────────────────────────────────────────────────────
+function getCandidateFiles(app, settings) {
+    const foodFolder = settings.foodFolder.replace(/\/$/, "");
+    const recipeFolder = settings.recipeFolder.replace(/\/$/, "");
+    const result = [];
+    for (const file of app.vault.getMarkdownFiles()) {
+        if (file.path.startsWith(foodFolder + "/")) {
+            result.push({ file, isFood: true });
+        }
+        else if (file.path.startsWith(recipeFolder + "/")) {
+            result.push({ file, isFood: false });
+        }
+    }
+    return result;
+}
+
 // ─── File Resolution ──────────────────────────────────────────────────────────
 function resolveFiles(app, config) {
     const files = [];
@@ -3158,6 +3253,9 @@ function extractNumericValue(frontmatter, property) {
     if (typeof raw === "number")
         return raw;
     if (typeof raw === "string") {
+        const timeVal = parseTimeToSeconds(raw);
+        if (timeVal !== null)
+            return timeVal;
         const n = parseFloat(raw);
         if (!isNaN(n))
             return n;
@@ -3215,10 +3313,15 @@ function buildSeriesData(entries, config) {
             date: entry.date,
             value: extractNumericValue(entry.frontmatter, prop),
         }));
+        const isTimeFormat = entries.some(e => {
+            const raw = e.frontmatter[prop];
+            return typeof raw === "string" && parseTimeToSeconds(raw) !== null;
+        });
         return {
             name: prop,
             points,
             color: (_b = (_a = config.colors) === null || _a === void 0 ? void 0 : _a[i]) !== null && _b !== void 0 ? _b : defaultColors[i % defaultColors.length],
+            isTimeFormat,
         };
     });
 }
@@ -18355,10 +18458,23 @@ function computeLineYMin(series, explicitMin) {
     return dataMin - range * 0.10;
 }
 // ─── Line Chart ───────────────────────────────────────────────────────────────
+// Resolve a yAxis bound that may be a plain number or a mm:ss string
+function resolveAxisBound(raw, isTimeFmt) {
+    var _a;
+    if (typeof raw === "number")
+        return raw;
+    if (isTimeFmt && typeof raw === "string")
+        return (_a = parseTimeToSeconds(raw)) !== null && _a !== void 0 ? _a : undefined;
+    return undefined;
+}
 function renderLineChart(canvas, series, config) {
-    var _a, _b, _c, _d, _e, _f, _g, _h, _j, _k, _l;
+    var _a, _b, _c, _d, _e, _f, _g, _h, _j, _k, _l, _m, _o;
     const labels = buildLabels(series, config);
-    const yMin = computeLineYMin(series, (_a = config.yAxis) === null || _a === void 0 ? void 0 : _a.min);
+    const isTimeFmt = series.some(s => s.isTimeFormat);
+    const resolvedMin = resolveAxisBound((_a = config.yAxis) === null || _a === void 0 ? void 0 : _a.min, isTimeFmt);
+    const resolvedMax = resolveAxisBound((_b = config.yAxis) === null || _b === void 0 ? void 0 : _b.max, isTimeFmt);
+    const yMin = computeLineYMin(series, resolvedMin);
+    const unit = (_d = (_c = config.yAxis) === null || _c === void 0 ? void 0 : _c.unit) !== null && _d !== void 0 ? _d : "";
     const chartConfig = {
         type: "line",
         data: {
@@ -18380,20 +18496,20 @@ function renderLineChart(canvas, series, config) {
             plugins: {
                 title: {
                     display: !!config.title,
-                    text: (_b = config.title) !== null && _b !== void 0 ? _b : "",
+                    text: (_e = config.title) !== null && _e !== void 0 ? _e : "",
                     font: { size: 14, weight: "bold" },
                 },
                 subtitle: {
                     display: !!config.subtitle,
-                    text: (_c = config.subtitle) !== null && _c !== void 0 ? _c : "",
+                    text: (_f = config.subtitle) !== null && _f !== void 0 ? _f : "",
                 },
-                legend: { display: (_d = config.showLegend) !== null && _d !== void 0 ? _d : true },
+                legend: { display: (_g = config.showLegend) !== null && _g !== void 0 ? _g : true },
                 tooltip: {
                     callbacks: {
                         label: (ctx) => {
-                            var _a, _b, _c;
-                            const unit = (_b = (_a = config.yAxis) === null || _a === void 0 ? void 0 : _a.unit) !== null && _b !== void 0 ? _b : "";
-                            return `${ctx.dataset.label}: ${(_c = ctx.parsed.y) === null || _c === void 0 ? void 0 : _c.toFixed(2)}${unit}`;
+                            const val = ctx.parsed.y;
+                            const formatted = isTimeFmt ? formatSecondsAsTime(val) : val === null || val === void 0 ? void 0 : val.toFixed(2);
+                            return `${ctx.dataset.label}: ${formatted}${unit}`;
                         },
                     },
                 },
@@ -18401,17 +18517,20 @@ function renderLineChart(canvas, series, config) {
             scales: {
                 x: {
                     title: {
-                        display: !!((_e = config.xAxis) === null || _e === void 0 ? void 0 : _e.label),
-                        text: (_g = (_f = config.xAxis) === null || _f === void 0 ? void 0 : _f.label) !== null && _g !== void 0 ? _g : "",
+                        display: !!((_h = config.xAxis) === null || _h === void 0 ? void 0 : _h.label),
+                        text: (_k = (_j = config.xAxis) === null || _j === void 0 ? void 0 : _j.label) !== null && _k !== void 0 ? _k : "",
                     },
                 },
                 y: {
                     title: {
-                        display: !!((_h = config.yAxis) === null || _h === void 0 ? void 0 : _h.label),
-                        text: (_k = (_j = config.yAxis) === null || _j === void 0 ? void 0 : _j.label) !== null && _k !== void 0 ? _k : "",
+                        display: !!((_l = config.yAxis) === null || _l === void 0 ? void 0 : _l.label),
+                        text: (_o = (_m = config.yAxis) === null || _m === void 0 ? void 0 : _m.label) !== null && _o !== void 0 ? _o : "",
                     },
                     min: yMin,
-                    max: (_l = config.yAxis) === null || _l === void 0 ? void 0 : _l.max,
+                    max: resolvedMax,
+                    ticks: isTimeFmt
+                        ? { callback: (val) => formatSecondsAsTime(val) }
+                        : {},
                 },
             },
         },
@@ -18420,8 +18539,12 @@ function renderLineChart(canvas, series, config) {
 }
 // ─── Bar Chart ────────────────────────────────────────────────────────────────
 function renderBarChart(canvas, series, config) {
-    var _a, _b, _c, _d, _e, _f, _g, _h, _j, _k, _l;
+    var _a, _b, _c, _d, _e, _f, _g, _h, _j, _k, _l, _m, _o;
     const labels = buildLabels(series, config);
+    const isTimeFmt = series.some(s => s.isTimeFormat);
+    const resolvedMin = resolveAxisBound((_a = config.yAxis) === null || _a === void 0 ? void 0 : _a.min, isTimeFmt);
+    const resolvedMax = resolveAxisBound((_b = config.yAxis) === null || _b === void 0 ? void 0 : _b.max, isTimeFmt);
+    const unit = (_d = (_c = config.yAxis) === null || _c === void 0 ? void 0 : _c.unit) !== null && _d !== void 0 ? _d : "";
     const chartConfig = {
         type: "bar",
         data: {
@@ -18441,31 +18564,34 @@ function renderBarChart(canvas, series, config) {
             plugins: {
                 title: {
                     display: !!config.title,
-                    text: (_a = config.title) !== null && _a !== void 0 ? _a : "",
+                    text: (_e = config.title) !== null && _e !== void 0 ? _e : "",
                     font: { size: 14, weight: "bold" },
                 },
-                subtitle: { display: !!config.subtitle, text: (_b = config.subtitle) !== null && _b !== void 0 ? _b : "" },
-                legend: { display: ((_c = config.showLegend) !== null && _c !== void 0 ? _c : true) && series.length > 1 },
+                subtitle: { display: !!config.subtitle, text: (_f = config.subtitle) !== null && _f !== void 0 ? _f : "" },
+                legend: { display: ((_g = config.showLegend) !== null && _g !== void 0 ? _g : true) && series.length > 1 },
                 tooltip: {
                     callbacks: {
                         label: (ctx) => {
-                            var _a, _b, _c;
-                            const unit = (_b = (_a = config.yAxis) === null || _a === void 0 ? void 0 : _a.unit) !== null && _b !== void 0 ? _b : "";
-                            return `${ctx.dataset.label}: ${(_c = ctx.parsed.y) === null || _c === void 0 ? void 0 : _c.toFixed(2)}${unit}`;
+                            const val = ctx.parsed.y;
+                            const formatted = isTimeFmt ? formatSecondsAsTime(val) : val === null || val === void 0 ? void 0 : val.toFixed(2);
+                            return `${ctx.dataset.label}: ${formatted}${unit}`;
                         },
                     },
                 },
             },
             scales: {
                 x: {
-                    title: { display: !!((_d = config.xAxis) === null || _d === void 0 ? void 0 : _d.label), text: (_f = (_e = config.xAxis) === null || _e === void 0 ? void 0 : _e.label) !== null && _f !== void 0 ? _f : "" },
+                    title: { display: !!((_h = config.xAxis) === null || _h === void 0 ? void 0 : _h.label), text: (_k = (_j = config.xAxis) === null || _j === void 0 ? void 0 : _j.label) !== null && _k !== void 0 ? _k : "" },
                     stacked: false,
                 },
                 y: {
-                    title: { display: !!((_g = config.yAxis) === null || _g === void 0 ? void 0 : _g.label), text: (_j = (_h = config.yAxis) === null || _h === void 0 ? void 0 : _h.label) !== null && _j !== void 0 ? _j : "" },
-                    min: (_k = config.yAxis) === null || _k === void 0 ? void 0 : _k.min,
-                    max: (_l = config.yAxis) === null || _l === void 0 ? void 0 : _l.max,
+                    title: { display: !!((_l = config.yAxis) === null || _l === void 0 ? void 0 : _l.label), text: (_o = (_m = config.yAxis) === null || _m === void 0 ? void 0 : _m.label) !== null && _o !== void 0 ? _o : "" },
+                    min: resolvedMin,
+                    max: resolvedMax,
                     stacked: false,
+                    ticks: isTimeFmt
+                        ? { callback: (val) => formatSecondsAsTime(val) }
+                        : {},
                 },
             },
         },
@@ -20069,82 +20195,6 @@ function renderDailyTable(container, entries, config) {
             }
         }
     }
-}
-
-/**
- * Resolves {{DATE:FORMAT}} tokens in a template string using moment.js.
- * If a date is provided it is used; otherwise the current date is used.
- * FORMAT is any moment.js format string (e.g. YYYY, MM, YYYY-MM, MMMM).
- */
-function resolveDateTemplate(template, date) {
-    const m = date
-        ? window.moment(date)
-        : window.moment();
-    return template.replace(/\{\{DATE:([^}]+)\}\}/g, (_, fmt) => m.format(fmt));
-}
-// ─── Unit Normalization ────────────────────────────────────────────────────────
-const UNIT_CANONICAL = {
-    c: "cup",
-    cup: "cup", cups: "cup",
-    oz: "oz", ounce: "oz", ounces: "oz",
-    "fl oz": "fl oz", "fl. oz": "fl oz", "fluid oz": "fl oz",
-    "fluid ounce": "fl oz", "fluid ounces": "fl oz",
-    tbsp: "tbsp", tablespoon: "tbsp", tablespoons: "tbsp",
-    tsp: "tsp", teaspoon: "tsp", teaspoons: "tsp",
-    lb: "lb", lbs: "lb", pound: "lb", pounds: "lb",
-    g: "g", gram: "g", grams: "g",
-    kg: "kg", kilogram: "kg", kilograms: "kg",
-    ml: "ml", milliliter: "ml", milliliters: "ml",
-    l: "l", liter: "l", liters: "l",
-    slice: "slice", slices: "slice",
-    piece: "piece", pieces: "piece",
-    serving: "serving", servings: "serving",
-    pint: "pint", pints: "pint", pt: "pint",
-    quart: "quart", quarts: "quart", qt: "quart",
-};
-function normalizeUnit(unit) {
-    var _a;
-    const key = unit.toLowerCase().trim();
-    return (_a = UNIT_CANONICAL[key]) !== null && _a !== void 0 ? _a : key;
-}
-function fmt2(n) {
-    return parseFloat(n.toFixed(2)).toString();
-}
-// ─── Section Range ─────────────────────────────────────────────────────────────
-function findSectionRange(lines, header) {
-    const headerRe = new RegExp(`^#{1,6}\\s+${header}\\s*$`, "i");
-    let start = -1;
-    for (let i = 0; i < lines.length; i++) {
-        if (headerRe.test(lines[i])) {
-            start = i + 1;
-            break;
-        }
-    }
-    if (start === -1)
-        return null;
-    let end = lines.length;
-    for (let i = start; i < lines.length; i++) {
-        if (/^#{1,6}\s/.test(lines[i])) {
-            end = i;
-            break;
-        }
-    }
-    return { start, end };
-}
-// ─── Candidate Files ───────────────────────────────────────────────────────────
-function getCandidateFiles(app, settings) {
-    const foodFolder = settings.foodFolder.replace(/\/$/, "");
-    const recipeFolder = settings.recipeFolder.replace(/\/$/, "");
-    const result = [];
-    for (const file of app.vault.getMarkdownFiles()) {
-        if (file.path.startsWith(foodFolder + "/")) {
-            result.push({ file, isFood: true });
-        }
-        else if (file.path.startsWith(recipeFolder + "/")) {
-            result.push({ file, isFood: false });
-        }
-    }
-    return result;
 }
 
 // ─── Defaults ──────────────────────────────────────────────────────────────────

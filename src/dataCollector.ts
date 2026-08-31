@@ -1,6 +1,7 @@
 import { App, TFile, TFolder } from "obsidian";
 import { TrackerConfig, RawEntry, SeriesData, OHLCDataPoint, DataPoint } from "./types";
 import { resolveStartEnd } from "./parser";
+import { parseTimeToSeconds } from "./utils";
 
 // ─── File Resolution ──────────────────────────────────────────────────────────
 
@@ -144,6 +145,8 @@ function extractNumericValue(
   if (typeof raw === "boolean") return raw ? 1 : 0;
   if (typeof raw === "number") return raw;
   if (typeof raw === "string") {
+    const timeVal = parseTimeToSeconds(raw);
+    if (timeVal !== null) return timeVal;
     const n = parseFloat(raw);
     if (!isNaN(n)) return n;
   }
@@ -215,10 +218,16 @@ export function buildSeriesData(
       value: extractNumericValue(entry.frontmatter, prop),
     }));
 
+    const isTimeFormat = entries.some(e => {
+      const raw = e.frontmatter[prop];
+      return typeof raw === "string" && parseTimeToSeconds(raw) !== null;
+    });
+
     return {
       name: prop,
       points,
       color: config.colors?.[i] ?? defaultColors[i % defaultColors.length],
+      isTimeFormat,
     };
   });
 }

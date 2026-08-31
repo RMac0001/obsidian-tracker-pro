@@ -1,6 +1,7 @@
 import { Chart, ChartConfiguration } from "chart.js/auto";
 import { SeriesData, TrackerConfig } from "../types";
 import { formatDateLabel } from "../aggregator";
+import { parseTimeToSeconds, formatSecondsAsTime } from "../utils";
 
 // ─── Shared Label Builder ─────────────────────────────────────────────────────
 
@@ -44,13 +45,24 @@ function computeLineYMin(
 
 // ─── Line Chart ───────────────────────────────────────────────────────────────
 
+// Resolve a yAxis bound that may be a plain number or a mm:ss string
+function resolveAxisBound(raw: unknown, isTimeFmt: boolean): number | undefined {
+  if (typeof raw === "number") return raw;
+  if (isTimeFmt && typeof raw === "string") return parseTimeToSeconds(raw) ?? undefined;
+  return undefined;
+}
+
 export function renderLineChart(
   canvas: HTMLCanvasElement,
   series: SeriesData[],
   config: TrackerConfig
 ): Chart {
   const labels = buildLabels(series, config);
-  const yMin = computeLineYMin(series, config.yAxis?.min);
+  const isTimeFmt = series.some(s => s.isTimeFormat);
+  const resolvedMin = resolveAxisBound((config.yAxis as any)?.min, isTimeFmt);
+  const resolvedMax = resolveAxisBound((config.yAxis as any)?.max, isTimeFmt);
+  const yMin = computeLineYMin(series, resolvedMin);
+  const unit = config.yAxis?.unit ?? "";
 
   const chartConfig: ChartConfiguration = {
     type: "line",
@@ -84,8 +96,9 @@ export function renderLineChart(
         tooltip: {
           callbacks: {
             label: (ctx) => {
-              const unit = config.yAxis?.unit ?? "";
-              return `${ctx.dataset.label}: ${ctx.parsed.y?.toFixed(2)}${unit}`;
+              const val = ctx.parsed.y;
+              const formatted = isTimeFmt ? formatSecondsAsTime(val) : val?.toFixed(2);
+              return `${ctx.dataset.label}: ${formatted}${unit}`;
             },
           },
         },
@@ -103,7 +116,10 @@ export function renderLineChart(
             text: config.yAxis?.label ?? "",
           },
           min: yMin,
-          max: config.yAxis?.max,
+          max: resolvedMax,
+          ticks: isTimeFmt
+            ? { callback: (val) => formatSecondsAsTime(val as number) }
+            : {},
         },
       },
     },
@@ -120,6 +136,10 @@ export function renderBarChart(
   config: TrackerConfig
 ): Chart {
   const labels = buildLabels(series, config);
+  const isTimeFmt = series.some(s => s.isTimeFormat);
+  const resolvedMin = resolveAxisBound((config.yAxis as any)?.min, isTimeFmt);
+  const resolvedMax = resolveAxisBound((config.yAxis as any)?.max, isTimeFmt);
+  const unit = config.yAxis?.unit ?? "";
 
   const chartConfig: ChartConfiguration = {
     type: "bar",
@@ -148,8 +168,9 @@ export function renderBarChart(
         tooltip: {
           callbacks: {
             label: (ctx) => {
-              const unit = config.yAxis?.unit ?? "";
-              return `${ctx.dataset.label}: ${ctx.parsed.y?.toFixed(2)}${unit}`;
+              const val = ctx.parsed.y;
+              const formatted = isTimeFmt ? formatSecondsAsTime(val) : val?.toFixed(2);
+              return `${ctx.dataset.label}: ${formatted}${unit}`;
             },
           },
         },
@@ -161,9 +182,12 @@ export function renderBarChart(
         },
         y: {
           title: { display: !!config.yAxis?.label, text: config.yAxis?.label ?? "" },
-          min: config.yAxis?.min,
-          max: config.yAxis?.max,
+          min: resolvedMin,
+          max: resolvedMax,
           stacked: false,
+          ticks: isTimeFmt
+            ? { callback: (val) => formatSecondsAsTime(val as number) }
+            : {},
         },
       },
     },

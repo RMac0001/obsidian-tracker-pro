@@ -579,8 +579,21 @@ showLegend: true
 | `aggregate`     | `daily` (default), `weekly`, `monthly`, `cumulative`, `moving-average` |
 | `period`        | Window for `moving-average` (default: 7)                               |
 | `missingValue`  | `skip` (gap), `zero`, or a number                                      |
-| `yAxis.min/max` | Force Y axis bounds                                                    |
+| `yAxis.min/max` | Force Y axis bounds. For time-format properties (see below) you may write `mm:ss` values directly (e.g. `min: "5:00"`). |
 | `yAxis.unit`    | Suffix appended to tooltip (e.g. `" kg"`)                              |
+
+**`mm:ss` time-format properties (line and bar charts)**
+
+Properties stored as `mm:ss` strings in frontmatter (e.g. `pace: 12:34`) are automatically detected and handled correctly — no config flag needed. When any sampled value for a property matches the `m:ss` / `mm:ss` / `mmm:ss` pattern:
+
+- Values are parsed as total seconds internally (e.g. `12:34` → `754 s`).
+- Y-axis ticks display in `mm:ss` format.
+- Tooltips display in `mm:ss` format.
+- `yAxis.min` / `yAxis.max` accept `mm:ss` strings (e.g. `min: "5:00"`) in addition to plain numbers.
+
+Aggregation (weekly, monthly, moving-average) operates on the underlying seconds value, so averages are computed correctly and converted back to `mm:ss` for display.
+
+Known limitation: multiple notes on the same date have their values summed before aggregation (existing behavior for all properties). For time properties this means two runs on the same day sum their paces rather than average them.
 
 ---
 
