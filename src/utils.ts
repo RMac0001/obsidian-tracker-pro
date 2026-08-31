@@ -44,6 +44,27 @@ export function fmt2(n: number): string {
     return parseFloat(n.toFixed(2)).toString();
 }
 
+// ─── Time Value Helpers ────────────────────────────────────────────────────────
+
+const TIME_VALUE_RE = /^\d{1,3}:\d{2}$/;
+
+export function parseTimeToSeconds(raw: string): number | null {
+    const trimmed = raw.trim();
+    if (!TIME_VALUE_RE.test(trimmed)) return null;
+    const [minutesStr, secondsStr] = trimmed.split(":");
+    const minutes = parseInt(minutesStr, 10);
+    const seconds = parseInt(secondsStr, 10);
+    if (seconds > 59) return null;
+    return minutes * 60 + seconds;
+}
+
+export function formatSecondsAsTime(totalSeconds: number): string {
+    const rounded = Math.round(totalSeconds);
+    const m = Math.floor(rounded / 60);
+    const s = rounded % 60;
+    return `${m}:${String(s).padStart(2, "0")}`;
+}
+
 // ─── Section Range ─────────────────────────────────────────────────────────────
 
 export function findSectionRange(

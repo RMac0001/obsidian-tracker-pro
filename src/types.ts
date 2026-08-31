@@ -171,6 +171,7 @@ export interface SeriesData {
   name: string;
   points: DataPoint[];
   color?: string;
+  isTimeFormat?: boolean;
 }
 
 export interface OHLCDataPoint {

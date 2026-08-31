@@ -4,6 +4,23 @@
 
 ---
 
+### v1.6.7 — `mm:ss` Time-Value Support (Auto-Detected)
+
+Fixed silent data corruption on `mm:ss` frontmatter properties (e.g. `pace: 12:34`). `parseFloat("12:34")` was returning `12` — seconds were dropped entirely.
+
+**Changes:**
+
+- `src/utils.ts`: New `parseTimeToSeconds(raw)` and `formatSecondsAsTime(totalSeconds)` helpers. Detection regex: `/^\d{1,3}:\d{2}$/`.
+- `src/types.ts`: Added `isTimeFormat?: boolean` to `SeriesData`.
+- `src/dataCollector.ts`: `extractNumericValue()` tries `parseTimeToSeconds` before `parseFloat`. `buildSeriesData()` detects time format from raw frontmatter values and sets `isTimeFormat` on each series.
+- `src/charts/lineBarChart.ts` (line and bar only): `resolveAxisBound()` helper accepts mm:ss strings for `yAxis.min`/`max` when time format is detected. Y-axis ticks and tooltips formatted via `formatSecondsAsTime()` when `series.some(s => s.isTimeFormat)`.
+
+Auto-detection: a property is treated as time format if any sampled entry has a raw string value matching the pattern. No config flag needed.
+
+Known limitation: same-date note bucketing sums values before aggregation (existing behavior). Two runs on the same day will sum paces rather than average them — not changed as part of this fix.
+
+---
+
 ### v1.6.6 — `{{targetIntake()}}` + Weight Endpoint Averaging
 
 **`{{targetIntake(calProp, ratePerWeek)}}`** — forward-looking daily calorie target based on real TDEE and a chosen rate of loss/gain:
