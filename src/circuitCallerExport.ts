@@ -156,7 +156,7 @@ export async function exportRoutineCircuitCaller(app: App, settings: TrackerSett
     );
     if (!routineFile) return;
 
-    const exercises = parseRoutineBody(await app.vault.read(routineFile));
+    const exercises = parseRoutineBody(app, routineFile.path, await app.vault.read(routineFile));
     if (exercises.length === 0) {
         new Notice(`Routine "${routineFile.basename}" has no exercises.`);
         return;

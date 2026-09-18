@@ -7,12 +7,20 @@ import {
     normalizePath,
 } from "obsidian";
 import { TrackerSettings } from "./settings";
-import { resolveDateTemplate, findSectionRange, slugify, parseTimeToSeconds, formatSecondsAsTime } from "./utils";
+import {
+    resolveDateTemplate, findSectionRange, slugify, parseTimeToSeconds, formatSecondsAsTime,
+    getExerciseDisplayName, parseWikilink, resolveWikilinkTarget,
+} from "./utils";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
+// name is always the resolved display name (getExerciseDisplayName), never a
+// raw filename. file is the resolved wikilink target — null when the source
+// exercise note has since been deleted/renamed (an orphaned entry), in which
+// case identity falls back to the plain name text wherever it's written.
 export interface ExerciseTarget {
     name: string;
+    file: TFile | null;
     targetSets?: number;
     targetRepRange?: string;
 }
@@ -25,6 +33,7 @@ interface LoggedSet {
 interface LoggedStrengthExercise {
     kind: "strength";
     name: string;
+    file: TFile | null;
     equipment: string;
     sets: LoggedSet[];
 }
@@ -32,6 +41,7 @@ interface LoggedStrengthExercise {
 interface LoggedCardioExercise {
     kind: "cardio";
     name: string;
+    file: TFile | null;
     equipment: string;
     cardioMetric: "Pace" | "Speed";
     durationMin: number;
@@ -123,13 +133,14 @@ class FileSuggestModal extends FuzzySuggestModal<TFile> {
         app: App,
         private files: TFile[],
         placeholder: string,
-        private onChoose: (file: TFile | null) => void
+        private onChoose: (file: TFile | null) => void,
+        private getLabel?: (file: TFile) => string
     ) {
         super(app);
         this.setPlaceholder(placeholder);
     }
     getItems(): TFile[] { return this.files; }
-    getItemText(file: TFile): string { return file.basename; }
+    getItemText(file: TFile): string { return this.getLabel ? this.getLabel(file) : file.basename; }
     onChooseItem(file: TFile): void { this.chosen = true; this.onChoose(file); }
     onClose(): void {
         this.contentEl.empty();
@@ -143,6 +154,7 @@ class FileSuggestModal extends FuzzySuggestModal<TFile> {
 
 interface ExerciseFormResult {
     name: string;
+    displayName: string;
     mode: string;
     description: string;
     defaultEquipment: string;
@@ -152,10 +164,11 @@ interface ExerciseFormResult {
 async function loadExerciseForEdit(
     app: App,
     file: TFile
-): Promise<{ mode: string; description: string; defaultEquipment: string; cardioMetric: string }> {
+): Promise<{ displayName: string; mode: string; description: string; defaultEquipment: string; cardioMetric: string }> {
     const fm = app.metadataCache.getFileCache(file)?.frontmatter ?? {};
     const content = await app.vault.read(file);
     return {
+        displayName: String(fm.display_name ?? ""),
         mode: String(fm.mode ?? ""),
         defaultEquipment: String(fm.default_equipment ?? ""),
         cardioMetric: String(fm.cardio_metric ?? ""),
@@ -164,14 +177,16 @@ async function loadExerciseForEdit(
 }
 
 function buildExerciseContent(
+    displayName: string,
     mode: string,
     defaultEquipment: string,
     cardioMetric: string | undefined,
     description: string
 ): string {
     let content = "";
-    if (mode || defaultEquipment || cardioMetric) {
+    if (displayName || mode || defaultEquipment || cardioMetric) {
         content += "---\n";
+        if (displayName) content += `display_name: ${displayName}\n`;
         if (mode) content += `mode: ${mode}\n`;
         if (defaultEquipment) content += `default_equipment: ${defaultEquipment}\n`;
         if (cardioMetric) content += `cardio_metric: ${cardioMetric}\n`;
@@ -186,7 +201,7 @@ class ExerciseFormModal extends Modal {
     constructor(
         app: App,
         private isEdit: boolean,
-        private initial: { name: string; mode: string; description: string; defaultEquipment: string; cardioMetric: string },
+        private initial: { name: string; displayName: string; mode: string; description: string; defaultEquipment: string; cardioMetric: string },
         private equipmentTypes: string[],
         private resolve: (result: ExerciseFormResult | null) => void
     ) { super(app); }
@@ -200,10 +215,15 @@ class ExerciseFormModal extends Modal {
             "border:1px solid var(--background-modifier-border);border-radius:6px;" +
             "background:var(--background-primary);color:var(--text-normal);";
 
-        contentEl.createEl("label", { text: "Name", attr: { style: labelStyle } });
+        contentEl.createEl("label", { text: "Name (filename)", attr: { style: labelStyle } });
         const nameAttrs: Record<string, string> = { type: "text", value: this.initial.name, style: inputStyle };
         if (this.isEdit) nameAttrs.disabled = "true";
         const nameInput = contentEl.createEl("input", { attr: nameAttrs }) as HTMLInputElement;
+
+        contentEl.createEl("label", { text: "Display name (optional — falls back to the filename)", attr: { style: labelStyle } });
+        const displayNameInput = contentEl.createEl("input", {
+            attr: { type: "text", value: this.initial.displayName, style: inputStyle },
+        }) as HTMLInputElement;
 
         contentEl.createEl("label", { text: "Mode (optional)", attr: { style: labelStyle } });
         const modeInput = contentEl.createEl("input", {
@@ -254,6 +274,7 @@ class ExerciseFormModal extends Modal {
             this.close();
             this.resolve({
                 name,
+                displayName: displayNameInput.value.trim(),
                 mode,
                 description: descInput.value.trim(),
                 defaultEquipment: equipmentSelect.value,
@@ -262,7 +283,7 @@ class ExerciseFormModal extends Modal {
         });
         btnRow.createEl("button", { text: "Cancel" }).addEventListener("click", () => this.close());
 
-        (this.isEdit ? modeInput : nameInput).focus();
+        (this.isEdit ? displayNameInput : nameInput).focus();
     }
 
     onClose(): void {
@@ -282,7 +303,7 @@ export async function createEditExercise(app: App, settings: TrackerSettings): P
     if (choice === null) return;
 
     let isEdit = false;
-    let initial = { name: "", mode: "", description: "", defaultEquipment: "", cardioMetric: "" };
+    let initial = { name: "", displayName: "", mode: "", description: "", defaultEquipment: "", cardioMetric: "" };
 
     if (choice !== CREATE_NEW) {
         const existingFile = files.find(f => f.basename === choice);
@@ -299,7 +320,7 @@ export async function createEditExercise(app: App, settings: TrackerSettings): P
 
     const folder = settings.exerciseFolder.replace(/\/$/, "");
     const filePath = normalizePath(`${folder}/${result.name}.md`);
-    const content = buildExerciseContent(result.mode, result.defaultEquipment, result.cardioMetric, result.description);
+    const content = buildExerciseContent(result.displayName, result.mode, result.defaultEquipment, result.cardioMetric, result.description);
 
     await ensureFolders(app, filePath);
     const existingAtPath = app.vault.getAbstractFileByPath(filePath);
@@ -328,35 +349,42 @@ function formatTargetSuffix(target: ExerciseTarget): string {
 
 function formatRoutineExerciseLine(idx: number, target: ExerciseTarget): string {
     const suffix = formatTargetSuffix(target);
-    return suffix ? `${idx}. [[${target.name}]] — ${suffix}` : `${idx}. [[${target.name}]]`;
+    const link = target.file ? `[[${target.file.basename}|${target.name}]]` : `[[${target.name}]]`;
+    return suffix ? `${idx}. ${link} — ${suffix}` : `${idx}. ${link}`;
 }
 
-function parseRoutineExerciseLine(line: string): ExerciseTarget | null {
-    const m = line.match(/^\d+\.\s+\[\[(.+?)\]\](?:\s+—\s+(.*))?$/);
+// Resolves the exercise by the wikilink's TARGET only — an alias (if present)
+// is display text a user or an earlier export may have typed and can drift
+// from the note's current display_name, so it's never trusted for identity.
+function parseRoutineExerciseLine(app: App, sourcePath: string, line: string): ExerciseTarget | null {
+    const m = line.match(/^\d+\.\s+(\[\[.+?\]\])(?:\s+—\s+(.*))?$/);
     if (!m) return null;
-    const name = m[1];
+    const link = parseWikilink(m[1]);
+    if (!link) return null;
+    const file = resolveWikilinkTarget(app, link.target, sourcePath);
+    const name = file ? getExerciseDisplayName(app, file) : (link.alias ?? link.target);
     const suffix = m[2]?.trim();
-    if (!suffix) return { name };
+    if (!suffix) return { name, file };
 
     const bothM = suffix.match(/^(\d+)\s*×\s*(.+)$/);
-    if (bothM) return { name, targetSets: parseInt(bothM[1], 10), targetRepRange: bothM[2].trim() };
+    if (bothM) return { name, file, targetSets: parseInt(bothM[1], 10), targetRepRange: bothM[2].trim() };
 
     const setsOnlyM = suffix.match(/^(\d+)\s*sets?$/i);
-    if (setsOnlyM) return { name, targetSets: parseInt(setsOnlyM[1], 10) };
+    if (setsOnlyM) return { name, file, targetSets: parseInt(setsOnlyM[1], 10) };
 
     const repsOnlyM = suffix.match(/^(.+?)\s*reps?$/i);
-    if (repsOnlyM) return { name, targetRepRange: repsOnlyM[1].trim() };
+    if (repsOnlyM) return { name, file, targetRepRange: repsOnlyM[1].trim() };
 
-    return { name, targetRepRange: suffix };
+    return { name, file, targetRepRange: suffix };
 }
 
-export function parseRoutineBody(content: string): ExerciseTarget[] {
+export function parseRoutineBody(app: App, sourcePath: string, content: string): ExerciseTarget[] {
     const lines = content.split("\n");
     const range = findSectionRange(lines, "Exercises");
     if (!range) return [];
     const result: ExerciseTarget[] = [];
     for (let i = range.start; i < range.end; i++) {
-        const parsed = parseRoutineExerciseLine(lines[i].trim());
+        const parsed = parseRoutineExerciseLine(app, sourcePath, lines[i].trim());
         if (parsed) result.push(parsed);
     }
     return result;
@@ -485,7 +513,7 @@ export async function createEditRoutine(app: App, settings: TrackerSettings): Pr
         name = file.basename;
         const fm = app.metadataCache.getFileCache(file)?.frontmatter ?? {};
         category = String(fm.category ?? "");
-        exercises = parseRoutineBody(await app.vault.read(file));
+        exercises = parseRoutineBody(app, file.path, await app.vault.read(file));
     }
 
     const exerciseFiles = getExerciseFiles(app, settings);
@@ -512,15 +540,19 @@ export async function createEditRoutine(app: App, settings: TrackerSettings): Pr
 
         if (menuChoice === "Add an exercise") {
             const file = await new Promise<TFile | null>(res =>
-                new FileSuggestModal(app, exerciseFiles, "Search exercise database…", res).open()
+                new FileSuggestModal(
+                    app, exerciseFiles, "Search exercise database…", res,
+                    (f) => getExerciseDisplayName(app, f)
+                ).open()
             );
             if (!file) continue;
+            const displayName = getExerciseDisplayName(app, file);
             const target = await new Promise<{ targetSets?: number; targetRepRange?: string } | null>(res =>
-                new RoutineTargetModal(app, file.basename, res).open()
+                new RoutineTargetModal(app, displayName, res).open()
             );
             if (!target) continue;
-            exercises.push({ name: file.basename, ...target });
-            new Notice(`Added: ${file.basename}`);
+            exercises.push({ name: displayName, file, ...target });
+            new Notice(`Added: ${displayName}`);
             continue;
         }
 
@@ -599,13 +631,38 @@ function getWorkoutLogBaseFolder(settings: TrackerSettings): string {
 
 // Scans past workout logs (most recent first) for the exercise+equipment pair and
 // returns the set with the highest weight from the first matching session found.
+// Resolves a "## [[target|alias]] — Equipment" (or "## [[target]] — Equipment")
+// heading by the wikilink's TARGET, never the alias text, which can drift from
+// the exercise note's current display_name.
+function findExerciseHeadingIndex(
+    app: App,
+    lines: string[],
+    sourcePath: string,
+    exerciseFile: TFile,
+    equipment: string
+): number {
+    for (let i = 0; i < lines.length; i++) {
+        const m = lines[i].match(/^## (.+)$/);
+        if (!m) continue;
+        const headingText = m[1];
+        const sepIdx = headingText.lastIndexOf(" — ");
+        if (sepIdx === -1) continue;
+        if (headingText.slice(sepIdx + 3) !== equipment) continue;
+        const link = parseWikilink(headingText.slice(0, sepIdx));
+        if (!link) continue;
+        const target = resolveWikilinkTarget(app, link.target, sourcePath);
+        if (target && target.path === exerciseFile.path) return i;
+    }
+    return -1;
+}
+
 async function findLastLoggedSet(
     app: App,
     settings: TrackerSettings,
-    exerciseName: string,
+    exerciseFile: TFile,
     equipment: string
 ): Promise<LastSetHint | null> {
-    const slug = slugify(exerciseName);
+    const slug = slugify(getExerciseDisplayName(app, exerciseFile));
     const base = getWorkoutLogBaseFolder(settings);
     const files = app.vault.getMarkdownFiles().filter(f => !base || f.path.startsWith(base + "/"));
 
@@ -613,11 +670,9 @@ async function findLastLoggedSet(
         .filter(f => (app.metadataCache.getFileCache(f)?.frontmatter ?? {})[`${slug}_equipment`] === equipment)
         .sort((a, b) => (getFileDateWL(app, b)?.getTime() ?? 0) - (getFileDateWL(app, a)?.getTime() ?? 0));
 
-    const heading = `## ${exerciseName} — ${equipment}`;
-
     for (const file of matches) {
         const lines = (await app.vault.read(file)).split("\n");
-        const headerIdx = lines.findIndex(l => l.trim() === heading);
+        const headerIdx = findExerciseHeadingIndex(app, lines, file.path, exerciseFile, equipment);
         if (headerIdx === -1) continue;
 
         let best: LastSetHint | null = null;
@@ -640,10 +695,10 @@ async function findLastLoggedSet(
 async function findLastLoggedCardio(
     app: App,
     settings: TrackerSettings,
-    exerciseName: string,
+    exerciseFile: TFile,
     equipment: string
 ): Promise<LastCardioHint | null> {
-    const slug = slugify(exerciseName);
+    const slug = slugify(getExerciseDisplayName(app, exerciseFile));
     const base = getWorkoutLogBaseFolder(settings);
     const files = app.vault.getMarkdownFiles().filter(f => !base || f.path.startsWith(base + "/"));
 
@@ -915,40 +970,39 @@ class CardioEntryModal extends Modal {
 async function logOneExercise(
     app: App,
     settings: TrackerSettings,
-    exerciseName: string,
-    exerciseFiles: TFile[]
+    exerciseFile: TFile
 ): Promise<LoggedExercise | null> {
-    const exerciseFile = exerciseFiles.find(f => f.basename === exerciseName);
-    const fm = exerciseFile ? (app.metadataCache.getFileCache(exerciseFile)?.frontmatter ?? {}) : {};
+    const fm = app.metadataCache.getFileCache(exerciseFile)?.frontmatter ?? {};
+    const displayName = getExerciseDisplayName(app, exerciseFile);
     const defaultEquipment = String(fm.default_equipment ?? settings.equipmentTypes[0] ?? "");
     const cardio = isCardioMode(String(fm.mode ?? ""));
     const cardioMetric: "Pace" | "Speed" = fm.cardio_metric === "Speed" ? "Speed" : "Pace";
 
     const getHint = cardio
-        ? (eq: string) => findLastLoggedCardio(app, settings, exerciseName, eq)
+        ? (eq: string) => findLastLoggedCardio(app, settings, exerciseFile, eq)
             .then(hint => formatCardioHint(hint, settings.distanceUnit, cardioMetric))
-        : (eq: string) => findLastLoggedSet(app, settings, exerciseName, eq)
+        : (eq: string) => findLastLoggedSet(app, settings, exerciseFile, eq)
             .then(hint => formatStrengthHint(hint, settings.weightUnit));
 
     const equipment = await new Promise<string | null>(res =>
-        new EquipmentModal(app, exerciseName, settings.equipmentTypes, defaultEquipment, getHint, res).open()
+        new EquipmentModal(app, displayName, settings.equipmentTypes, defaultEquipment, getHint, res).open()
     );
     if (!equipment) return null;
 
     if (cardio) {
         const entry = await new Promise<CardioEntryResult | null>(res =>
-            new CardioEntryModal(app, exerciseName, equipment, settings.distanceUnit, res).open()
+            new CardioEntryModal(app, displayName, equipment, settings.distanceUnit, res).open()
         );
         if (!entry) return null;
-        return { kind: "cardio", name: exerciseName, equipment, cardioMetric, ...entry };
+        return { kind: "cardio", name: displayName, file: exerciseFile, equipment, cardioMetric, ...entry };
     }
 
     const sets = await new Promise<LoggedSet[] | null>(res =>
-        new SetLoggingModal(app, exerciseName, equipment, settings.weightUnit, res).open()
+        new SetLoggingModal(app, displayName, equipment, settings.weightUnit, res).open()
     );
     if (!sets || sets.length === 0) return null;
 
-    return { kind: "strength", name: exerciseName, equipment, sets };
+    return { kind: "strength", name: displayName, file: exerciseFile, equipment, sets };
 }
 
 function computeCardioMetricField(ex: LoggedCardioExercise): { key: string; value: string | number } {
@@ -1030,7 +1084,8 @@ async function writeWorkoutLogContent(
     // Rebuild body: one heading + entry per exercise, in logged order, then trailing Notes
     let body = "";
     for (const ex of exercises) {
-        body += `## ${ex.name} — ${ex.equipment}\n`;
+        const link = ex.file ? `[[${ex.file.basename}|${ex.name}]]` : ex.name;
+        body += `## ${link} — ${ex.equipment}\n`;
         if (ex.kind === "strength") {
             ex.sets.forEach((s, i) => {
                 body += `- Set ${i + 1}: ${s.weight} ${settings.weightUnit} × ${s.reps}\n`;
@@ -1105,9 +1160,14 @@ function parseNotesLines(body: string): string[] {
 // category on the source exercise note (the same rule Log workout uses),
 // with a body-shape fallback for a since-deleted or since-recategorized
 // exercise note so parsing degrades gracefully instead of losing data.
+// Resolves each heading by its wikilink TARGET (current format), falling back
+// to matching plain text against known exercises for session notes written
+// before headings were linked — never trusting alias text for identity either
+// way, since it can drift from the note's current display_name.
 function parseWorkoutLogBody(
     app: App,
     exerciseFiles: TFile[],
+    sourcePath: string,
     content: string
 ): LoggedExercise[] {
     const lines = extractBody(content).split("\n");
@@ -1123,7 +1183,7 @@ function parseWorkoutLogBody(
         i++;
         if (sepIdx === -1) continue; // malformed heading — skip without consuming as data
 
-        const name = headingText.slice(0, sepIdx);
+        const namePart = headingText.slice(0, sepIdx);
         const equipment = headingText.slice(sepIdx + 3);
 
         const sectionLines: string[] = [];
@@ -1132,7 +1192,17 @@ function parseWorkoutLogBody(
             i++;
         }
 
-        const exerciseFile = exerciseFiles.find(f => f.basename === name);
+        const link = parseWikilink(namePart);
+        let exerciseFile: TFile | null;
+        let name: string;
+        if (link) {
+            exerciseFile = resolveWikilinkTarget(app, link.target, sourcePath);
+            name = exerciseFile ? getExerciseDisplayName(app, exerciseFile) : (link.alias ?? link.target);
+        } else {
+            exerciseFile = exerciseFiles.find(f => getExerciseDisplayName(app, f) === namePart || f.basename === namePart) ?? null;
+            name = namePart;
+        }
+
         const fm = exerciseFile ? (app.metadataCache.getFileCache(exerciseFile)?.frontmatter ?? {}) : {};
         const mode = String(fm.mode ?? "");
         const setLines = sectionLines.filter(l => /^-\s+Set\s+\d+:/.test(l));
@@ -1147,7 +1217,7 @@ function parseWorkoutLogBody(
                 const m = line.match(/^-\s+Set\s+\d+:\s+([\d.]+)\s+\S+\s+×\s+(\d+)/);
                 if (m) sets.push({ weight: parseFloat(m[1]), reps: parseInt(m[2], 10) });
             }
-            result.push({ kind: "strength", name, equipment, sets });
+            result.push({ kind: "strength", name, file: exerciseFile, equipment, sets });
         } else {
             const cardioMetric: "Pace" | "Speed" = fm.cardio_metric === "Speed" ? "Speed" : "Pace";
             const dataLine = sectionLines.find(l => l.trim().startsWith("-"));
@@ -1161,7 +1231,7 @@ function parseWorkoutLogBody(
                 if (avgM) avgHr = parseFloat(avgM[1]);
                 if (peakM) peakHr = parseFloat(peakM[1]);
             }
-            result.push({ kind: "cardio", name, equipment, cardioMetric, durationMin, distance, avgHr, peakHr });
+            result.push({ kind: "cardio", name, file: exerciseFile, equipment, cardioMetric, durationMin, distance, avgHr, peakHr });
         }
     }
 
@@ -1192,7 +1262,7 @@ export async function logWorkout(app: App, settings: TrackerSettings): Promise<v
         );
         if (!routineFile) return;
 
-        const targets = parseRoutineBody(await app.vault.read(routineFile));
+        const targets = parseRoutineBody(app, routineFile.path, await app.vault.read(routineFile));
         if (targets.length === 0) {
             new Notice(`Routine "${routineFile.basename}" has no exercises.`);
             return;
@@ -1200,7 +1270,11 @@ export async function logWorkout(app: App, settings: TrackerSettings): Promise<v
         routineName = routineFile.basename;
 
         for (const target of targets) {
-            const result = await logOneExercise(app, settings, target.name, exerciseFiles);
+            if (!target.file) {
+                new Notice(`Skipping "${target.name}" — exercise not found in the database.`);
+                continue;
+            }
+            const result = await logOneExercise(app, settings, target.file);
             if (result) logged.push(result);
         }
     }
@@ -1221,11 +1295,14 @@ export async function logWorkout(app: App, settings: TrackerSettings): Promise<v
             if (choice === null || choice === "Finish workout") break;
 
             const file = await new Promise<TFile | null>(res =>
-                new FileSuggestModal(app, exerciseFiles, "Search exercise database…", res).open()
+                new FileSuggestModal(
+                    app, exerciseFiles, "Search exercise database…", res,
+                    (f) => getExerciseDisplayName(app, f)
+                ).open()
             );
             if (!file) continue;
 
-            const result = await logOneExercise(app, settings, file.basename, exerciseFiles);
+            const result = await logOneExercise(app, settings, file);
             if (result) logged.push(result);
         }
     }
@@ -1476,7 +1553,7 @@ class EditWorkoutLogModal extends Modal {
         const fm = this.app.metadataCache.getFileCache(this.file)?.frontmatter ?? {};
         this.routineName = fm.routine ? String(fm.routine) : null;
         this.timeMin = fm.time_min !== undefined && fm.time_min !== null ? Number(fm.time_min) : undefined;
-        this.exercises = parseWorkoutLogBody(this.app, this.exerciseFiles, content);
+        this.exercises = parseWorkoutLogBody(this.app, this.exerciseFiles, this.file.path, content);
         this.notesLines = parseNotesLines(extractBody(content));
     }
 
@@ -1624,16 +1701,21 @@ class EditWorkoutLogModal extends Modal {
             new Notice(`No exercises found in ${this.settings.exerciseFolder}.`);
             return;
         }
-        new FileSuggestModal(this.app, this.exerciseFiles, "Search exercise database…", (file) => {
-            if (!file) { this.render(); return; }
-            logOneExercise(this.app, this.settings, file.basename, this.exerciseFiles).then((result) => {
-                if (result) {
-                    this.exercises.push(result);
-                    new Notice(`Added: ${file.basename}`);
-                }
-                this.render();
-            });
-        }).open();
+        new FileSuggestModal(
+            this.app, this.exerciseFiles, "Search exercise database…",
+            (file) => {
+                if (!file) { this.render(); return; }
+                const displayName = getExerciseDisplayName(this.app, file);
+                logOneExercise(this.app, this.settings, file).then((result) => {
+                    if (result) {
+                        this.exercises.push(result);
+                        new Notice(`Added: ${displayName}`);
+                    }
+                    this.render();
+                });
+            },
+            (f) => getExerciseDisplayName(this.app, f)
+        ).open();
     }
 
     private removeExercise(): void {

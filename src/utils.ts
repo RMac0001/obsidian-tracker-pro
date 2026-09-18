@@ -94,6 +94,29 @@ export function findSectionRange(
     return { start, end };
 }
 
+// ─── Exercise Display Name & Wikilinks ─────────────────────────────────────────
+// Exercise notes are filed under an internal name (e.g. Exercise-Recumbent-Bike)
+// with a human-facing display_name in frontmatter. Everywhere an exercise's
+// identity is shown or keyed, resolve through this helper — never file.basename
+// directly — and resolve wikilinks by their TARGET, never by trusting alias text
+// (an alias can drift out of sync with the note's current display_name).
+
+export function getExerciseDisplayName(app: App, file: TFile): string {
+    const fm = app.metadataCache.getFileCache(file)?.frontmatter;
+    const displayName = fm?.display_name;
+    return displayName ? String(displayName) : file.basename;
+}
+
+export function parseWikilink(text: string): { target: string; alias?: string } | null {
+    const m = text.trim().match(/^\[\[([^\]|]+)(?:\|([^\]]+))?\]\]$/);
+    if (!m) return null;
+    return { target: m[1].trim(), alias: m[2]?.trim() };
+}
+
+export function resolveWikilinkTarget(app: App, target: string, sourcePath: string): TFile | null {
+    return app.metadataCache.getFirstLinkpathDest(target.replace(/\.md$/, ""), sourcePath);
+}
+
 // ─── Candidate Files ───────────────────────────────────────────────────────────
 
 export function getCandidateFiles(
