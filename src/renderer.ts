@@ -127,7 +127,7 @@ async function renderChartContent(
   // ── Table ─────────────────────────────────────────────────────────────────
   if (config.type === "table") {
     const entries = await collectRawEntries(app, config);
-    renderTableChart(el, entries, config);
+    renderTableChart(el, entries, config, app, settings);
     return;
   }
 

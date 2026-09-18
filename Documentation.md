@@ -48,6 +48,7 @@ and renders them as charts and summaries. It requires no Dataview dependency.
    - [Log workout](#log-workout)
    - [Edit workout log](#edit-workout-log)
    - [Export routine (Circuit Caller)](#export-routine-circuit-caller)
+   - [Migrate legacy exercise notes](#migrate-legacy-exercise-notes)
    - [Chart Compatibility](#workout-chart-compatibility)
 9. [Advanced Features](#advanced-features)
    - [source: fileMeta](#source-filemeta)
@@ -1480,15 +1481,21 @@ plugin.
 ### Workout Vault Structure
 
 **Exercises** (default `Data/Exercises`) — one note per exercise. The
-filename is the canonical name referenced everywhere else (routine lines,
-session headings).
+filename is an internal identifier — it can be anything, including a
+scheme like `Exercise-Recumbent-Bike.md` — and is never shown anywhere.
+Everywhere an exercise's identity is displayed (search results, session
+headings, routine lines, chart row labels), the plugin resolves and shows
+`display_name` instead, falling back to the filename only when
+`display_name` is unset:
 
 ```yaml
+display_name: Bench Press
 mode: Push
 default_equipment: Barbell
 ```
 
 ```yaml
+display_name: Recumbent Bike
 mode: Cardio
 default_equipment: Outdoor
 cardio_metric: Pace
@@ -1507,9 +1514,10 @@ have their own, unrelated `category` field (free-text grouping like
 "Upper Body") — see below.
 
 **Routines** (default `Data/Routines`) — one note per routine, with an
-optional `category` and a `## Exercises` ordered list. Cardio exercises are
-added exactly like strength ones — the target suffix is just freeform text,
-so `20 min` works as well as `3 × 8-12`:
+optional `category` and a `## Exercises` ordered list of real wikilinks
+(with an alias for display), not plain text. Cardio exercises are added
+exactly like strength ones — the target suffix is just freeform text, so
+`20 min` works as well as `3 × 8-12`:
 
 ```yaml
 ---
@@ -1517,16 +1525,22 @@ category: Upper Body
 ---
 
 ## Exercises
-1. [[Bench Press]] — 3 × 8-12
-2. [[Bent-Over Row]] — 3 × 8-12
-3. [[Overhead Press]] — 4 sets
-4. [[Bicep Curl]]
-5. [[Morning Walk]] — 20 min
+1. [[Exercise-Bench-Press|Bench Press]] — 3 × 8-12
+2. [[Exercise-Bent-Over-Row|Bent-Over Row]] — 3 × 8-12
+3. [[Exercise-Overhead-Press|Overhead Press]] — 4 sets
+4. [[Exercise-Bicep-Curl|Bicep Curl]]
+5. [[Exercise-Morning-Walk|Morning Walk]] — 20 min
 ```
 
-The suffix is optional per exercise and purely a target/reminder — Log
-Workout doesn't enforce it. A routine is not required at all: Log Workout
-can log a single ad hoc exercise with no routine (see below).
+Each line is resolved by the wikilink's **target** — the alias is display
+text only and is never trusted for identity, so it can't drift the way a
+plain-text name could if an exercise's `display_name` changes later (the
+routine line just keeps showing whatever alias was written; re-saving the
+routine via Create/edit routine refreshes it to the exercise's current
+`display_name`). The suffix is optional per exercise and purely a
+target/reminder — Log Workout doesn't enforce it. A routine is not
+required at all: Log Workout can log a single ad hoc exercise with no
+routine (see below).
 
 **Workout logs** (default `Data/Workouts/{{DATE:YYYY}}/{{DATE:YYYY-MM}}`) —
 one note per **session** (not per day), filename
@@ -1571,15 +1585,24 @@ independent of any per-exercise cardio `<slug>_duration_min` field. An ad
 hoc session (no routine picked) omits the `routine:` key entirely rather
 than writing an empty value.
 
-The body has one `## {Exercise Name} — {Equipment}` heading per exercise
-(same order). A strength exercise gets one `- Set N: {weight} {weightUnit}
-× {reps}` bullet per set; a cardio exercise gets a single line —
+The body has one `## [[filename|Display Name]] — {Equipment}` heading per
+exercise (same order) — a real wikilink, not plain text, so the exercise
+note stays reachable even if its `display_name` later changes. A strength
+exercise gets one `- Set N: {weight} {weightUnit} × {reps}` bullet per
+set; a cardio exercise gets a single line —
 `- {duration} min · {distance} {distanceUnit} · Pace {pace}/{distanceUnit}`
 (or `Speed {speed} {distanceUnit}/h`), with ` · HR avg {avg} / peak {peak}`
 appended only for whichever heart-rate values were entered. There is no
 per-set framing for cardio — it's always one continuous effort per
 exercise per session, never an interval loop. A trailing empty `## Notes`
 section closes the note.
+
+Reading a heading back always resolves by the wikilink's target — Edit
+workout log's re-parse never trusts the alias text either, for the same
+reason routine lines don't. Session notes written before this behavior
+shipped (plain-text headings, no brackets) still parse correctly — Edit
+workout log falls back to matching the plain text against a known
+exercise's current `display_name` or filename.
 
 Weight is always a plain number — a resistance band's printed rating logs
 exactly like a barbell's plate count. Equipment is captured once per
@@ -1591,13 +1614,16 @@ exercise (e.g. `Outdoor` vs `Treadmill` walks, logged and hinted separately).
 
 ### Create/edit exercise
 
-Fuzzy-searches your exercise database; offers **+ Create new exercise** when
-nothing matches. Opens a form for name (locked when editing an existing
-exercise — rename by editing the routine/history references separately),
-mode, description, and default equipment (a dropdown built from the
-**Equipment types** setting). A **Cardio metric** field (Pace or Speed)
-appears only while Mode reads "Cardio". Saving creates or fully
-overwrites the note.
+Fuzzy-searches your exercise database (by filename — see Display name
+below); offers **+ Create new exercise** when nothing matches. Opens a
+form for name/filename (locked when editing an existing exercise — rename
+by editing the routine/history references separately), an optional
+**Display name** (falls back to the filename when left blank — this is
+what's shown everywhere else: search results elsewhere, session headings,
+routine lines, chart row labels), mode, description, and default equipment
+(a dropdown built from the **Equipment types** setting). A **Cardio
+metric** field (Pace or Speed) appears only while Mode reads "Cardio".
+Saving creates or fully overwrites the note.
 
 ---
 
@@ -1749,6 +1775,26 @@ No default folder or last-used location is remembered between exports beyond wha
 
 ---
 
+### Migrate legacy exercise notes
+
+A one-time, safely re-runnable command for anyone who logged cardio (or any exercise) as individual flat notes before Workout Routines existed. Reads every note in the **Exercise notes folder** (the same folder Achievements' Exercise Streak scans) and writes an equivalent session note into **Data/Workouts** for each one — **the source folder is never modified or deleted**, no matter how many times you run this.
+
+1. Confirms first: *"This creates up to N new session notes in Data/Workouts from your \<folder\> entries. Nothing in \<folder\> is changed or deleted. Continue?"*
+2. Each entry's destination path reuses the date/time already in its own filename (`EN-YYYY-MM-DD-HHmmss`), resolved through your configured **Workout log folder**/**Workout log filename** templates. If that destination note already exists, the entry is skipped — safe to run again after adding new legacy entries without re-creating everything.
+3. Resolves the entry's exercise by its wikilink's **target**, handling both a bare `[[Exercise-X]]`/`[[Exercise-X|alias]]` and a full-path `[[Data/Exercises/Exercise-X.md|alias]]` form — the alias is never trusted for identity. If the link can't be resolved (the exercise note is gone), it falls back to a `mode` field on the legacy entry itself, if present. If neither is available, that entry is skipped and listed for review instead of guessed at.
+4. Builds the new note as an **ad hoc** session (no `routine:` key) with the same rollup fields Log Workout itself would write, plus the legacy note's `# Notes` body carried into the new note's `## Notes` section exactly as written — nothing filtered.
+5. Finishes with a Notice reporting counts (migrated / already migrated / needing review). If anything needed review, a report note is written to `Data/Workouts/Migration Report.md` listing which entries and why — re-running the migration regenerates this report from scratch each time, so it always reflects the latest run.
+
+Field-mapping notes specific to migration (not part of live Log Workout behavior):
+- A legacy cardio entry's `pace`/`average_speed` are copied directly into `<slug>_pace`/`<slug>_speed` rather than recomputed — none of these entries ever recorded a distance, so `<slug>_distance` is simply omitted, never written as `0`.
+- A legacy strength entry's `sets`/`reps`/`weight_lb` are reconstructed as that many identical `Set N: {weight_lb} {weightUnit} × {round(reps ÷ sets)}` bullets, and every rollup (`<slug>_sets`, `<slug>_reps`, `<slug>_top_weight`, `<slug>_volume`) is then derived from those bullets — the same way live logging always derives them from the actual sets — rather than copied from the legacy totals directly.
+- Both branches also write `<slug>_duration_min` from the legacy entry's own `time_min` (in addition to the session-level `time_min`) — the live plugin never asks for a per-exercise strength duration, but every legacy entry tracked one regardless of type, and keeping it is what lets a workout table's auto-pivoted Minutes column (below) show real numbers for migrated strength sessions too.
+- `<slug>_equipment` is written as an empty string — equipment was never captured on legacy notes, so it isn't guessed at.
+
+Your existing chart blocks pointed at the legacy folder keep working completely unchanged for as long as you want them to — migration doesn't touch that folder, so there's no rush and no requirement to switch over.
+
+---
+
 ### Workout Chart Compatibility
 
 No new block type — read the rollup properties like any other frontmatter:
@@ -1785,6 +1831,59 @@ columns:
     value: sum(total_volume)
 ```
 ````
+
+**Per-exercise tables auto-pivot.** The wide session-note schema has no
+literal `exercise` frontmatter key — an exercise's values live under its
+own slug-prefixed keys instead (`bench_press_sets`, `walk_duration_min`).
+When a `table` block's `groupBy` value isn't a literal key present on the
+scanned notes, the plugin strips its own known rollup suffixes
+(`_sets`, `_reps`, `_top_weight`, `_volume`, `_duration_min`, `_distance`,
+`_pace`, `_speed`, `_avg_hr`, `_peak_hr`, `_equipment`) off every
+frontmatter key on each note instead, recovers each note's exercise
+slug(s), and groups by those automatically — no hand-maintained list of
+slugs to keep in sync, and no effect whatsoever on the Data/Exercises
+database (an unrelated system). A pre-migration chart that grouped by a
+literal `exercise` field on the old flat notes needs no changes beyond
+pointing `folder:` at `Data/Workouts` instead — same `groupBy: exercise`,
+same generic `count`/`sum(sets)`/`sum(reps)`/`sum(time_min)` column
+values:
+
+````
+```tracker-pro
+type: table
+folder: Data/Workouts
+groupBy: exercise
+groupLabel: Exercise
+columns:
+  - label: Sessions
+    value: count
+  - label: Sets
+    value: sum(sets)
+  - label: Reps
+    value: sum(reps)
+  - label: Minutes
+    value: sum(time_min)
+```
+````
+
+Row labels resolve to the exercise's current `display_name` from
+Data/Exercises, not the raw slug. `sum(sets)`/`sum(reps)` read
+`<slug>_sets`/`<slug>_reps` (0 for a cardio-only exercise, same as
+before). `sum(time_min)` in this pivoted, per-exercise context reads
+`<slug>_duration_min` when the exercise has one (cardio, or a migrated
+legacy strength entry); when it doesn't — a strength exercise logged
+going forward as part of a multi-exercise session, since the live plugin
+only tracks `time_min` at the whole-session level — that session's full
+`time_min` is credited to the exercise **unsplit**, not zero and not
+divided. A row therefore answers "how much workout time happened on days
+including this exercise," not a strict per-exercise time allocation, so a
+Minutes total can exceed actual hours trained once exercises overlap in
+the same session — that's expected, not a bug.
+
+`Walk` and `Walk at Home` (or any two exercises you keep as genuinely
+separate entries) always stay separate rows with separate rollup keys —
+nothing in the plugin ever merges exercise slugs together. Chart two of
+them side by side with two separate blocks if you want both.
 
 ---
 
