@@ -19951,6 +19951,12 @@ const ROLLUP_SUFFIXES = [
     "equipment", "distance", "volume", "speed", "sets", "reps", "pace",
 ];
 const SLUG_SUFFIX_RE = new RegExp(`^(.+)_(${ROLLUP_SUFFIXES.join("|")})$`);
+// Whole-session convenience fields — never per-exercise data, even though some
+// (total_sets, total_volume) happen to match the <word>_suffix shape the same
+// way a real slug like recumbent_bike_speed does. An explicit exclude list
+// rather than one-off special-casing so a future whole-session summary field
+// can't reintroduce the same phantom-exercise bug.
+const SESSION_LEVEL_KEYS = new Set(["time_min", "total_sets", "total_volume", "creation_date"]);
 // Builds one virtualized RawEntry per (entry, slug) pair, with rollup keys
 // remapped to their generic (unprefixed) name, so the existing column-value
 // evaluator works unchanged against a slug's group exactly as it already does
@@ -19960,6 +19966,8 @@ function buildPivotGroups(entries) {
     for (const entry of entries) {
         const perSlugFm = new Map();
         for (const key of Object.keys(entry.frontmatter)) {
+            if (SESSION_LEVEL_KEYS.has(key))
+                continue;
             const m = key.match(SLUG_SUFFIX_RE);
             if (!m)
                 continue;
@@ -19984,16 +19992,17 @@ function buildPivotGroups(entries) {
     }
     return groups;
 }
-function resolveDisplayNameForSlug(slug, app, settings) {
+function resolveExerciseForSlug(slug, app, settings) {
     const folder = settings.exerciseFolder.replace(/\/$/, "");
     for (const file of app.vault.getMarkdownFiles()) {
         if (!file.path.startsWith(folder + "/"))
             continue;
-        if (slugify(getExerciseDisplayName(app, file)) === slug)
-            return getExerciseDisplayName(app, file);
+        const displayName = getExerciseDisplayName(app, file);
+        if (slugify(displayName) === slug)
+            return { file, displayName };
     }
     // Orphaned slug (exercise since deleted/renamed) — humanize rather than show raw text
-    return slug.replace(/_/g, " ").replace(/\b\w/g, c => c.toUpperCase());
+    return { file: null, displayName: slug.replace(/_/g, " ").replace(/\b\w/g, c => c.toUpperCase()) };
 }
 // ─── Group-by Cell Renderer ───────────────────────────────────────────────────
 function renderGroupByCell(parent, key) {
@@ -20035,7 +20044,16 @@ function renderTableChart(container, entries, config, app, settings) {
             }
             return g;
         })();
-    const labelFor = (key) => usePivot ? resolveDisplayNameForSlug(key, app, settings) : key;
+    // Cache per-slug resolution — sort + row rendering would otherwise each
+    // rescan the exercise database for the same slug.
+    const pivotResolutionCache = new Map();
+    const resolveForKey = (key) => {
+        if (!pivotResolutionCache.has(key)) {
+            pivotResolutionCache.set(key, resolveExerciseForSlug(key, app, settings));
+        }
+        return pivotResolutionCache.get(key);
+    };
+    const labelFor = (key) => usePivot ? resolveForKey(key).displayName : key;
     // Sort groups alphabetically (by resolved display name when pivoted)
     const sortedKeys = Array.from(groups.keys()).sort((a, b) => labelFor(a).localeCompare(labelFor(b), undefined, { sensitivity: "base" }));
     // ── Build table ──────────────────────────────────────────────────────────
@@ -20059,7 +20077,18 @@ function renderTableChart(container, entries, config, app, settings) {
         const groupEntries = groups.get(key);
         const tr = tbody.createEl("tr");
         if (usePivot) {
-            tr.createEl("td", { text: labelFor(key) });
+            const { file, displayName } = resolveForKey(key);
+            const td = tr.createEl("td");
+            if (file) {
+                td.createEl("a", {
+                    text: displayName,
+                    cls: "internal-link",
+                    attr: { "data-href": file.path, href: file.path },
+                });
+            }
+            else {
+                td.setText(displayName);
+            }
         }
         else {
             renderGroupByCell(tr, key);
