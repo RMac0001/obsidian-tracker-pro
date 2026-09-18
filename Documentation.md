@@ -109,7 +109,8 @@ Open **Settings → Tracker Pro** to configure defaults that apply to every bloc
 | **Workout log folder** | Folder path template for workout session notes. Supports `{{DATE:FORMAT}}` tokens (default: `Data/Workouts/{{DATE:YYYY}}/{{DATE:YYYY-MM}}`). |
 | **Workout log filename** | Filename template for workout session notes. Supports `{{DATE:FORMAT}}` tokens (default: `WL-{{DATE:YYYY-MM-DD}}-{{DATE:HHmmss}}`). |
 | **Weight unit** | Display label appended after logged weights (default: `lb`). No unit conversion is performed. |
-| **Equipment types** | Ordered list offered when logging equipment and for an exercise's default equipment (default: Barbell, Dumbbell, Machine, Band, Bodyweight). Renaming or removing an entry does not rewrite equipment values already written to past workout notes. |
+| **Distance unit** | Display label appended after logged cardio distances and speeds (default: `km`). No unit conversion is performed. |
+| **Equipment types** | Ordered list offered when logging equipment and for an exercise's default equipment (default: Barbell, Dumbbell, Machine, Band, Bodyweight, Outdoor, Treadmill). Renaming or removing an entry does not rewrite equipment values already written to past workout notes. |
 
 ---
 
@@ -1460,11 +1461,19 @@ The year dropdown in the hero re-renders the block in place for the selected yea
 
 ## Workout Routines
 
-Strength-routine logging: define a routine once, then log a session note
-every time you work through it. There is no dedicated chart type — every
-value written by Log Workout is a plain frontmatter property, so any
-existing `line`, `bar`, `table`, or `summary` block can read it directly.
-Cardio logging (Exercise Notes, used by Achievements) is unaffected.
+Strength **and cardio** logging in one unified system: define a routine
+once, then log a session note every time you work through it. There is no
+dedicated chart type — every value written by Log Workout is a plain
+frontmatter property, so any existing `line`, `bar`, `table`, or `summary`
+block can read it directly.
+
+This replaces the old Templater/QuickAdd cardio template going forward.
+Historical cardio notes in `Data/Exercise Notes` are **not migrated** — they
+stay exactly as they are, and Achievements' Exercise Streak (which scans
+that folder) will only see cardio logged the old way. New cardio, logged
+through Log Workout, lands in `Data/Workouts` instead and won't appear in
+Exercise Streak. Disabling the old template is a manual step outside this
+plugin.
 
 ### Workout Vault Structure
 
@@ -1477,12 +1486,24 @@ category: Push
 default_equipment: Barbell
 ```
 
-Both fields are optional. `default_equipment` is a prefill for logging,
-not a constraint — the equipment can always be changed for a given session.
-The note body may hold a plain-text description.
+```yaml
+category: Cardio
+default_equipment: Outdoor
+cardio_metric: Pace
+```
+
+All fields are optional. `default_equipment` is a prefill for logging, not
+a constraint — the equipment can always be changed for a given session.
+`cardio_metric` (`Pace` or `Speed`) is read only when `category` is
+`Cardio` (case-insensitive) and decides which computed field a session
+against this exercise writes — pace for something like walking or running,
+speed for something like cycling. The note body may hold a plain-text
+description.
 
 **Routines** (default `Data/Routines`) — one note per routine, with an
-optional `category` and a `## Exercises` ordered list:
+optional `category` and a `## Exercises` ordered list. Cardio exercises are
+added exactly like strength ones — the target suffix is just freeform text,
+so `20 min` works as well as `3 × 8-12`:
 
 ```yaml
 ---
@@ -1494,16 +1515,18 @@ category: Upper Body
 2. [[Bent-Over Row]] — 3 × 8-12
 3. [[Overhead Press]] — 4 sets
 4. [[Bicep Curl]]
+5. [[Morning Walk]] — 20 min
 ```
 
-The `— target sets × rep range` suffix is optional per exercise (as shown
-above, an exercise can have just a rep range, just a set count, or neither).
-It is purely a target/reminder — Log Workout doesn't enforce it.
+The suffix is optional per exercise and purely a target/reminder — Log
+Workout doesn't enforce it. A routine is not required at all: Log Workout
+can log a single ad hoc exercise with no routine (see below).
 
 **Workout logs** (default `Data/Workouts/{{DATE:YYYY}}/{{DATE:YYYY-MM}}`) —
 one note per **session** (not per day), filename
 `WL-{{DATE:YYYY-MM-DD}}-{{DATE:HHmmss}}` so two workouts on the same day
-never collide. Frontmatter:
+never collide. A session can mix strength and cardio exercises freely.
+Frontmatter:
 
 ```yaml
 creation_date: 2026-09-18
@@ -1513,22 +1536,44 @@ bench_press_reps: 24
 bench_press_top_weight: 135
 bench_press_volume: 3060
 bench_press_equipment: Barbell
+morning_walk_duration_min: 35
+morning_walk_distance: 3.0
+morning_walk_pace: "11:40"
+morning_walk_avg_hr: 128
+morning_walk_equipment: Outdoor
 total_sets: 3
 total_volume: 3060
+total_duration_min: 35
 ```
 
 Per-exercise rollup keys are `slugify(name)`-based (lowercased, non-alphanumeric
-runs collapsed to `_`): `<slug>_sets`, `<slug>_reps`, `<slug>_top_weight`,
-`<slug>_volume`, `<slug>_equipment`, appearing once per exercise in the order
-it was logged, followed by `total_sets` and `total_volume`. The body has one
-`## {Exercise Name} — {Equipment}` heading per exercise (same order), each with
-one `- Set N: {weight} {weightUnit} × {reps}` bullet per set, and a trailing
-empty `## Notes` section.
+runs collapsed to `_`), appearing once per exercise in the order it was logged:
+
+| Kind | Rollup keys |
+|---|---|
+| Strength | `<slug>_sets`, `<slug>_reps`, `<slug>_top_weight`, `<slug>_volume`, `<slug>_equipment` |
+| Cardio | `<slug>_duration_min`, `<slug>_distance`, `<slug>_pace` (only if `cardio_metric: Pace`) **or** `<slug>_speed` (only if `Speed`), `<slug>_avg_hr` and `<slug>_peak_hr` (only if entered), `<slug>_equipment` |
+
+Followed by `total_sets`/`total_volume` (strength) and `total_duration_min`
+(cardio) — always written, 0 when a session has none of that kind. An ad
+hoc session (no routine picked) omits the `routine:` key entirely rather
+than writing an empty value.
+
+The body has one `## {Exercise Name} — {Equipment}` heading per exercise
+(same order). A strength exercise gets one `- Set N: {weight} {weightUnit}
+× {reps}` bullet per set; a cardio exercise gets a single line —
+`- {duration} min · {distance} {distanceUnit} · Pace {pace}/{distanceUnit}`
+(or `Speed {speed} {distanceUnit}/h`), with ` · HR avg {avg} / peak {peak}`
+appended only for whichever heart-rate values were entered. There is no
+per-set framing for cardio — it's always one continuous effort per
+exercise per session, never an interval loop. A trailing empty `## Notes`
+section closes the note.
 
 Weight is always a plain number — a resistance band's printed rating logs
-exactly like a barbell's plate count. Equipment is captured once per exercise
-per session, not per set, and shown in the heading so a weight number is
-never ambiguous between sessions using different equipment for the same lift.
+exactly like a barbell's plate count. Equipment is captured once per
+exercise per session, not per set, and shown in the heading so a value is
+never ambiguous between sessions using different equipment for the same
+exercise (e.g. `Outdoor` vs `Treadmill` walks, logged and hinted separately).
 
 ---
 
@@ -1538,7 +1583,9 @@ Fuzzy-searches your exercise database; offers **+ Create new exercise** when
 nothing matches. Opens a form for name (locked when editing an existing
 exercise — rename by editing the routine/history references separately),
 category, description, and default equipment (a dropdown built from the
-**Equipment types** setting). Saving creates or fully overwrites the note.
+**Equipment types** setting). A **Cardio metric** field (Pace or Speed)
+appears only while Category reads "Cardio". Saving creates or fully
+overwrites the note.
 
 ---
 
@@ -1547,14 +1594,24 @@ category, description, and default equipment (a dropdown built from the
 Pick an existing routine or create a new one (name + optional category),
 then loop: search the exercise database and add it with an optional target
 sets/rep range, reorder exercises, remove one, or finish and save. Saving is
-a complete rewrite of the routine note's `## Exercises` list.
+a complete rewrite of the routine note's `## Exercises` list. Unchanged by
+cardio support — a cardio exercise is added the same way as a strength one.
 
 ---
 
 ### Log workout
 
-Fuzzy-pick a routine, then for each of its exercises in order:
+First choice: **Pick a routine** or **Log without a routine** (ad hoc —
+logs a single exercise, or several, with no routine reference at all).
 
+- **Pick a routine** works through its exercise list in order.
+- **Log without a routine** skips straight to searching the exercise
+  database for one exercise at a time.
+
+Both paths converge on the same per-exercise flow, branching by the
+exercise's category:
+
+**Strength:**
 1. Confirm the equipment for this session (prefilled from the exercise's
    `default_equipment`). The modal shows the last-logged **top weight × reps
    for that specific equipment**, so switching equipment shows you the right
@@ -1562,14 +1619,23 @@ Fuzzy-pick a routine, then for each of its exercises in order:
 2. Log sets — enter weight and reps, add another set, move to the next
    exercise, or skip this exercise entirely.
 
-After the routine's exercises, you can optionally log additional exercises
-that weren't part of the routine. Finishing generates a new timestamped
-session note (no existing-note check needed — the filename is always unique)
-with the rollups and body described above.
+**Cardio:**
+1. Confirm the equipment (e.g. Outdoor vs Treadmill) — same hint mechanism,
+   showing the last logged duration/distance/pace-or-speed for that
+   equipment.
+2. One entry: duration (minutes) and distance, plus optional average and
+   peak heart rate (BPM). Pace or speed is computed automatically from
+   `cardio_metric` — no interval loop, no RPE (there's no real number
+   behind perceived exertion, so it's deliberately not tracked).
 
-> Known limitation: same-day sets are not deduplicated across separate Log
-> Workout runs — running the command twice in one day just creates two
-> session notes, by design (see Vault Structure above).
+After the routine's exercises (or at any point in the ad hoc flow), you can
+keep adding exercises not yet logged this session. Finishing generates a
+new timestamped session note (no existing-note check needed — the filename
+is always unique) with the rollups and body described above.
+
+> Known limitation: same-day sets/entries are not deduplicated across
+> separate Log Workout runs — running the command twice in one day just
+> creates two session notes, by design (see Vault Structure above).
 
 ---
 
@@ -1584,6 +1650,16 @@ folder: Data/Workouts
 dateProperty: creation_date
 properties:
   - bench_press_top_weight
+```
+````
+
+````
+```tracker-pro
+type: line
+folder: Data/Workouts
+dateProperty: creation_date
+properties:
+  - morning_walk_duration_min
 ```
 ````
 
