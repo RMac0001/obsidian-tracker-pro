@@ -10,6 +10,7 @@ import { logMeal, clearMeal, editMealLog } from "./mealLogger";
 import { generateMonthlyBills } from "./charts/billsChart";
 import { calculateRecipeNutrition, recalcFoodNoteCalories } from "./recipeCalculator";
 import { normalizeRecipeIngredients } from "./recipeNormalizer";
+import { createEditExercise, createEditRoutine, logWorkout } from "./routineTracker";
 import { TrackerConfig } from "./types";
 
 function isRelevantFile(changedPath: string, config: TrackerConfig, settings?: TrackerSettings): boolean {
@@ -114,6 +115,25 @@ export default class Tracker extends Plugin {
             id: "generate-monthly-bills",
             name: "Generate Monthly Bills",
             callback: () => generateMonthlyBills(this.app, this.settings),
+        });
+
+        // ── Workout Routines commands ─────────────────────────────────────────
+        this.addCommand({
+            id: "create-edit-exercise",
+            name: "Create/edit exercise",
+            callback: () => createEditExercise(this.app, this.settings),
+        });
+
+        this.addCommand({
+            id: "create-edit-routine",
+            name: "Create/edit routine",
+            callback: () => createEditRoutine(this.app, this.settings),
+        });
+
+        this.addCommand({
+            id: "log-workout",
+            name: "Log workout",
+            callback: () => logWorkout(this.app, this.settings),
         });
 
         // ── Tracker code block processor ──────────────────────────────────────

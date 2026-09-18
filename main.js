@@ -3091,6 +3091,14 @@ function formatSecondsAsTime(totalSeconds) {
     const s = rounded % 60;
     return `${m}:${String(s).padStart(2, "0")}`;
 }
+// ─── Slugify ────────────────────────────────────────────────────────────────────
+function slugify(name) {
+    return name
+        .trim()
+        .toLowerCase()
+        .replace(/[^a-z0-9]+/g, "_")
+        .replace(/^_+|_+$/g, "");
+}
 // ─── Section Range ─────────────────────────────────────────────────────────────
 function findSectionRange(lines, header) {
     const headerRe = new RegExp(`^#{1,6}\\s+${header}\\s*$`, "i");
@@ -20295,7 +20303,7 @@ function readPaymentNote(app, billName, year, month, paymentTemplate) {
     };
 }
 // ─── Note Creation ─────────────────────────────────────────────────────────────
-async function ensureFolders$2(app, filePath) {
+async function ensureFolders$3(app, filePath) {
     const parts = filePath.split("/");
     parts.pop();
     let current = "";
@@ -20325,7 +20333,7 @@ function buildPaymentContent(billName, company, billType, dueDate, amountDue, am
 }
 async function createPaymentNote(app, master, dueDate, year, month, paymentTemplate) {
     const path = paymentNotePath(master.fileName, year, month, paymentTemplate);
-    await ensureFolders$2(app, path);
+    await ensureFolders$3(app, path);
     const monthName = new Date(year, month, 1).toLocaleString("en-US", { month: "long" });
     const body = `Payment record for ${master.bill_company} — ${monthName} ${year}.\n`;
     const content = buildPaymentContent(master.fileName, master.bill_company, master.bill_type, dueDate, master.bill_amount_due, undefined, undefined, "unpaid", body);
@@ -20456,7 +20464,7 @@ async function savePayment(app, payment, amountPaid, masterFolder) {
         await app.vault.modify(existingFile, buildPaymentContent(payment.bill_name, payment.bill_company, payment.bill_type, payment.bill_due_date, amountDue, amountPaid, today, "paid", body));
     }
     else {
-        await ensureFolders$2(app, payment.filePath);
+        await ensureFolders$3(app, payment.filePath);
         const dueParts = payment.bill_due_date.match(/^(\d{4})-(\d{2})-(\d{2})$/);
         const dYear = dueParts ? parseInt(dueParts[1]) : new Date().getFullYear();
         const dMonth = dueParts ? parseInt(dueParts[2]) - 1 : new Date().getMonth();
@@ -21034,7 +21042,7 @@ function resolveTodayLogPath(settings) {
     const filename = resolveDateTemplate(settings.mealLogFilename);
     return obsidian.normalizePath(`${folder}/${filename}.md`);
 }
-async function ensureFolders$1(app, filePath) {
+async function ensureFolders$2(app, filePath) {
     const parts = filePath.split("/");
     parts.pop();
     let current = "";
@@ -21424,7 +21432,7 @@ async function logVitamins(app, settings, vitamins, checkboxMap, today, containe
     const logPath = resolveTodayLogPath(settings);
     let logFile = app.vault.getAbstractFileByPath(logPath);
     if (!(logFile instanceof obsidian.TFile)) {
-        await ensureFolders$1(app, logPath);
+        await ensureFolders$2(app, logPath);
         await app.vault.create(logPath, buildBlankLogContent());
         logFile = app.vault.getAbstractFileByPath(logPath);
     }
@@ -22026,6 +22034,13 @@ const DEFAULT_SETTINGS = {
     // ── Vitamins ──────────────────────────────────────────────────────────────
     vitaminsFolder: "Data/Vitamins",
     vitaminPeriods: ["Morning", "Evening"],
+    // ── Workout Routines ──────────────────────────────────────────────────────
+    exerciseFolder: "Data/Exercises",
+    routineFolder: "Data/Routines",
+    workoutLogFolder: "Data/Workouts/{{DATE:YYYY}}/{{DATE:YYYY-MM}}",
+    workoutLogFilename: "WL-{{DATE:YYYY-MM-DD}}-{{DATE:HHmmss}}",
+    weightUnit: "lb",
+    equipmentTypes: ["Barbell", "Dumbbell", "Machine", "Band", "Bodyweight"],
     // ── Tracker Pro General Settings ──────────────────────────────────────────
     folder: "/",
     dateFormat: "YYYY-MM-DD",
@@ -22043,7 +22058,7 @@ class TrackerSettingTab extends obsidian.PluginSettingTab {
         // Sections are ordered alphabetically by heading name.
         // When adding a new settings section, insert it in alphabetical order here
         // and add a matching entry to the interface comment block in DEFAULT_SETTINGS.
-        // Current order: Achievements · Bills · Meal Logger · Reading Challenge · Vitamins · Tracker Pro General Settings
+        // Current order: Achievements · Bills · Meal Logger · Reading Challenge · Vitamins · Workout Routines · Tracker Pro General Settings
         // ─────────────────────────────────────────────────────────────────────
         // ── Achievements ──────────────────────────────────────────────────────
         containerEl.createEl("h2", { text: "Achievements" });
@@ -22382,6 +22397,155 @@ class TrackerSettingTab extends obsidian.PluginSettingTab {
         addPeriodRow.createEl("button", { text: "Add" }).addEventListener("click", doAddPeriod);
         addPeriodInput.addEventListener("keydown", (e) => { if (e.key === "Enter")
             doAddPeriod(); });
+        // ── Workout Routines ─────────────────────────────────────────────────
+        containerEl.createEl("h2", { text: "Workout Routines" });
+        containerEl.createEl("p", {
+            text: "Path templates support {{DATE:FORMAT}} tokens — the same syntax as the Meal Logger. " +
+                "FORMAT is any moment.js format string, e.g. {{DATE:YYYY}}, {{DATE:MM}}, {{DATE:HHmmss}}.",
+            attr: { style: "font-size:0.85em;color:var(--text-muted);margin:0 0 12px;" },
+        });
+        new obsidian.Setting(containerEl)
+            .setName("Exercise database folder")
+            .setDesc("Folder containing individual exercise notes (one note per exercise).")
+            .addText((text) => text
+            .setPlaceholder("Data/Exercises")
+            .setValue(this.plugin.settings.exerciseFolder)
+            .onChange(async (value) => {
+            this.plugin.settings.exerciseFolder = value.trim();
+            await this.plugin.saveSettings();
+        }));
+        new obsidian.Setting(containerEl)
+            .setName("Routines folder")
+            .setDesc("Folder containing routine definition notes.")
+            .addText((text) => text
+            .setPlaceholder("Data/Routines")
+            .setValue(this.plugin.settings.routineFolder)
+            .onChange(async (value) => {
+            this.plugin.settings.routineFolder = value.trim();
+            await this.plugin.saveSettings();
+        }));
+        new obsidian.Setting(containerEl)
+            .setName("Workout log folder")
+            .setDesc("Folder path template where workout session notes are stored. Supports {{DATE:FORMAT}} tokens.\n" +
+            "Example: Data/Workouts/{{DATE:YYYY}}/{{DATE:YYYY-MM}}")
+            .addText((text) => text
+            .setPlaceholder("Data/Workouts/{{DATE:YYYY}}/{{DATE:YYYY-MM}}")
+            .setValue(this.plugin.settings.workoutLogFolder)
+            .onChange(async (value) => {
+            this.plugin.settings.workoutLogFolder = value.trim();
+            await this.plugin.saveSettings();
+        }));
+        new obsidian.Setting(containerEl)
+            .setName("Workout log filename")
+            .setDesc("Filename template for workout session notes (without .md). Supports {{DATE:FORMAT}} tokens. " +
+            "Includes a time component so multiple workouts on the same day get distinct files.\n" +
+            "Example: WL-{{DATE:YYYY-MM-DD}}-{{DATE:HHmmss}}")
+            .addText((text) => text
+            .setPlaceholder("WL-{{DATE:YYYY-MM-DD}}-{{DATE:HHmmss}}")
+            .setValue(this.plugin.settings.workoutLogFilename)
+            .onChange(async (value) => {
+            this.plugin.settings.workoutLogFilename = value.trim();
+            await this.plugin.saveSettings();
+        }));
+        new obsidian.Setting(containerEl)
+            .setName("Weight unit")
+            .setDesc("Display label only — appended after logged weights. No unit conversion is performed.")
+            .addText((text) => text
+            .setPlaceholder("lb")
+            .setValue(this.plugin.settings.weightUnit)
+            .onChange(async (value) => {
+            this.plugin.settings.weightUnit = value.trim();
+            await this.plugin.saveSettings();
+        }));
+        // Equipment types drag-to-reorder list
+        new obsidian.Setting(containerEl)
+            .setName("Equipment types")
+            .setDesc("Options offered when logging equipment for an exercise, and for an exercise's default equipment. " +
+            "Drag to reorder, × to delete. Renaming or removing an entry does not rewrite equipment values " +
+            "already written to past workout notes.");
+        const equipmentListEl = containerEl.createEl("div", {
+            attr: {
+                style: "border:1px solid var(--background-modifier-border);border-radius:6px;" +
+                    "padding:6px 8px;margin:0 0 8px;",
+            },
+        });
+        const renderEquipmentList = () => {
+            equipmentListEl.empty();
+            const equipment = this.plugin.settings.equipmentTypes;
+            let dragSrcIdx = null;
+            for (let i = 0; i < equipment.length; i++) {
+                const item = equipmentListEl.createEl("div", {
+                    attr: {
+                        draggable: "true",
+                        style: "display:flex;align-items:center;gap:8px;padding:4px 6px;" +
+                            "border-radius:4px;user-select:none;",
+                    },
+                });
+                item.createEl("span", {
+                    text: "⠿",
+                    attr: { style: "cursor:grab;color:var(--text-muted);font-size:1.1em;line-height:1;" },
+                });
+                item.createEl("span", { text: equipment[i], attr: { style: "flex:1;" } });
+                const delBtn = item.createEl("button", { text: "✕" });
+                delBtn.setAttribute("style", "padding:1px 6px;font-size:0.8em;line-height:1.4;" +
+                    "background:none;border:1px solid var(--background-modifier-border);" +
+                    "border-radius:4px;cursor:pointer;color:var(--text-muted);");
+                delBtn.addEventListener("click", async () => {
+                    this.plugin.settings.equipmentTypes.splice(i, 1);
+                    await this.plugin.saveSettings();
+                    renderEquipmentList();
+                });
+                item.addEventListener("dragstart", (e) => {
+                    dragSrcIdx = i;
+                    e.dataTransfer.effectAllowed = "move";
+                    item.style.opacity = "0.5";
+                });
+                item.addEventListener("dragend", () => { item.style.opacity = "1"; });
+                item.addEventListener("dragover", (e) => {
+                    e.preventDefault();
+                    e.dataTransfer.dropEffect = "move";
+                    item.style.background = "var(--background-modifier-hover)";
+                });
+                item.addEventListener("dragleave", () => { item.style.background = ""; });
+                item.addEventListener("drop", async (e) => {
+                    e.preventDefault();
+                    item.style.background = "";
+                    if (dragSrcIdx === null || dragSrcIdx === i)
+                        return;
+                    const arr = this.plugin.settings.equipmentTypes;
+                    const [moved] = arr.splice(dragSrcIdx, 1);
+                    arr.splice(i, 0, moved);
+                    dragSrcIdx = null;
+                    await this.plugin.saveSettings();
+                    renderEquipmentList();
+                });
+            }
+        };
+        renderEquipmentList();
+        const addEquipmentRow = containerEl.createEl("div", {
+            attr: { style: "display:flex;gap:8px;margin-bottom:16px;" },
+        });
+        const addEquipmentInput = addEquipmentRow.createEl("input", {
+            attr: {
+                type: "text",
+                placeholder: "New equipment type",
+                style: "flex:1;padding:4px 10px;" +
+                    "border:1px solid var(--background-modifier-border);" +
+                    "border-radius:6px;background:var(--background-primary);color:var(--text-normal);",
+            },
+        });
+        const doAddEquipment = async () => {
+            const val = addEquipmentInput.value.trim();
+            if (!val)
+                return;
+            this.plugin.settings.equipmentTypes.push(val);
+            await this.plugin.saveSettings();
+            addEquipmentInput.value = "";
+            renderEquipmentList();
+        };
+        addEquipmentRow.createEl("button", { text: "Add" }).addEventListener("click", doAddEquipment);
+        addEquipmentInput.addEventListener("keydown", (e) => { if (e.key === "Enter")
+            doAddEquipment(); });
         // ── Tracker Pro General Settings ──────────────────────────────────────
         containerEl.createEl("h2", { text: "Tracker Pro General Settings" });
         new obsidian.Setting(containerEl)
@@ -22475,7 +22639,7 @@ function sumNutrition(entries) {
     }), { calories: 0, protein: 0, fat: 0, carbs: 0 });
 }
 // ─── Modals ───────────────────────────────────────────────────────────────────
-class StringSuggestModal extends obsidian.FuzzySuggestModal {
+let StringSuggestModal$1 = class StringSuggestModal extends obsidian.FuzzySuggestModal {
     constructor(app, options, placeholder, onChoose) {
         super(app);
         this.options = options;
@@ -22485,8 +22649,8 @@ class StringSuggestModal extends obsidian.FuzzySuggestModal {
     getItems() { return this.options; }
     getItemText(item) { return item; }
     onChooseItem(item) { this.onChoose(item); }
-}
-class FileSuggestModal extends obsidian.FuzzySuggestModal {
+};
+let FileSuggestModal$1 = class FileSuggestModal extends obsidian.FuzzySuggestModal {
     constructor(app, files, placeholder, onChoose) {
         super(app);
         this.files = files;
@@ -22496,7 +22660,7 @@ class FileSuggestModal extends obsidian.FuzzySuggestModal {
     getItems() { return this.files; }
     getItemText(file) { return file.basename; }
     onChooseItem(file) { this.onChoose(file); }
-}
+};
 class AmountModal extends obsidian.Modal {
     constructor(app, itemName, meta, isFood, onSubmit, defaultValue, defaultUnit, buttonLabel = "Add to meal") {
         super(app);
@@ -22769,7 +22933,7 @@ function buildNewNoteContent(mealType, entries, fm) {
     return content;
 }
 // ─── Folder Creation ──────────────────────────────────────────────────────────
-async function ensureFolders(app, filePath) {
+async function ensureFolders$1(app, filePath) {
     const parts = filePath.split("/");
     parts.pop();
     let current = "";
@@ -22831,7 +22995,7 @@ async function saveMeal(app, settings, mealType, entries) {
     }
     else {
         // Create new note
-        await ensureFolders(app, filePath);
+        await ensureFolders$1(app, filePath);
         const fm = buildUpdatedFrontmatter({}, mealType, entries, settings);
         const content = buildNewNoteContent(mealType, entries, fm);
         await app.vault.create(filePath, content);
@@ -22873,9 +23037,9 @@ function getMealSectionLines(lines, mealType) {
 }
 // ─── Clear Meal ───────────────────────────────────────────────────────────────
 function clearMeal(app, settings) {
-    new StringSuggestModal(app, MEAL_TYPES, "Which meal to clear?", (mealTypeStr) => {
+    new StringSuggestModal$1(app, MEAL_TYPES, "Which meal to clear?", (mealTypeStr) => {
         const mealType = mealTypeStr;
-        new StringSuggestModal(app, [`Yes — clear ${mealType}`, "Cancel"], `Clear all ${mealType} entries from today's log?`, async (choice) => {
+        new StringSuggestModal$1(app, [`Yes — clear ${mealType}`, "Cancel"], `Clear all ${mealType} entries from today's log?`, async (choice) => {
             if (!choice.startsWith("Yes"))
                 return;
             const filePath = resolveTodayPath(settings);
@@ -22897,7 +23061,7 @@ function clearMeal(app, settings) {
     }).open();
 }
 // ─── Log Parsing ──────────────────────────────────────────────────────────────
-function extractBody(content) {
+function extractBody$1(content) {
     const lines = content.split("\n");
     if (lines[0] !== "---")
         return content;
@@ -23156,7 +23320,7 @@ class EditMealLogModal extends obsidian.Modal {
     }
     async loadFile() {
         const content = await this.app.vault.read(this.file);
-        const body = extractBody(content);
+        const body = extractBody$1(content);
         this.meals = parseMealSections(body);
         this.notesLines = parseNotesLines(body);
         this.unknownSections = parseUnknownSections(body);
@@ -23228,7 +23392,7 @@ class EditMealLogModal extends obsidian.Modal {
             new obsidian.Notice("No log files found.");
             return;
         }
-        new FileSuggestModal(this.app, files, "Select a log to edit…", async (f) => {
+        new FileSuggestModal$1(this.app, files, "Select a log to edit…", async (f) => {
             this.file = f;
             await this.loadFile();
             this.render();
@@ -23240,12 +23404,12 @@ class EditMealLogModal extends obsidian.Modal {
             new obsidian.Notice("No items to change.");
             return;
         }
-        new StringSuggestModal(this.app, mealsWithEntries, "Which meal?", (mealTypeStr) => {
+        new StringSuggestModal$1(this.app, mealsWithEntries, "Which meal?", (mealTypeStr) => {
             var _a;
             const mealType = mealTypeStr;
             const entries = (_a = this.meals.get(mealType)) !== null && _a !== void 0 ? _a : [];
             const labels = entries.map((e) => `${e.name} (${e.displayAmount})`);
-            new StringSuggestModal(this.app, labels, "Change quantity on which item?", (label) => {
+            new StringSuggestModal$1(this.app, labels, "Change quantity on which item?", (label) => {
                 const idx = labels.indexOf(label);
                 const entry = entries[idx];
                 const found = findItemFile(this.app, entry.name, this.settings);
@@ -23276,11 +23440,11 @@ class EditMealLogModal extends obsidian.Modal {
             new obsidian.Notice("No items to remove.");
             return;
         }
-        new StringSuggestModal(this.app, mealsWithEntries, "Which meal?", (mealTypeStr) => {
+        new StringSuggestModal$1(this.app, mealsWithEntries, "Which meal?", (mealTypeStr) => {
             const mealType = mealTypeStr;
             const entries = this.meals.get(mealType);
             const labels = entries.map((e) => `${e.name} (${e.displayAmount})`);
-            new StringSuggestModal(this.app, labels, "Remove which item?", (label) => {
+            new StringSuggestModal$1(this.app, labels, "Remove which item?", (label) => {
                 const idx = labels.indexOf(label);
                 entries.splice(idx, 1);
                 this.render();
@@ -23288,13 +23452,13 @@ class EditMealLogModal extends obsidian.Modal {
         }).open();
     }
     addItem() {
-        new StringSuggestModal(this.app, MEAL_TYPES, "Add to which meal?", (mealTypeStr) => this.searchAndAdd(mealTypeStr)).open();
+        new StringSuggestModal$1(this.app, MEAL_TYPES, "Add to which meal?", (mealTypeStr) => this.searchAndAdd(mealTypeStr)).open();
     }
     addMealBlock() {
-        new StringSuggestModal(this.app, MEAL_TYPES, "Which meal type?", (mealTypeStr) => this.searchAndAdd(mealTypeStr)).open();
+        new StringSuggestModal$1(this.app, MEAL_TYPES, "Which meal type?", (mealTypeStr) => this.searchAndAdd(mealTypeStr)).open();
     }
     searchAndAdd(mealType) {
-        new StringSuggestModal(this.app, ["Search food database", "Search recipes"], "Food or recipe?", (choice) => {
+        new StringSuggestModal$1(this.app, ["Search food database", "Search recipes"], "Food or recipe?", (choice) => {
             const isFood = choice === "Search food database";
             const folder = isFood ? this.settings.foodFolder : this.settings.recipeFolder;
             const label = isFood ? "foods" : "recipes";
@@ -23305,7 +23469,7 @@ class EditMealLogModal extends obsidian.Modal {
                 new obsidian.Notice(`No files found in: ${folder}`);
                 return;
             }
-            new FileSuggestModal(this.app, files, `Search ${label}…`, (file) => {
+            new FileSuggestModal$1(this.app, files, `Search ${label}…`, (file) => {
                 const meta = isFood
                     ? getFoodMeta(this.app, file)
                     : getRecipeMeta(this.app, file);
@@ -23355,7 +23519,7 @@ function editMealLog(app, settings) {
     }
     // No log for today — create a blank one then open the modal
     (async () => {
-        await ensureFolders(app, todayPath);
+        await ensureFolders$1(app, todayPath);
         const fm = buildUpdatedFrontmatter({}, "Breakfast", [], settings);
         // Zero out Breakfast too (buildUpdatedFrontmatter only zeroes the given meal)
         for (const meal of MEAL_TYPES) {
@@ -23373,7 +23537,7 @@ function editMealLog(app, settings) {
 // ─── Main Entry Point ─────────────────────────────────────────────────────────
 async function logMeal(app, settings) {
     const entries = [];
-    new StringSuggestModal(app, MEAL_TYPES, "Which meal are you logging?", (mealTypeStr) => promptForItem(mealTypeStr)).open();
+    new StringSuggestModal$1(app, MEAL_TYPES, "Which meal are you logging?", (mealTypeStr) => promptForItem(mealTypeStr)).open();
     function promptForItem(mealType) {
         const runningTotal = sumNutrition(entries);
         const totalLabel = entries.length > 0
@@ -23387,7 +23551,7 @@ async function logMeal(app, settings) {
             itemOptions.push(`Remove last item (${entries[entries.length - 1].name})`);
         }
         itemOptions.push(`Done — save ${mealType}${totalLabel}`);
-        new StringSuggestModal(app, itemOptions, "Add another item or finish...", (choice) => {
+        new StringSuggestModal$1(app, itemOptions, "Add another item or finish...", (choice) => {
             if (choice.startsWith("Remove last item")) {
                 entries.pop();
                 promptForItem(mealType);
@@ -23415,7 +23579,7 @@ async function logMeal(app, settings) {
                 promptForItem(mealType);
                 return;
             }
-            new FileSuggestModal(app, files, `Search ${label}...`, (file) => {
+            new FileSuggestModal$1(app, files, `Search ${label}...`, (file) => {
                 const meta = isFood ? getFoodMeta(app, file) : getRecipeMeta(app, file);
                 new AmountModal(app, file.basename, meta, isFood, (multiplier, displayAmount) => {
                     entries.push({
@@ -24289,6 +24453,745 @@ async function normalizeRecipeIngredients(app, settings) {
     new obsidian.Notice(`Normalized ${normalizedCount} lines, linked ${linkedCount}, ${flaggedCount} flagged for new food notes, ${leftUnlinkedCount} left unlinked.`);
 }
 
+// ─── Shared Helpers ───────────────────────────────────────────────────────────
+async function ensureFolders(app, filePath) {
+    const parts = filePath.split("/");
+    parts.pop();
+    let current = "";
+    for (const part of parts) {
+        current = current ? `${current}/${part}` : part;
+        if (!app.vault.getAbstractFileByPath(current)) {
+            try {
+                await app.vault.createFolder(current);
+            }
+            catch ( /* already exists */_a) { /* already exists */ }
+        }
+    }
+}
+function extractBody(content) {
+    const lines = content.split("\n");
+    if (lines[0] !== "---")
+        return content;
+    for (let i = 1; i < lines.length; i++) {
+        if (lines[i] === "---")
+            return lines.slice(i + 1).join("\n");
+    }
+    return content;
+}
+function getExerciseFiles(app, settings) {
+    const folder = settings.exerciseFolder.replace(/\/$/, "");
+    return app.vault.getMarkdownFiles().filter(f => f.path.startsWith(folder + "/"));
+}
+function getRoutineFiles(app, settings) {
+    const folder = settings.routineFolder.replace(/\/$/, "");
+    return app.vault.getMarkdownFiles().filter(f => f.path.startsWith(folder + "/"));
+}
+// ─── Suggest Modals ───────────────────────────────────────────────────────────
+class StringSuggestModal extends obsidian.FuzzySuggestModal {
+    constructor(app, options, placeholder, onChoose) {
+        super(app);
+        this.options = options;
+        this.onChoose = onChoose;
+        this.chosen = false;
+        this.setPlaceholder(placeholder);
+    }
+    getItems() { return this.options; }
+    getItemText(item) { return item; }
+    onChooseItem(item) { this.chosen = true; this.onChoose(item); }
+    onClose() {
+        this.contentEl.empty();
+        if (!this.chosen)
+            this.onChoose(null);
+    }
+}
+class FileSuggestModal extends obsidian.FuzzySuggestModal {
+    constructor(app, files, placeholder, onChoose) {
+        super(app);
+        this.files = files;
+        this.onChoose = onChoose;
+        this.chosen = false;
+        this.setPlaceholder(placeholder);
+    }
+    getItems() { return this.files; }
+    getItemText(file) { return file.basename; }
+    onChooseItem(file) { this.chosen = true; this.onChoose(file); }
+    onClose() {
+        this.contentEl.empty();
+        if (!this.chosen)
+            this.onChoose(null);
+    }
+}
+async function loadExerciseForEdit(app, file) {
+    var _a, _b, _c, _d;
+    const fm = (_b = (_a = app.metadataCache.getFileCache(file)) === null || _a === void 0 ? void 0 : _a.frontmatter) !== null && _b !== void 0 ? _b : {};
+    const content = await app.vault.read(file);
+    return {
+        category: String((_c = fm.category) !== null && _c !== void 0 ? _c : ""),
+        defaultEquipment: String((_d = fm.default_equipment) !== null && _d !== void 0 ? _d : ""),
+        description: extractBody(content).trim(),
+    };
+}
+function buildExerciseContent(category, defaultEquipment, description) {
+    let content = "";
+    if (category || defaultEquipment) {
+        content += "---\n";
+        if (category)
+            content += `category: ${category}\n`;
+        if (defaultEquipment)
+            content += `default_equipment: ${defaultEquipment}\n`;
+        content += "---\n\n";
+    }
+    if (description)
+        content += description + "\n";
+    return content;
+}
+class ExerciseFormModal extends obsidian.Modal {
+    constructor(app, isEdit, initial, equipmentTypes, resolve) {
+        super(app);
+        this.isEdit = isEdit;
+        this.initial = initial;
+        this.equipmentTypes = equipmentTypes;
+        this.resolve = resolve;
+        this.resolved = false;
+    }
+    onOpen() {
+        const { contentEl } = this;
+        contentEl.createEl("h3", { text: this.isEdit ? `Edit exercise: ${this.initial.name}` : "New exercise" });
+        const labelStyle = "font-size:0.9em;color:var(--text-muted);";
+        const inputStyle = "display:block;width:100%;padding:8px 10px;margin:4px 0 12px;" +
+            "border:1px solid var(--background-modifier-border);border-radius:6px;" +
+            "background:var(--background-primary);color:var(--text-normal);";
+        contentEl.createEl("label", { text: "Name", attr: { style: labelStyle } });
+        const nameAttrs = { type: "text", value: this.initial.name, style: inputStyle };
+        if (this.isEdit)
+            nameAttrs.disabled = "true";
+        const nameInput = contentEl.createEl("input", { attr: nameAttrs });
+        contentEl.createEl("label", { text: "Category (optional)", attr: { style: labelStyle } });
+        const categoryInput = contentEl.createEl("input", {
+            attr: { type: "text", value: this.initial.category, style: inputStyle },
+        });
+        contentEl.createEl("label", { text: "Default equipment (optional)", attr: { style: labelStyle } });
+        const equipmentSelect = contentEl.createEl("select", { attr: { style: inputStyle } });
+        const noneOpt = equipmentSelect.createEl("option", { text: "— None —" });
+        noneOpt.value = "";
+        for (const eq of this.equipmentTypes) {
+            const opt = equipmentSelect.createEl("option", { text: eq });
+            opt.value = eq;
+        }
+        equipmentSelect.value = this.equipmentTypes.includes(this.initial.defaultEquipment)
+            ? this.initial.defaultEquipment
+            : "";
+        contentEl.createEl("label", { text: "Description (optional)", attr: { style: labelStyle } });
+        const descInput = contentEl.createEl("textarea", {
+            attr: { rows: "4", style: inputStyle },
+        });
+        descInput.value = this.initial.description;
+        const btnRow = contentEl.createDiv({ attr: { style: "display:flex;gap:8px;" } });
+        const saveBtn = btnRow.createEl("button", { text: this.isEdit ? "Save" : "Create", cls: "mod-cta" });
+        saveBtn.addEventListener("click", () => {
+            const name = this.isEdit ? this.initial.name : nameInput.value.trim();
+            if (!name) {
+                new obsidian.Notice("Name is required.");
+                return;
+            }
+            this.resolved = true;
+            this.close();
+            this.resolve({
+                name,
+                category: categoryInput.value.trim(),
+                description: descInput.value.trim(),
+                defaultEquipment: equipmentSelect.value,
+            });
+        });
+        btnRow.createEl("button", { text: "Cancel" }).addEventListener("click", () => this.close());
+        (this.isEdit ? categoryInput : nameInput).focus();
+    }
+    onClose() {
+        this.contentEl.empty();
+        if (!this.resolved)
+            this.resolve(null);
+    }
+}
+async function createEditExercise(app, settings) {
+    const files = getExerciseFiles(app, settings);
+    const CREATE_NEW = "+ Create new exercise";
+    const options = [CREATE_NEW, ...files.map(f => f.basename)];
+    const choice = await new Promise(res => new StringSuggestModal(app, options, "Search exercises or create new…", res).open());
+    if (choice === null)
+        return;
+    let isEdit = false;
+    let initial = { name: "", category: "", description: "", defaultEquipment: "" };
+    if (choice !== CREATE_NEW) {
+        const existingFile = files.find(f => f.basename === choice);
+        if (existingFile) {
+            isEdit = true;
+            initial = { name: existingFile.basename, ...(await loadExerciseForEdit(app, existingFile)) };
+        }
+    }
+    const result = await new Promise(res => new ExerciseFormModal(app, isEdit, initial, settings.equipmentTypes, res).open());
+    if (!result)
+        return;
+    const folder = settings.exerciseFolder.replace(/\/$/, "");
+    const filePath = obsidian.normalizePath(`${folder}/${result.name}.md`);
+    const content = buildExerciseContent(result.category, result.defaultEquipment, result.description);
+    await ensureFolders(app, filePath);
+    const existingAtPath = app.vault.getAbstractFileByPath(filePath);
+    if (existingAtPath instanceof obsidian.TFile) {
+        await app.vault.modify(existingAtPath, content);
+    }
+    else {
+        await app.vault.create(filePath, content);
+    }
+    new obsidian.Notice(`✓ Exercise "${result.name}" ${isEdit ? "updated" : "created"}.`);
+}
+// ═══════════════════════════════════════════════════════════════════════════
+// Routines
+// ═══════════════════════════════════════════════════════════════════════════
+// Line format: "N. [[Exercise Name]] — target sets × rep range" (suffix optional).
+// Parsing/serialization mirrors the bullet-prefix + wikilink regex approach used
+// for recipe ingredient lines in recipeNormalizer.ts, adapted to numbered lines.
+function formatTargetSuffix(target) {
+    if (target.targetSets && target.targetRepRange)
+        return `${target.targetSets} × ${target.targetRepRange}`;
+    if (target.targetSets)
+        return `${target.targetSets} sets`;
+    if (target.targetRepRange)
+        return `${target.targetRepRange} reps`;
+    return "";
+}
+function formatRoutineExerciseLine(idx, target) {
+    const suffix = formatTargetSuffix(target);
+    return suffix ? `${idx}. [[${target.name}]] — ${suffix}` : `${idx}. [[${target.name}]]`;
+}
+function parseRoutineExerciseLine(line) {
+    var _a;
+    const m = line.match(/^\d+\.\s+\[\[(.+?)\]\](?:\s+—\s+(.*))?$/);
+    if (!m)
+        return null;
+    const name = m[1];
+    const suffix = (_a = m[2]) === null || _a === void 0 ? void 0 : _a.trim();
+    if (!suffix)
+        return { name };
+    const bothM = suffix.match(/^(\d+)\s*×\s*(.+)$/);
+    if (bothM)
+        return { name, targetSets: parseInt(bothM[1], 10), targetRepRange: bothM[2].trim() };
+    const setsOnlyM = suffix.match(/^(\d+)\s*sets?$/i);
+    if (setsOnlyM)
+        return { name, targetSets: parseInt(setsOnlyM[1], 10) };
+    const repsOnlyM = suffix.match(/^(.+?)\s*reps?$/i);
+    if (repsOnlyM)
+        return { name, targetRepRange: repsOnlyM[1].trim() };
+    return { name, targetRepRange: suffix };
+}
+function parseRoutineBody(content) {
+    const lines = content.split("\n");
+    const range = findSectionRange(lines, "Exercises");
+    if (!range)
+        return [];
+    const result = [];
+    for (let i = range.start; i < range.end; i++) {
+        const parsed = parseRoutineExerciseLine(lines[i].trim());
+        if (parsed)
+            result.push(parsed);
+    }
+    return result;
+}
+function buildRoutineContent(category, exercises) {
+    let content = "";
+    if (category)
+        content += `---\ncategory: ${category}\n---\n\n`;
+    content += "## Exercises\n";
+    exercises.forEach((ex, i) => { content += formatRoutineExerciseLine(i + 1, ex) + "\n"; });
+    return content;
+}
+class RoutineNameModal extends obsidian.Modal {
+    constructor(app, resolve) {
+        super(app);
+        this.resolve = resolve;
+        this.resolved = false;
+    }
+    onOpen() {
+        const { contentEl } = this;
+        contentEl.createEl("h3", { text: "New routine" });
+        const labelStyle = "font-size:0.9em;color:var(--text-muted);";
+        const inputStyle = "display:block;width:100%;padding:8px 10px;margin:4px 0 12px;" +
+            "border:1px solid var(--background-modifier-border);border-radius:6px;" +
+            "background:var(--background-primary);color:var(--text-normal);";
+        contentEl.createEl("label", { text: "Name", attr: { style: labelStyle } });
+        const nameInput = contentEl.createEl("input", { attr: { type: "text", style: inputStyle } });
+        contentEl.createEl("label", { text: "Category (optional)", attr: { style: labelStyle } });
+        const categoryInput = contentEl.createEl("input", { attr: { type: "text", style: inputStyle } });
+        const btnRow = contentEl.createDiv({ attr: { style: "display:flex;gap:8px;" } });
+        const nextBtn = btnRow.createEl("button", { text: "Next", cls: "mod-cta" });
+        nextBtn.addEventListener("click", () => {
+            const name = nameInput.value.trim();
+            if (!name) {
+                new obsidian.Notice("Name is required.");
+                return;
+            }
+            this.resolved = true;
+            this.close();
+            this.resolve({ name, category: categoryInput.value.trim() });
+        });
+        btnRow.createEl("button", { text: "Cancel" }).addEventListener("click", () => this.close());
+        nameInput.focus();
+        nameInput.addEventListener("keydown", e => { if (e.key === "Enter")
+            nextBtn.click(); });
+    }
+    onClose() {
+        this.contentEl.empty();
+        if (!this.resolved)
+            this.resolve(null);
+    }
+}
+class RoutineTargetModal extends obsidian.Modal {
+    constructor(app, exerciseName, resolve) {
+        super(app);
+        this.exerciseName = exerciseName;
+        this.resolve = resolve;
+        this.resolved = false;
+    }
+    onOpen() {
+        const { contentEl } = this;
+        contentEl.createEl("h3", { text: `Add ${this.exerciseName}` });
+        const labelStyle = "font-size:0.9em;color:var(--text-muted);";
+        const inputStyle = "display:block;width:100%;padding:8px 10px;margin:4px 0 12px;" +
+            "border:1px solid var(--background-modifier-border);border-radius:6px;" +
+            "background:var(--background-primary);color:var(--text-normal);";
+        contentEl.createEl("label", { text: "Target sets (optional)", attr: { style: labelStyle } });
+        const setsInput = contentEl.createEl("input", { attr: { type: "number", min: "1", style: inputStyle } });
+        contentEl.createEl("label", { text: "Target rep range (optional, e.g. 8-12)", attr: { style: labelStyle } });
+        const repsInput = contentEl.createEl("input", { attr: { type: "text", style: inputStyle } });
+        const btnRow = contentEl.createDiv({ attr: { style: "display:flex;gap:8px;" } });
+        const addBtn = btnRow.createEl("button", { text: "Add", cls: "mod-cta" });
+        addBtn.addEventListener("click", () => {
+            this.resolved = true;
+            this.close();
+            const targetSets = parseInt(setsInput.value, 10);
+            const targetRepRange = repsInput.value.trim();
+            this.resolve({
+                targetSets: isNaN(targetSets) ? undefined : targetSets,
+                targetRepRange: targetRepRange || undefined,
+            });
+        });
+        btnRow.createEl("button", { text: "Cancel" }).addEventListener("click", () => this.close());
+        setsInput.focus();
+    }
+    onClose() {
+        this.contentEl.empty();
+        if (!this.resolved)
+            this.resolve(null);
+    }
+}
+async function createEditRoutine(app, settings) {
+    var _a, _b, _c;
+    const routineFiles = getRoutineFiles(app, settings);
+    const CREATE_NEW = "+ Create new routine";
+    const options = [CREATE_NEW, ...routineFiles.map(f => f.basename)];
+    const choice = await new Promise(res => new StringSuggestModal(app, options, "Search routines or create new…", res).open());
+    if (choice === null)
+        return;
+    let name = "";
+    let category = "";
+    let exercises = [];
+    if (choice === CREATE_NEW) {
+        const created = await new Promise(res => new RoutineNameModal(app, res).open());
+        if (!created)
+            return;
+        name = created.name;
+        category = created.category;
+    }
+    else {
+        const file = routineFiles.find(f => f.basename === choice);
+        if (!file)
+            return;
+        name = file.basename;
+        const fm = (_b = (_a = app.metadataCache.getFileCache(file)) === null || _a === void 0 ? void 0 : _a.frontmatter) !== null && _b !== void 0 ? _b : {};
+        category = String((_c = fm.category) !== null && _c !== void 0 ? _c : "");
+        exercises = parseRoutineBody(await app.vault.read(file));
+    }
+    const exerciseFiles = getExerciseFiles(app, settings);
+    if (exerciseFiles.length === 0) {
+        new obsidian.Notice(`No exercises found in ${settings.exerciseFolder}. Create some exercises first.`);
+        return;
+    }
+    let done = false;
+    while (!done) {
+        const labels = exercises.map((e, i) => {
+            const suffix = formatTargetSuffix(e);
+            return `${i + 1}. ${e.name}${suffix ? ` (${suffix})` : ""}`;
+        });
+        const menuOptions = [
+            "Add an exercise",
+            ...(exercises.length > 0 ? ["Reorder an exercise", "Remove an exercise"] : []),
+            `Done — save routine (${exercises.length} exercise${exercises.length !== 1 ? "s" : ""})`,
+        ];
+        const menuChoice = await new Promise(res => new StringSuggestModal(app, menuOptions, `Routine: ${name}`, res).open());
+        if (menuChoice === null) {
+            new obsidian.Notice("Create/edit routine cancelled.");
+            return;
+        }
+        if (menuChoice === "Add an exercise") {
+            const file = await new Promise(res => new FileSuggestModal(app, exerciseFiles, "Search exercise database…", res).open());
+            if (!file)
+                continue;
+            const target = await new Promise(res => new RoutineTargetModal(app, file.basename, res).open());
+            if (!target)
+                continue;
+            exercises.push({ name: file.basename, ...target });
+            new obsidian.Notice(`Added: ${file.basename}`);
+            continue;
+        }
+        if (menuChoice === "Reorder an exercise") {
+            const which = await new Promise(res => new StringSuggestModal(app, labels, "Move which exercise?", res).open());
+            if (which === null)
+                continue;
+            const idx = labels.indexOf(which);
+            const direction = await new Promise(res => new StringSuggestModal(app, ["Move up", "Move down"], "Direction?", res).open());
+            if (direction === null)
+                continue;
+            const newIdx = direction === "Move up" ? idx - 1 : idx + 1;
+            if (newIdx < 0 || newIdx >= exercises.length) {
+                new obsidian.Notice("Can't move further in that direction.");
+                continue;
+            }
+            [exercises[idx], exercises[newIdx]] = [exercises[newIdx], exercises[idx]];
+            continue;
+        }
+        if (menuChoice === "Remove an exercise") {
+            const which = await new Promise(res => new StringSuggestModal(app, labels, "Remove which exercise?", res).open());
+            if (which === null)
+                continue;
+            exercises.splice(labels.indexOf(which), 1);
+            continue;
+        }
+        done = true; // "Done — save routine…"
+    }
+    if (exercises.length === 0) {
+        new obsidian.Notice("Routine not saved — no exercises added.");
+        return;
+    }
+    const folder = settings.routineFolder.replace(/\/$/, "");
+    const filePath = obsidian.normalizePath(`${folder}/${name}.md`);
+    await ensureFolders(app, filePath);
+    const content = buildRoutineContent(category, exercises);
+    const existingAtPath = app.vault.getAbstractFileByPath(filePath);
+    if (existingAtPath instanceof obsidian.TFile) {
+        await app.vault.modify(existingAtPath, content);
+    }
+    else {
+        await app.vault.create(filePath, content);
+    }
+    new obsidian.Notice(`✓ Routine "${name}" saved with ${exercises.length} exercise${exercises.length !== 1 ? "s" : ""}.`);
+}
+// ═══════════════════════════════════════════════════════════════════════════
+// Log Workout
+// ═══════════════════════════════════════════════════════════════════════════
+function getFileDateWL(app, file) {
+    var _a, _b;
+    const fm = (_b = (_a = app.metadataCache.getFileCache(file)) === null || _a === void 0 ? void 0 : _a.frontmatter) !== null && _b !== void 0 ? _b : {};
+    const cd = fm.creation_date;
+    if (cd) {
+        const s = cd instanceof Date
+            ? `${cd.getFullYear()}-${String(cd.getMonth() + 1).padStart(2, "0")}-${String(cd.getDate()).padStart(2, "0")}`
+            : String(cd);
+        const m = s.match(/^(\d{4})-(\d{2})-(\d{2})/);
+        if (m)
+            return new Date(+m[1], +m[2] - 1, +m[3]);
+    }
+    return new Date(file.stat.ctime);
+}
+function getWorkoutLogBaseFolder(settings) {
+    var _a;
+    const template = settings.workoutLogFolder;
+    const tokenCount = ((_a = template.match(/\{\{DATE:/g)) !== null && _a !== void 0 ? _a : []).length;
+    if (tokenCount === 0)
+        return template.replace(/\/$/, "");
+    const resolved = resolveDateTemplate(template);
+    const parts = resolved.split("/");
+    return parts.slice(0, Math.max(0, parts.length - tokenCount)).join("/");
+}
+// Scans past workout logs (most recent first) for the exercise+equipment pair and
+// returns the set with the highest weight from the first matching session found.
+async function findLastLoggedSet(app, settings, exerciseName, equipment) {
+    const slug = slugify(exerciseName);
+    const base = getWorkoutLogBaseFolder(settings);
+    const files = app.vault.getMarkdownFiles().filter(f => !base || f.path.startsWith(base + "/"));
+    const matches = files
+        .filter(f => { var _a, _b; return ((_b = (_a = app.metadataCache.getFileCache(f)) === null || _a === void 0 ? void 0 : _a.frontmatter) !== null && _b !== void 0 ? _b : {})[`${slug}_equipment`] === equipment; })
+        .sort((a, b) => { var _a, _b, _c, _d; return ((_b = (_a = getFileDateWL(app, b)) === null || _a === void 0 ? void 0 : _a.getTime()) !== null && _b !== void 0 ? _b : 0) - ((_d = (_c = getFileDateWL(app, a)) === null || _c === void 0 ? void 0 : _c.getTime()) !== null && _d !== void 0 ? _d : 0); });
+    const heading = `## ${exerciseName} — ${equipment}`;
+    for (const file of matches) {
+        const lines = (await app.vault.read(file)).split("\n");
+        const headerIdx = lines.findIndex(l => l.trim() === heading);
+        if (headerIdx === -1)
+            continue;
+        let best = null;
+        for (let i = headerIdx + 1; i < lines.length; i++) {
+            if (lines[i].startsWith("## "))
+                break;
+            const m = lines[i].match(/^-\s+Set\s+\d+:\s+([\d.]+)\s+\S+\s+×\s+(\d+)/);
+            if (m) {
+                const weight = parseFloat(m[1]);
+                const reps = parseInt(m[2], 10);
+                if (!best || weight > best.weight)
+                    best = { weight, reps };
+            }
+        }
+        if (best)
+            return best;
+    }
+    return null;
+}
+class EquipmentModal extends obsidian.Modal {
+    constructor(app, exerciseName, equipmentTypes, defaultEquipment, weightUnit, getHint, resolve) {
+        super(app);
+        this.exerciseName = exerciseName;
+        this.equipmentTypes = equipmentTypes;
+        this.defaultEquipment = defaultEquipment;
+        this.weightUnit = weightUnit;
+        this.getHint = getHint;
+        this.resolve = resolve;
+        this.resolved = false;
+    }
+    onOpen() {
+        var _a;
+        const { contentEl } = this;
+        contentEl.createEl("h3", { text: this.exerciseName });
+        contentEl.createEl("label", {
+            text: "Equipment for this session",
+            attr: { style: "font-size:0.9em;color:var(--text-muted);" },
+        });
+        const select = contentEl.createEl("select", {
+            attr: {
+                style: "display:block;width:100%;padding:8px 10px;margin:4px 0 8px;" +
+                    "border:1px solid var(--background-modifier-border);border-radius:6px;" +
+                    "background:var(--background-primary);color:var(--text-normal);",
+            },
+        });
+        for (const eq of this.equipmentTypes) {
+            const opt = select.createEl("option", { text: eq });
+            opt.value = eq;
+        }
+        select.value = this.equipmentTypes.includes(this.defaultEquipment)
+            ? this.defaultEquipment
+            : ((_a = this.equipmentTypes[0]) !== null && _a !== void 0 ? _a : "");
+        this.hintEl = contentEl.createEl("p", {
+            attr: { style: "margin:0 0 12px;font-size:0.85em;color:var(--text-muted);" },
+        });
+        this.updateHint(select.value);
+        select.addEventListener("change", () => this.updateHint(select.value));
+        const btnRow = contentEl.createDiv({ attr: { style: "display:flex;gap:8px;" } });
+        const continueBtn = btnRow.createEl("button", { text: "Continue", cls: "mod-cta" });
+        continueBtn.addEventListener("click", () => {
+            this.resolved = true;
+            this.close();
+            this.resolve(select.value);
+        });
+        btnRow.createEl("button", { text: "Cancel" }).addEventListener("click", () => this.close());
+    }
+    updateHint(equipment) {
+        this.hintEl.setText("Loading last log…");
+        this.getHint(equipment).then(hint => {
+            this.hintEl.setText(hint
+                ? `Last (${equipment}): ${hint.weight} ${this.weightUnit} × ${hint.reps}`
+                : `No previous log for ${equipment}.`);
+        });
+    }
+    onClose() {
+        this.contentEl.empty();
+        if (!this.resolved)
+            this.resolve(null);
+    }
+}
+class SetLoggingModal extends obsidian.Modal {
+    constructor(app, exerciseName, equipment, weightUnit, resolve) {
+        super(app);
+        this.exerciseName = exerciseName;
+        this.equipment = equipment;
+        this.weightUnit = weightUnit;
+        this.resolve = resolve;
+        this.sets = [];
+        this.resolved = false;
+    }
+    onOpen() {
+        const { contentEl } = this;
+        contentEl.createEl("h3", { text: `${this.exerciseName} — ${this.equipment}` });
+        this.listEl = contentEl.createDiv({
+            attr: { style: "margin-bottom:10px;font-size:0.9em;color:var(--text-muted);" },
+        });
+        this.renderList();
+        const inputStyle = "width:100%;padding:8px 10px;font-size:1.05em;" +
+            "border:1px solid var(--background-modifier-border);border-radius:6px;" +
+            "background:var(--background-primary);color:var(--text-normal);";
+        const inputRow = contentEl.createDiv({ attr: { style: "display:flex;gap:8px;margin-bottom:10px;" } });
+        const weightCol = inputRow.createDiv({ attr: { style: "flex:1;" } });
+        weightCol.createEl("label", { text: `Weight (${this.weightUnit})`, attr: { style: "font-size:0.85em;color:var(--text-muted);" } });
+        this.weightInput = weightCol.createEl("input", { attr: { type: "number", step: "0.5", min: "0", style: inputStyle } });
+        const repsCol = inputRow.createDiv({ attr: { style: "flex:1;" } });
+        repsCol.createEl("label", { text: "Reps", attr: { style: "font-size:0.85em;color:var(--text-muted);" } });
+        this.repsInput = repsCol.createEl("input", { attr: { type: "number", step: "1", min: "0", style: inputStyle } });
+        const addBtn = contentEl.createEl("button", {
+            text: "Add set",
+            attr: { style: "width:100%;padding:8px;margin-bottom:12px;cursor:pointer;" },
+        });
+        addBtn.addEventListener("click", () => this.addSet());
+        this.repsInput.addEventListener("keydown", e => { if (e.key === "Enter")
+            this.addSet(); });
+        const btnRow = contentEl.createDiv({ attr: { style: "display:flex;gap:8px;" } });
+        this.nextBtn = btnRow.createEl("button", { text: "Next exercise", cls: "mod-cta" });
+        this.nextBtn.disabled = true;
+        this.nextBtn.addEventListener("click", () => {
+            this.resolved = true;
+            this.close();
+            this.resolve(this.sets);
+        });
+        btnRow.createEl("button", { text: "Skip exercise" }).addEventListener("click", () => {
+            this.resolved = true;
+            this.close();
+            this.resolve(null);
+        });
+        this.weightInput.focus();
+    }
+    addSet() {
+        const weight = parseFloat(this.weightInput.value);
+        const reps = parseInt(this.repsInput.value, 10);
+        if (isNaN(weight) || isNaN(reps)) {
+            new obsidian.Notice("Enter both weight and reps.");
+            return;
+        }
+        this.sets.push({ weight, reps });
+        this.nextBtn.disabled = false;
+        this.weightInput.value = "";
+        this.repsInput.value = "";
+        this.weightInput.focus();
+        this.renderList();
+    }
+    renderList() {
+        this.listEl.empty();
+        if (this.sets.length === 0) {
+            this.listEl.setText("No sets logged yet.");
+            return;
+        }
+        this.sets.forEach((s, i) => {
+            this.listEl.createDiv({ text: `Set ${i + 1}: ${s.weight} ${this.weightUnit} × ${s.reps}` });
+        });
+    }
+    onClose() {
+        this.contentEl.empty();
+        if (!this.resolved)
+            this.resolve(null);
+    }
+}
+async function logOneExercise(app, settings, exerciseName, exerciseFiles) {
+    var _a, _b, _c, _d;
+    const exerciseFile = exerciseFiles.find(f => f.basename === exerciseName);
+    const fm = exerciseFile ? ((_b = (_a = app.metadataCache.getFileCache(exerciseFile)) === null || _a === void 0 ? void 0 : _a.frontmatter) !== null && _b !== void 0 ? _b : {}) : {};
+    const defaultEquipment = String((_d = (_c = fm.default_equipment) !== null && _c !== void 0 ? _c : settings.equipmentTypes[0]) !== null && _d !== void 0 ? _d : "");
+    const equipment = await new Promise(res => new EquipmentModal(app, exerciseName, settings.equipmentTypes, defaultEquipment, settings.weightUnit, (eq) => findLastLoggedSet(app, settings, exerciseName, eq), res).open());
+    if (!equipment)
+        return null;
+    const sets = await new Promise(res => new SetLoggingModal(app, exerciseName, equipment, settings.weightUnit, res).open());
+    if (!sets || sets.length === 0)
+        return null;
+    return { name: exerciseName, equipment, sets };
+}
+async function saveWorkoutLog(app, settings, routineName, logged) {
+    const folder = resolveDateTemplate(settings.workoutLogFolder);
+    const filename = resolveDateTemplate(settings.workoutLogFilename);
+    const filePath = obsidian.normalizePath(`${folder}/${filename}.md`);
+    await ensureFolders(app, filePath);
+    await app.vault.create(filePath, "");
+    const file = app.vault.getAbstractFileByPath(filePath);
+    if (!(file instanceof obsidian.TFile)) {
+        new obsidian.Notice("Failed to create workout log.");
+        return;
+    }
+    const dateStr = window.moment().format("YYYY-MM-DD");
+    const totalSets = logged.reduce((s, ex) => s + ex.sets.length, 0);
+    const totalVolume = logged.reduce((s, ex) => s + ex.sets.reduce((ss, x) => ss + x.weight * x.reps, 0), 0);
+    await app.fileManager.processFrontMatter(file, (fm) => {
+        fm.creation_date = dateStr;
+        fm.routine = routineName;
+        for (const ex of logged) {
+            const slug = slugify(ex.name);
+            fm[`${slug}_sets`] = ex.sets.length;
+            fm[`${slug}_reps`] = ex.sets.reduce((s, x) => s + x.reps, 0);
+            fm[`${slug}_top_weight`] = Math.max(...ex.sets.map(s => s.weight));
+            fm[`${slug}_volume`] = ex.sets.reduce((s, x) => s + x.weight * x.reps, 0);
+            fm[`${slug}_equipment`] = ex.equipment;
+        }
+        fm.total_sets = totalSets;
+        fm.total_volume = totalVolume;
+    });
+    // Rebuild body: one heading + set bullets per exercise, in logged order, then trailing Notes
+    let body = "";
+    for (const ex of logged) {
+        body += `## ${ex.name} — ${ex.equipment}\n`;
+        ex.sets.forEach((s, i) => {
+            body += `- Set ${i + 1}: ${s.weight} ${settings.weightUnit} × ${s.reps}\n`;
+        });
+        body += "\n";
+    }
+    body += "## Notes\n";
+    const updated = await app.vault.read(file);
+    const fmLines = updated.split("\n");
+    let fmEnd = -1;
+    if (fmLines[0] === "---") {
+        for (let i = 1; i < fmLines.length; i++) {
+            if (fmLines[i] === "---") {
+                fmEnd = i;
+                break;
+            }
+        }
+    }
+    const fmBlock = fmEnd !== -1 ? fmLines.slice(0, fmEnd + 1).join("\n") : "";
+    await app.vault.modify(file, fmBlock + "\n\n" + body);
+    new obsidian.Notice(`✓ Workout logged: ${totalSets} sets, ${totalVolume} total volume.`);
+}
+async function logWorkout(app, settings) {
+    const routineFiles = getRoutineFiles(app, settings);
+    if (routineFiles.length === 0) {
+        new obsidian.Notice(`No routines found in ${settings.routineFolder}. Create a routine first.`);
+        return;
+    }
+    const routineFile = await new Promise(res => new FileSuggestModal(app, routineFiles, "Which routine?", res).open());
+    if (!routineFile)
+        return;
+    const targets = parseRoutineBody(await app.vault.read(routineFile));
+    if (targets.length === 0) {
+        new obsidian.Notice(`Routine "${routineFile.basename}" has no exercises.`);
+        return;
+    }
+    const exerciseFiles = getExerciseFiles(app, settings);
+    const logged = [];
+    for (const target of targets) {
+        const result = await logOneExercise(app, settings, target.name, exerciseFiles);
+        if (result)
+            logged.push(result);
+    }
+    // Optional: log exercises not in the routine
+    let addingMore = true;
+    while (addingMore) {
+        const choice = await new Promise(res => new StringSuggestModal(app, ["Add an exercise not in this routine", "Finish workout"], "Anything else?", res).open());
+        if (choice === null || choice === "Finish workout") {
+            addingMore = false;
+            continue;
+        }
+        const file = await new Promise(res => new FileSuggestModal(app, exerciseFiles, "Search exercise database…", res).open());
+        if (!file)
+            continue;
+        const result = await logOneExercise(app, settings, file.basename, exerciseFiles);
+        if (result)
+            logged.push(result);
+    }
+    if (logged.length === 0) {
+        new obsidian.Notice("Workout not saved — no exercises logged.");
+        return;
+    }
+    await saveWorkoutLog(app, settings, routineFile.basename, logged);
+}
+
 function isRelevantFile(changedPath, config, settings) {
     if (config.type === "reading-challenge" && settings) {
         const goalFile = obsidian.normalizePath(settings.readingGoalFile);
@@ -24380,6 +25283,22 @@ class Tracker extends obsidian.Plugin {
             id: "generate-monthly-bills",
             name: "Generate Monthly Bills",
             callback: () => generateMonthlyBills(this.app, this.settings),
+        });
+        // ── Workout Routines commands ─────────────────────────────────────────
+        this.addCommand({
+            id: "create-edit-exercise",
+            name: "Create/edit exercise",
+            callback: () => createEditExercise(this.app, this.settings),
+        });
+        this.addCommand({
+            id: "create-edit-routine",
+            name: "Create/edit routine",
+            callback: () => createEditRoutine(this.app, this.settings),
+        });
+        this.addCommand({
+            id: "log-workout",
+            name: "Log workout",
+            callback: () => logWorkout(this.app, this.settings),
         });
         // ── Tracker code block processor ──────────────────────────────────────
         this.registerMarkdownCodeBlockProcessor("tracker-pro", async (source, el, ctx) => {

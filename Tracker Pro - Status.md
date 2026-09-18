@@ -4,6 +4,34 @@
 
 ---
 
+### v1.7.0 — Workout Routine Tracking
+
+New strength-routine logging system: define a routine once, then log a session against it exercise-by-exercise with per-set weight/reps. Cardio logging (Exercise Notes / Achievements) is untouched — no changes to that code path.
+
+**New vault structure:**
+- `Data/Exercises/` — one note per exercise (optional `category`, `default_equipment`, plain-text body description).
+- `Data/Routines/` — one note per routine (optional `category`, `## Exercises` ordered list: `N. [[Exercise Name]] — target sets × rep range`, suffix optional).
+- `Data/Workouts/{{DATE:YYYY}}/{{DATE:YYYY-MM}}/` — one note per **session** (not per day), filename `WL-{{DATE:YYYY-MM-DD}}-{{DATE:HHmmss}}` for guaranteed uniqueness.
+
+**Session note rollups** (per exercise, keyed by `slugify(name)`, in logged order): `<slug>_sets`, `<slug>_reps`, `<slug>_top_weight`, `<slug>_volume`, `<slug>_equipment`, followed by `total_sets` and `total_volume`. Body: one `## {Exercise Name} — {Equipment}` heading per exercise with `- Set N: {weight} {weightUnit} × {reps}` bullets, trailing empty `## Notes`. Frontmatter key order enforced via `processFrontMatter` + `vault.read`/`vault.modify` (same pattern as `mealLogger.ts`'s `recalcAndSave`).
+
+**New commands** (`src/routineTracker.ts`):
+- **Create/edit exercise** — fuzzy search + "+ Create new exercise", form for name/category/description/default equipment.
+- **Create/edit routine** — pick/create, loop to search-and-add exercises (optional target sets × rep range), reorder, remove, done → full rewrite of the routine note.
+- **Log workout** — pick a routine, then per exercise: confirm equipment (prefilled from `default_equipment`, dropdown over `equipmentTypes`) with a live "last-logged top weight × reps for that equipment" hint pulled from past session bodies; log sets in a loop (add set / next exercise / skip exercise); optionally log extra exercises not in the routine; finish to write the session note.
+
+**New `slugify()` utility** (`src/utils.ts`): lowercase, trim, collapse non-alphanumeric runs to `_`, strip leading/trailing `_`. Used for rollup keys and equipment/exercise lookups.
+
+**New settings section** ("Workout Routines", placed after Vitamins): `exerciseFolder`, `routineFolder`, `workoutLogFolder`, `workoutLogFilename`, `weightUnit` (display-only, no conversion), `equipmentTypes` (drag-reorder list, same UI pattern as `vitaminPeriods`).
+
+**Chart compatibility:** no new chart type — existing `line`/`bar`/`table`/`summary` blocks read the rollup properties directly (e.g. `properties: [bench_press_top_weight]`, or `type: table / groupBy: routine / columns: [count, sum(total_volume)]`).
+
+**Explicitly out of scope:** lb/kg conversion, RPE tracking, cross-equipment weight suggestions, an "Edit workout log" command (fast-follow), and Achievements/Exercise Streak changes.
+
+**Files changed:** `src/utils.ts` (`slugify`), `src/settings.ts` (Workout Routines section), `src/routineTracker.ts` (new), `src/main.ts` (3 new commands), `Documentation.md`.
+
+---
+
 ### v1.6.7 — `mm:ss` Time-Value Support (Auto-Detected)
 
 Fixed silent data corruption on `mm:ss` frontmatter properties (e.g. `pace: 12:34`). `parseFloat("12:34")` was returning `12` — seconds were dropped entirely.

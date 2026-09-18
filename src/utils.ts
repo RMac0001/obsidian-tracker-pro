@@ -65,6 +65,16 @@ export function formatSecondsAsTime(totalSeconds: number): string {
     return `${m}:${String(s).padStart(2, "0")}`;
 }
 
+// ─── Slugify ────────────────────────────────────────────────────────────────────
+
+export function slugify(name: string): string {
+    return name
+        .trim()
+        .toLowerCase()
+        .replace(/[^a-z0-9]+/g, "_")
+        .replace(/^_+|_+$/g, "");
+}
+
 // ─── Section Range ─────────────────────────────────────────────────────────────
 
 export function findSectionRange(
