@@ -4,6 +4,20 @@
 
 ---
 
+### v1.7.4 — Total Time & Exercise Mode (Phase 5)
+
+Fixed a real bug: logging a recumbent-bike exercise showed the strength set-logging flow instead of cardio, because `routineTracker.ts` branched strength vs. cardio on the exercise note's `category` field while the vault actually uses `mode: Cardio` / `mode: Strength`. Rather than editing every exercise note, the plugin now matches the vault.
+
+**Change 1 — exercise-note `category` renamed to `mode`.** Exercise-note scope only — routine notes' own, unrelated `category` field (free-text grouping like "Upper Body") is untouched. `isCardioCategory` renamed to `isCardioMode`, reads `fm.mode` everywhere it's called (`logOneExercise`, `parseWorkoutLogBody`, the exercise form's metric-visibility toggle). Renamed every internal variable in the exercise-form code path too — `ExerciseFormModal`, `ExerciseFormResult`, `loadExerciseForEdit`, `buildExerciseContent`, `createEditExercise` — not just the YAML key. Label reads "Mode (optional)". No migration, no backward-compat read of the old `category` key on exercise notes — nothing in the vault still uses it there.
+
+**Change 2 — one `time_min` field replaces `total_duration_min`.** A single optional, hand-typed whole-session minutes value — covers warmup, rest between sets, everything per-exercise numbers don't capture. Prompted once at the end of Log workout (after "Finish workout," a new `TotalTimeModal`, same skippable shape as the existing heart-rate modal) and editable afterward via Edit workout log's new "Edit total time" action. Omitted from frontmatter entirely when skipped (never `0` or blank). Applies to every workout type — strength, cardio, or mixed — and is independent of the existing per-exercise `<slug>_duration_min` cardio field, which is untouched.
+
+`time_min` is session state, not derived from the exercise list, so — like `routineName` and `creation_date` — it has to be threaded through explicitly on every `writeWorkoutLogContent` call (both Log workout and Edit workout log) or a resave would silently drop it. `WorkoutTotals` and the finish notice no longer reference `totalDurationMin`; the notice now reports `time_min` when entered and drops that clause entirely when skipped.
+
+**Files changed:** `src/routineTracker.ts` (`isCardioMode` rename, `mode` field throughout the exercise-note code paths, `TotalTimeModal`, `writeWorkoutLogContent`/`saveWorkoutLog`/`logWorkout`/`EditWorkoutLogModal` threading `timeMin`, removed the now-dead `isCardioLog` helper), `Documentation.md`.
+
+---
+
 ### v1.7.3 — Circuit Caller Export (Phase 4)
 
 New command **"Export routine (Circuit Caller)"** — exports one routine at a time as a Circuit Caller-compatible backup JSON file. One-way, one-off export: nothing is imported back, nothing is saved into Tracker Pro's own data, and the file is never written into the vault.

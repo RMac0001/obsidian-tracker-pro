@@ -24465,11 +24465,10 @@ async function normalizeRecipeIngredients(app, settings) {
 }
 
 function isStrength(ex) { return ex.kind === "strength"; }
-function isCardioLog(ex) { return ex.kind === "cardio"; }
-// Category is free text on exercise notes — compare case-insensitively so
+// Mode is free text on exercise notes — compare case-insensitively so
 // "cardio", "Cardio", " Cardio " etc. are all treated the same.
-function isCardioCategory(category) {
-    return category.trim().toLowerCase() === "cardio";
+function isCardioMode(mode) {
+    return mode.trim().toLowerCase() === "cardio";
 }
 // ─── Shared Helpers ───────────────────────────────────────────────────────────
 async function ensureFolders(app, filePath) {
@@ -24544,18 +24543,18 @@ async function loadExerciseForEdit(app, file) {
     const fm = (_b = (_a = app.metadataCache.getFileCache(file)) === null || _a === void 0 ? void 0 : _a.frontmatter) !== null && _b !== void 0 ? _b : {};
     const content = await app.vault.read(file);
     return {
-        category: String((_c = fm.category) !== null && _c !== void 0 ? _c : ""),
+        mode: String((_c = fm.mode) !== null && _c !== void 0 ? _c : ""),
         defaultEquipment: String((_d = fm.default_equipment) !== null && _d !== void 0 ? _d : ""),
         cardioMetric: String((_e = fm.cardio_metric) !== null && _e !== void 0 ? _e : ""),
         description: extractBody(content).trim(),
     };
 }
-function buildExerciseContent(category, defaultEquipment, cardioMetric, description) {
+function buildExerciseContent(mode, defaultEquipment, cardioMetric, description) {
     let content = "";
-    if (category || defaultEquipment || cardioMetric) {
+    if (mode || defaultEquipment || cardioMetric) {
         content += "---\n";
-        if (category)
-            content += `category: ${category}\n`;
+        if (mode)
+            content += `mode: ${mode}\n`;
         if (defaultEquipment)
             content += `default_equipment: ${defaultEquipment}\n`;
         if (cardioMetric)
@@ -24587,11 +24586,11 @@ class ExerciseFormModal extends obsidian.Modal {
         if (this.isEdit)
             nameAttrs.disabled = "true";
         const nameInput = contentEl.createEl("input", { attr: nameAttrs });
-        contentEl.createEl("label", { text: "Category (optional)", attr: { style: labelStyle } });
-        const categoryInput = contentEl.createEl("input", {
-            attr: { type: "text", value: this.initial.category, style: inputStyle },
+        contentEl.createEl("label", { text: "Mode (optional)", attr: { style: labelStyle } });
+        const modeInput = contentEl.createEl("input", {
+            attr: { type: "text", value: this.initial.mode, style: inputStyle },
         });
-        // Cardio metric — shown only when category is Cardio (e.g. "Cardio")
+        // Cardio metric — shown only when mode is Cardio (e.g. "Cardio")
         const metricWrap = contentEl.createDiv();
         metricWrap.createEl("label", { text: "Cardio metric", attr: { style: labelStyle } });
         const metricSelect = metricWrap.createEl("select", { attr: { style: inputStyle } });
@@ -24601,10 +24600,10 @@ class ExerciseFormModal extends obsidian.Modal {
         }
         metricSelect.value = this.initial.cardioMetric === "Speed" ? "Speed" : "Pace";
         const updateMetricVisibility = () => {
-            metricWrap.style.display = isCardioCategory(categoryInput.value) ? "" : "none";
+            metricWrap.style.display = isCardioMode(modeInput.value) ? "" : "none";
         };
         updateMetricVisibility();
-        categoryInput.addEventListener("input", updateMetricVisibility);
+        modeInput.addEventListener("input", updateMetricVisibility);
         contentEl.createEl("label", { text: "Default equipment (optional)", attr: { style: labelStyle } });
         const equipmentSelect = contentEl.createEl("select", { attr: { style: inputStyle } });
         const noneOpt = equipmentSelect.createEl("option", { text: "— None —" });
@@ -24629,19 +24628,19 @@ class ExerciseFormModal extends obsidian.Modal {
                 new obsidian.Notice("Name is required.");
                 return;
             }
-            const category = categoryInput.value.trim();
+            const mode = modeInput.value.trim();
             this.resolved = true;
             this.close();
             this.resolve({
                 name,
-                category,
+                mode,
                 description: descInput.value.trim(),
                 defaultEquipment: equipmentSelect.value,
-                cardioMetric: isCardioCategory(category) ? metricSelect.value : undefined,
+                cardioMetric: isCardioMode(mode) ? metricSelect.value : undefined,
             });
         });
         btnRow.createEl("button", { text: "Cancel" }).addEventListener("click", () => this.close());
-        (this.isEdit ? categoryInput : nameInput).focus();
+        (this.isEdit ? modeInput : nameInput).focus();
     }
     onClose() {
         this.contentEl.empty();
@@ -24657,7 +24656,7 @@ async function createEditExercise(app, settings) {
     if (choice === null)
         return;
     let isEdit = false;
-    let initial = { name: "", category: "", description: "", defaultEquipment: "", cardioMetric: "" };
+    let initial = { name: "", mode: "", description: "", defaultEquipment: "", cardioMetric: "" };
     if (choice !== CREATE_NEW) {
         const existingFile = files.find(f => f.basename === choice);
         if (existingFile) {
@@ -24670,7 +24669,7 @@ async function createEditExercise(app, settings) {
         return;
     const folder = settings.exerciseFolder.replace(/\/$/, "");
     const filePath = obsidian.normalizePath(`${folder}/${result.name}.md`);
-    const content = buildExerciseContent(result.category, result.defaultEquipment, result.cardioMetric, result.description);
+    const content = buildExerciseContent(result.mode, result.defaultEquipment, result.cardioMetric, result.description);
     await ensureFolders(app, filePath);
     const existingAtPath = app.vault.getAbstractFileByPath(filePath);
     if (existingAtPath instanceof obsidian.TFile) {
@@ -25217,7 +25216,7 @@ async function logOneExercise(app, settings, exerciseName, exerciseFiles) {
     const exerciseFile = exerciseFiles.find(f => f.basename === exerciseName);
     const fm = exerciseFile ? ((_b = (_a = app.metadataCache.getFileCache(exerciseFile)) === null || _a === void 0 ? void 0 : _a.frontmatter) !== null && _b !== void 0 ? _b : {}) : {};
     const defaultEquipment = String((_d = (_c = fm.default_equipment) !== null && _c !== void 0 ? _c : settings.equipmentTypes[0]) !== null && _d !== void 0 ? _d : "");
-    const cardio = isCardioCategory(String((_e = fm.category) !== null && _e !== void 0 ? _e : ""));
+    const cardio = isCardioMode(String((_e = fm.mode) !== null && _e !== void 0 ? _e : ""));
     const cardioMetric = fm.cardio_metric === "Speed" ? "Speed" : "Pace";
     const getHint = cardio
         ? (eq) => findLastLoggedCardio(app, settings, exerciseName, eq)
@@ -25261,13 +25260,14 @@ function formatCardioBodyLine(ex, settings) {
 }
 // Shared by Log workout (new file) and Edit workout log (existing file) so both
 // commands recompute every rollup fresh from the current exercise list — never
-// incrementally adjusted from what was previously stored.
-async function writeWorkoutLogContent(app, settings, file, routineName, exercises, notesLines = []) {
+// incrementally adjusted from what was previously stored. timeMin is session
+// state entered by hand (not derived from the exercise list, unlike sets/
+// volume), so it must be threaded through explicitly on every call, the same
+// way routineName and creation_date are — otherwise a resave silently drops it.
+async function writeWorkoutLogContent(app, settings, file, routineName, timeMin, exercises, notesLines = []) {
     const strengthLogged = exercises.filter(isStrength);
-    const cardioLogged = exercises.filter(isCardioLog);
     const totalSets = strengthLogged.reduce((s, ex) => s + ex.sets.length, 0);
     const totalVolume = strengthLogged.reduce((s, ex) => s + ex.sets.reduce((ss, x) => ss + x.weight * x.reps, 0), 0);
-    const totalDurationMin = cardioLogged.reduce((s, ex) => s + ex.durationMin, 0);
     await app.fileManager.processFrontMatter(file, (fm) => {
         var _a;
         // Clear everything except creation_date, then rebuild fresh — so a
@@ -25279,6 +25279,8 @@ async function writeWorkoutLogContent(app, settings, file, routineName, exercise
         fm.creation_date = (_a = fm.creation_date) !== null && _a !== void 0 ? _a : window.moment().format("YYYY-MM-DD");
         if (routineName)
             fm.routine = routineName;
+        if (timeMin !== undefined)
+            fm.time_min = timeMin;
         for (const ex of exercises) {
             const slug = slugify(ex.name);
             if (ex.kind === "strength") {
@@ -25302,7 +25304,6 @@ async function writeWorkoutLogContent(app, settings, file, routineName, exercise
         }
         fm.total_sets = totalSets;
         fm.total_volume = totalVolume;
-        fm.total_duration_min = totalDurationMin;
     });
     // Rebuild body: one heading + entry per exercise, in logged order, then trailing Notes
     let body = "";
@@ -25334,9 +25335,9 @@ async function writeWorkoutLogContent(app, settings, file, routineName, exercise
     }
     const fmBlock = fmEnd !== -1 ? fmLines.slice(0, fmEnd + 1).join("\n") : "";
     await app.vault.modify(file, fmBlock + "\n\n" + body);
-    return { totalSets, totalVolume, totalDurationMin };
+    return { totalSets, totalVolume };
 }
-async function saveWorkoutLog(app, settings, routineName, logged) {
+async function saveWorkoutLog(app, settings, routineName, timeMin, logged) {
     const folder = resolveDateTemplate(settings.workoutLogFolder);
     const filename = resolveDateTemplate(settings.workoutLogFilename);
     const filePath = obsidian.normalizePath(`${folder}/${filename}.md`);
@@ -25347,13 +25348,13 @@ async function saveWorkoutLog(app, settings, routineName, logged) {
         new obsidian.Notice("Failed to create workout log.");
         return;
     }
-    const { totalSets, totalVolume, totalDurationMin } = await writeWorkoutLogContent(app, settings, file, routineName, logged);
+    const { totalSets, totalVolume } = await writeWorkoutLogContent(app, settings, file, routineName, timeMin, logged);
     const parts = [];
     if (logged.some(isStrength))
         parts.push(`${totalSets} sets, ${totalVolume} total volume`);
-    if (logged.some(isCardioLog))
-        parts.push(`${totalDurationMin} cardio minutes`);
-    new obsidian.Notice(`✓ Workout logged: ${parts.join(" · ")}.`);
+    if (timeMin !== undefined)
+        parts.push(`${timeMin} minutes`);
+    new obsidian.Notice(parts.length > 0 ? `✓ Workout logged: ${parts.join(" · ")}.` : "✓ Workout logged.");
 }
 // ═══════════════════════════════════════════════════════════════════════════
 // Edit Workout Log
@@ -25407,10 +25408,10 @@ function parseWorkoutLogBody(app, exerciseFiles, content) {
         }
         const exerciseFile = exerciseFiles.find(f => f.basename === name);
         const fm = exerciseFile ? ((_b = (_a = app.metadataCache.getFileCache(exerciseFile)) === null || _a === void 0 ? void 0 : _a.frontmatter) !== null && _b !== void 0 ? _b : {}) : {};
-        const category = String((_c = fm.category) !== null && _c !== void 0 ? _c : "");
+        const mode = String((_c = fm.mode) !== null && _c !== void 0 ? _c : "");
         const setLines = sectionLines.filter(l => /^-\s+Set\s+\d+:/.test(l));
-        const cardio = exerciseFile && category
-            ? isCardioCategory(category)
+        const cardio = exerciseFile && mode
+            ? isCardioMode(mode)
             : setLines.length === 0 && sectionLines.some(l => l.trim().startsWith("-"));
         if (!cardio) {
             const sets = [];
@@ -25500,9 +25501,51 @@ async function logWorkout(app, settings) {
         new obsidian.Notice("Workout not saved — no exercises logged.");
         return;
     }
-    await saveWorkoutLog(app, settings, routineName, logged);
+    const timeMinResult = await new Promise(res => new TotalTimeModal(app, {}, res).open());
+    await saveWorkoutLog(app, settings, routineName, timeMinResult === null || timeMinResult === void 0 ? void 0 : timeMinResult.timeMin, logged);
 }
 // ─── Field-Edit Modals ────────────────────────────────────────────────────────
+class TotalTimeModal extends obsidian.Modal {
+    constructor(app, initial, resolve) {
+        super(app);
+        this.initial = initial;
+        this.resolve = resolve;
+        this.resolved = false;
+    }
+    onOpen() {
+        const { contentEl } = this;
+        contentEl.createEl("h3", { text: "Total time" });
+        const labelStyle = "font-size:0.9em;color:var(--text-muted);";
+        const inputStyle = "display:block;width:100%;padding:8px 10px;margin:4px 0 12px;" +
+            "border:1px solid var(--background-modifier-border);border-radius:6px;" +
+            "background:var(--background-primary);color:var(--text-normal);";
+        contentEl.createEl("label", {
+            text: "Total time — minutes (optional, leave blank to skip)",
+            attr: { style: labelStyle },
+        });
+        const timeInput = contentEl.createEl("input", {
+            attr: {
+                type: "number", step: "1", min: "0", style: inputStyle,
+                value: this.initial.timeMin !== undefined ? String(this.initial.timeMin) : "",
+            },
+        });
+        const btnRow = contentEl.createDiv({ attr: { style: "display:flex;gap:8px;" } });
+        const saveBtn = btnRow.createEl("button", { text: "Save", cls: "mod-cta" });
+        saveBtn.addEventListener("click", () => {
+            const timeMin = parseFloat(timeInput.value);
+            this.resolved = true;
+            this.close();
+            this.resolve({ timeMin: isNaN(timeMin) ? undefined : timeMin });
+        });
+        btnRow.createEl("button", { text: "Cancel" }).addEventListener("click", () => this.close());
+        timeInput.focus();
+    }
+    onClose() {
+        this.contentEl.empty();
+        if (!this.resolved)
+            this.resolve(null);
+    }
+}
 class SetEditModal extends obsidian.Modal {
     constructor(app, initial, weightUnit, resolve) {
         super(app);
@@ -25655,6 +25698,7 @@ class EditWorkoutLogModal extends obsidian.Modal {
         this.settings = settings;
         this.file = file;
         this.routineName = null;
+        this.timeMin = undefined;
         this.exercises = [];
         this.notesLines = [];
         this.exerciseFiles = getExerciseFiles(app, settings);
@@ -25668,6 +25712,7 @@ class EditWorkoutLogModal extends obsidian.Modal {
         const content = await this.app.vault.read(this.file);
         const fm = (_b = (_a = this.app.metadataCache.getFileCache(this.file)) === null || _a === void 0 ? void 0 : _a.frontmatter) !== null && _b !== void 0 ? _b : {};
         this.routineName = fm.routine ? String(fm.routine) : null;
+        this.timeMin = fm.time_min !== undefined && fm.time_min !== null ? Number(fm.time_min) : undefined;
         this.exercises = parseWorkoutLogBody(this.app, this.exerciseFiles, content);
         this.notesLines = parseNotesLines(extractBody(content));
     }
@@ -25678,6 +25723,12 @@ class EditWorkoutLogModal extends obsidian.Modal {
         if (this.routineName) {
             contentEl.createEl("div", {
                 text: `Routine: ${this.routineName}`,
+                attr: { style: "color:var(--text-muted);font-size:0.85em;margin-bottom:8px;" },
+            });
+        }
+        if (this.timeMin !== undefined) {
+            contentEl.createEl("div", {
+                text: `Total time: ${this.timeMin} min`,
                 attr: { style: "color:var(--text-muted);font-size:0.85em;margin-bottom:8px;" },
             });
         }
@@ -25700,6 +25751,7 @@ class EditWorkoutLogModal extends obsidian.Modal {
             { label: "Edit an exercise", fn: () => this.editExercise() },
             { label: "Add an exercise", fn: () => this.addExercise() },
             { label: "Remove an exercise", fn: () => this.removeExercise() },
+            { label: "Edit total time", fn: () => this.editTotalTime() },
         ];
         for (const action of actions) {
             const btn = actionList.createEl("button", { text: action.label });
@@ -25855,10 +25907,17 @@ class EditWorkoutLogModal extends obsidian.Modal {
             this.render();
         }).open();
     }
+    editTotalTime() {
+        new TotalTimeModal(this.app, { timeMin: this.timeMin }, (result) => {
+            if (result)
+                this.timeMin = result.timeMin;
+            this.render();
+        }).open();
+    }
     save() {
         const dateStr = window.moment().format("YYYY-MM-DD");
         const newNotesLines = [...this.notesLines, `- ${dateStr} — Log recalculated`];
-        writeWorkoutLogContent(this.app, this.settings, this.file, this.routineName, this.exercises, newNotesLines)
+        writeWorkoutLogContent(this.app, this.settings, this.file, this.routineName, this.timeMin, this.exercises, newNotesLines)
             .then(() => {
             new obsidian.Notice(`✓ ${this.file.basename} saved and recalculated`);
             this.close();
