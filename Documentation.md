@@ -1484,23 +1484,27 @@ filename is the canonical name referenced everywhere else (routine lines,
 session headings).
 
 ```yaml
-category: Push
+mode: Push
 default_equipment: Barbell
 ```
 
 ```yaml
-category: Cardio
+mode: Cardio
 default_equipment: Outdoor
 cardio_metric: Pace
 ```
 
 All fields are optional. `default_equipment` is a prefill for logging, not
 a constraint — the equipment can always be changed for a given session.
-`cardio_metric` (`Pace` or `Speed`) is read only when `category` is
+`cardio_metric` (`Pace` or `Speed`) is read only when `mode` is
 `Cardio` (case-insensitive) and decides which computed field a session
 against this exercise writes — pace for something like walking or running,
 speed for something like cycling. The note body may hold a plain-text
 description.
+
+Note: this `mode` field belongs to **exercise notes only**. Routine notes
+have their own, unrelated `category` field (free-text grouping like
+"Upper Body") — see below.
 
 **Routines** (default `Data/Routines`) — one note per routine, with an
 optional `category` and a `## Exercises` ordered list. Cardio exercises are
@@ -1533,6 +1537,7 @@ Frontmatter:
 ```yaml
 creation_date: 2026-09-18
 routine: Upper Body
+time_min: 52
 bench_press_sets: 3
 bench_press_reps: 24
 bench_press_top_weight: 135
@@ -1545,7 +1550,6 @@ morning_walk_avg_hr: 128
 morning_walk_equipment: Outdoor
 total_sets: 3
 total_volume: 3060
-total_duration_min: 35
 ```
 
 Per-exercise rollup keys are `slugify(name)`-based (lowercased, non-alphanumeric
@@ -1556,8 +1560,14 @@ runs collapsed to `_`), appearing once per exercise in the order it was logged:
 | Strength | `<slug>_sets`, `<slug>_reps`, `<slug>_top_weight`, `<slug>_volume`, `<slug>_equipment` |
 | Cardio | `<slug>_duration_min`, `<slug>_distance`, `<slug>_pace` (only if `cardio_metric: Pace`) **or** `<slug>_speed` (only if `Speed`), `<slug>_avg_hr` and `<slug>_peak_hr` (only if entered), `<slug>_equipment` |
 
-Followed by `total_sets`/`total_volume` (strength) and `total_duration_min`
-(cardio) — always written, 0 when a session has none of that kind. An ad
+Followed by `total_sets`/`total_volume` (strength) — always written, 0 when
+a session has no strength exercises. `time_min` is a single optional,
+hand-typed whole-session total (covering warmup, rest between sets,
+everything the per-exercise numbers don't capture) — entered once at the
+end of Log workout, editable afterward via Edit workout log, and omitted
+from frontmatter entirely when skipped (never written as 0 or blank). It
+applies to every workout type, strength, cardio, or mixed, and is
+independent of any per-exercise cardio `<slug>_duration_min` field. An ad
 hoc session (no routine picked) omits the `routine:` key entirely rather
 than writing an empty value.
 
@@ -1584,9 +1594,9 @@ exercise (e.g. `Outdoor` vs `Treadmill` walks, logged and hinted separately).
 Fuzzy-searches your exercise database; offers **+ Create new exercise** when
 nothing matches. Opens a form for name (locked when editing an existing
 exercise — rename by editing the routine/history references separately),
-category, description, and default equipment (a dropdown built from the
+mode, description, and default equipment (a dropdown built from the
 **Equipment types** setting). A **Cardio metric** field (Pace or Speed)
-appears only while Category reads "Cardio". Saving creates or fully
+appears only while Mode reads "Cardio". Saving creates or fully
 overwrites the note.
 
 ---
@@ -1611,7 +1621,7 @@ logs a single exercise, or several, with no routine reference at all).
   database for one exercise at a time.
 
 Both paths converge on the same per-exercise flow, branching by the
-exercise's category:
+exercise's mode:
 
 **Strength:**
 1. Confirm the equipment for this session (prefilled from the exercise's
@@ -1631,9 +1641,11 @@ exercise's category:
    behind perceived exertion, so it's deliberately not tracked).
 
 After the routine's exercises (or at any point in the ad hoc flow), you can
-keep adding exercises not yet logged this session. Finishing generates a
-new timestamped session note (no existing-note check needed — the filename
-is always unique) with the rollups and body described above.
+keep adding exercises not yet logged this session. Choosing **Finish
+workout** prompts once for an optional **Total time** in minutes — a single,
+hand-typed, whole-session value (see `time_min` above), skippable — then
+generates a new timestamped session note (no existing-note check needed —
+the filename is always unique) with the rollups and body described above.
 
 > Known limitation: same-day sets/entries are not deduplicated across
 > separate Log Workout runs — running the command twice in one day just
@@ -1650,14 +1662,15 @@ meal log, since a workout log is one note per session rather than one per
 day.
 
 The chosen note is parsed back into its per-exercise structure — each
-exercise is tagged strength or cardio by reading the **current** category
+exercise is tagged strength or cardio by reading the **current** mode
 on its source exercise note in the exercise database (falling back to the
-body's own shape if that note has since been deleted or recategorized, so
+body's own shape if that note has since been deleted or re-moded, so
 editing an orphaned entry still works rather than failing outright).
 
-A summary view lists every exercise with one stat line each, and offers:
+A summary view lists every exercise with one stat line each, plus the
+session's total time if one was entered, and offers:
 
-- **Edit an exercise** — branches by category:
+- **Edit an exercise** — branches by mode:
   - *Strength:* change the equipment for this session, change a set's
     weight or reps, add a set, or remove a set.
   - *Cardio:* change the equipment, edit duration and/or distance (pace or
@@ -1666,17 +1679,21 @@ A summary view lists every exercise with one stat line each, and offers:
     and skippable, same as Log workout).
 - **Add an exercise** — reuses Log workout's own per-exercise flow exactly
   (search the exercise database, confirm equipment, log it per its
-  category), then inserts the new heading and rollup fields.
+  mode), then inserts the new heading and rollup fields.
 - **Remove an exercise** — deletes its `##` heading and body entirely,
   along with every `<slug>_*` rollup field it contributed to frontmatter.
+- **Edit total time** — set, change, or clear `time_min` (blank means
+  unset, same optional/skippable behavior as Log workout).
 
 **Save and recalculate** is a complete rewrite, not a patch — the same
 principle as Edit meal log and the bills master-first rule. Every rollup
 (strength: sets/reps/top_weight/volume; cardio: duration_min/distance/
-pace-or-speed/avg_hr/peak_hr; session totals: total_sets/total_volume/
-total_duration_min) is recomputed fresh from the edited exercise list,
-never incrementally adjusted from what was previously stored — so a
-removed exercise's old fields can't linger. A timestamped line is appended
+pace-or-speed/avg_hr/peak_hr; session totals: total_sets/total_volume) is
+recomputed fresh from the edited exercise list, never incrementally
+adjusted from what was previously stored — so a removed exercise's old
+fields can't linger. `time_min` is session state, not derived from the
+exercise list, so it's carried forward explicitly on every save instead.
+A timestamped line is appended
 to `## Notes`: `- {date} — Log recalculated`.
 
 Does not touch a routine's own definition (use Create/edit routine for

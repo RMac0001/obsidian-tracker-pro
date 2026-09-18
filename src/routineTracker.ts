@@ -43,7 +43,6 @@ interface LoggedCardioExercise {
 type LoggedExercise = LoggedStrengthExercise | LoggedCardioExercise;
 
 function isStrength(ex: LoggedExercise): ex is LoggedStrengthExercise { return ex.kind === "strength"; }
-function isCardioLog(ex: LoggedExercise): ex is LoggedCardioExercise { return ex.kind === "cardio"; }
 
 interface LastSetHint {
     weight: number;
@@ -57,10 +56,10 @@ interface LastCardioHint {
     speed?: number;
 }
 
-// Category is free text on exercise notes — compare case-insensitively so
+// Mode is free text on exercise notes — compare case-insensitively so
 // "cardio", "Cardio", " Cardio " etc. are all treated the same.
-function isCardioCategory(category: string): boolean {
-    return category.trim().toLowerCase() === "cardio";
+function isCardioMode(mode: string): boolean {
+    return mode.trim().toLowerCase() === "cardio";
 }
 
 // ─── Shared Helpers ───────────────────────────────────────────────────────────
@@ -144,7 +143,7 @@ class FileSuggestModal extends FuzzySuggestModal<TFile> {
 
 interface ExerciseFormResult {
     name: string;
-    category: string;
+    mode: string;
     description: string;
     defaultEquipment: string;
     cardioMetric?: "Pace" | "Speed";
@@ -153,11 +152,11 @@ interface ExerciseFormResult {
 async function loadExerciseForEdit(
     app: App,
     file: TFile
-): Promise<{ category: string; description: string; defaultEquipment: string; cardioMetric: string }> {
+): Promise<{ mode: string; description: string; defaultEquipment: string; cardioMetric: string }> {
     const fm = app.metadataCache.getFileCache(file)?.frontmatter ?? {};
     const content = await app.vault.read(file);
     return {
-        category: String(fm.category ?? ""),
+        mode: String(fm.mode ?? ""),
         defaultEquipment: String(fm.default_equipment ?? ""),
         cardioMetric: String(fm.cardio_metric ?? ""),
         description: extractBody(content).trim(),
@@ -165,15 +164,15 @@ async function loadExerciseForEdit(
 }
 
 function buildExerciseContent(
-    category: string,
+    mode: string,
     defaultEquipment: string,
     cardioMetric: string | undefined,
     description: string
 ): string {
     let content = "";
-    if (category || defaultEquipment || cardioMetric) {
+    if (mode || defaultEquipment || cardioMetric) {
         content += "---\n";
-        if (category) content += `category: ${category}\n`;
+        if (mode) content += `mode: ${mode}\n`;
         if (defaultEquipment) content += `default_equipment: ${defaultEquipment}\n`;
         if (cardioMetric) content += `cardio_metric: ${cardioMetric}\n`;
         content += "---\n\n";
@@ -187,7 +186,7 @@ class ExerciseFormModal extends Modal {
     constructor(
         app: App,
         private isEdit: boolean,
-        private initial: { name: string; category: string; description: string; defaultEquipment: string; cardioMetric: string },
+        private initial: { name: string; mode: string; description: string; defaultEquipment: string; cardioMetric: string },
         private equipmentTypes: string[],
         private resolve: (result: ExerciseFormResult | null) => void
     ) { super(app); }
@@ -206,12 +205,12 @@ class ExerciseFormModal extends Modal {
         if (this.isEdit) nameAttrs.disabled = "true";
         const nameInput = contentEl.createEl("input", { attr: nameAttrs }) as HTMLInputElement;
 
-        contentEl.createEl("label", { text: "Category (optional)", attr: { style: labelStyle } });
-        const categoryInput = contentEl.createEl("input", {
-            attr: { type: "text", value: this.initial.category, style: inputStyle },
+        contentEl.createEl("label", { text: "Mode (optional)", attr: { style: labelStyle } });
+        const modeInput = contentEl.createEl("input", {
+            attr: { type: "text", value: this.initial.mode, style: inputStyle },
         }) as HTMLInputElement;
 
-        // Cardio metric — shown only when category is Cardio (e.g. "Cardio")
+        // Cardio metric — shown only when mode is Cardio (e.g. "Cardio")
         const metricWrap = contentEl.createDiv();
         metricWrap.createEl("label", { text: "Cardio metric", attr: { style: labelStyle } });
         const metricSelect = metricWrap.createEl("select", { attr: { style: inputStyle } }) as HTMLSelectElement;
@@ -222,10 +221,10 @@ class ExerciseFormModal extends Modal {
         metricSelect.value = this.initial.cardioMetric === "Speed" ? "Speed" : "Pace";
 
         const updateMetricVisibility = () => {
-            metricWrap.style.display = isCardioCategory(categoryInput.value) ? "" : "none";
+            metricWrap.style.display = isCardioMode(modeInput.value) ? "" : "none";
         };
         updateMetricVisibility();
-        categoryInput.addEventListener("input", updateMetricVisibility);
+        modeInput.addEventListener("input", updateMetricVisibility);
 
         contentEl.createEl("label", { text: "Default equipment (optional)", attr: { style: labelStyle } });
         const equipmentSelect = contentEl.createEl("select", { attr: { style: inputStyle } }) as HTMLSelectElement;
@@ -250,20 +249,20 @@ class ExerciseFormModal extends Modal {
         saveBtn.addEventListener("click", () => {
             const name = this.isEdit ? this.initial.name : nameInput.value.trim();
             if (!name) { new Notice("Name is required."); return; }
-            const category = categoryInput.value.trim();
+            const mode = modeInput.value.trim();
             this.resolved = true;
             this.close();
             this.resolve({
                 name,
-                category,
+                mode,
                 description: descInput.value.trim(),
                 defaultEquipment: equipmentSelect.value,
-                cardioMetric: isCardioCategory(category) ? (metricSelect.value as "Pace" | "Speed") : undefined,
+                cardioMetric: isCardioMode(mode) ? (metricSelect.value as "Pace" | "Speed") : undefined,
             });
         });
         btnRow.createEl("button", { text: "Cancel" }).addEventListener("click", () => this.close());
 
-        (this.isEdit ? categoryInput : nameInput).focus();
+        (this.isEdit ? modeInput : nameInput).focus();
     }
 
     onClose(): void {
@@ -283,7 +282,7 @@ export async function createEditExercise(app: App, settings: TrackerSettings): P
     if (choice === null) return;
 
     let isEdit = false;
-    let initial = { name: "", category: "", description: "", defaultEquipment: "", cardioMetric: "" };
+    let initial = { name: "", mode: "", description: "", defaultEquipment: "", cardioMetric: "" };
 
     if (choice !== CREATE_NEW) {
         const existingFile = files.find(f => f.basename === choice);
@@ -300,7 +299,7 @@ export async function createEditExercise(app: App, settings: TrackerSettings): P
 
     const folder = settings.exerciseFolder.replace(/\/$/, "");
     const filePath = normalizePath(`${folder}/${result.name}.md`);
-    const content = buildExerciseContent(result.category, result.defaultEquipment, result.cardioMetric, result.description);
+    const content = buildExerciseContent(result.mode, result.defaultEquipment, result.cardioMetric, result.description);
 
     await ensureFolders(app, filePath);
     const existingAtPath = app.vault.getAbstractFileByPath(filePath);
@@ -922,7 +921,7 @@ async function logOneExercise(
     const exerciseFile = exerciseFiles.find(f => f.basename === exerciseName);
     const fm = exerciseFile ? (app.metadataCache.getFileCache(exerciseFile)?.frontmatter ?? {}) : {};
     const defaultEquipment = String(fm.default_equipment ?? settings.equipmentTypes[0] ?? "");
-    const cardio = isCardioCategory(String(fm.category ?? ""));
+    const cardio = isCardioMode(String(fm.mode ?? ""));
     const cardioMetric: "Pace" | "Speed" = fm.cardio_metric === "Speed" ? "Speed" : "Pace";
 
     const getHint = cardio
@@ -976,25 +975,26 @@ function formatCardioBodyLine(ex: LoggedCardioExercise, settings: TrackerSetting
 interface WorkoutTotals {
     totalSets: number;
     totalVolume: number;
-    totalDurationMin: number;
 }
 
 // Shared by Log workout (new file) and Edit workout log (existing file) so both
 // commands recompute every rollup fresh from the current exercise list — never
-// incrementally adjusted from what was previously stored.
+// incrementally adjusted from what was previously stored. timeMin is session
+// state entered by hand (not derived from the exercise list, unlike sets/
+// volume), so it must be threaded through explicitly on every call, the same
+// way routineName and creation_date are — otherwise a resave silently drops it.
 async function writeWorkoutLogContent(
     app: App,
     settings: TrackerSettings,
     file: TFile,
     routineName: string | null,
+    timeMin: number | undefined,
     exercises: LoggedExercise[],
     notesLines: string[] = []
 ): Promise<WorkoutTotals> {
     const strengthLogged = exercises.filter(isStrength);
-    const cardioLogged   = exercises.filter(isCardioLog);
-    const totalSets        = strengthLogged.reduce((s, ex) => s + ex.sets.length, 0);
-    const totalVolume       = strengthLogged.reduce((s, ex) => s + ex.sets.reduce((ss, x) => ss + x.weight * x.reps, 0), 0);
-    const totalDurationMin = cardioLogged.reduce((s, ex) => s + ex.durationMin, 0);
+    const totalSets   = strengthLogged.reduce((s, ex) => s + ex.sets.length, 0);
+    const totalVolume  = strengthLogged.reduce((s, ex) => s + ex.sets.reduce((ss, x) => ss + x.weight * x.reps, 0), 0);
 
     await app.fileManager.processFrontMatter(file, (fm) => {
         // Clear everything except creation_date, then rebuild fresh — so a
@@ -1004,6 +1004,7 @@ async function writeWorkoutLogContent(
         }
         fm.creation_date = fm.creation_date ?? (window as any).moment().format("YYYY-MM-DD");
         if (routineName) fm.routine = routineName;
+        if (timeMin !== undefined) fm.time_min = timeMin;
         for (const ex of exercises) {
             const slug = slugify(ex.name);
             if (ex.kind === "strength") {
@@ -1022,9 +1023,8 @@ async function writeWorkoutLogContent(
                 fm[`${slug}_equipment`] = ex.equipment;
             }
         }
-        fm.total_sets         = totalSets;
-        fm.total_volume       = totalVolume;
-        fm.total_duration_min = totalDurationMin;
+        fm.total_sets   = totalSets;
+        fm.total_volume = totalVolume;
     });
 
     // Rebuild body: one heading + entry per exercise, in logged order, then trailing Notes
@@ -1054,13 +1054,14 @@ async function writeWorkoutLogContent(
     const fmBlock = fmEnd !== -1 ? fmLines.slice(0, fmEnd + 1).join("\n") : "";
     await app.vault.modify(file, fmBlock + "\n\n" + body);
 
-    return { totalSets, totalVolume, totalDurationMin };
+    return { totalSets, totalVolume };
 }
 
 async function saveWorkoutLog(
     app: App,
     settings: TrackerSettings,
     routineName: string | null,
+    timeMin: number | undefined,
     logged: LoggedExercise[]
 ): Promise<void> {
     const folder = resolveDateTemplate(settings.workoutLogFolder);
@@ -1072,12 +1073,12 @@ async function saveWorkoutLog(
     const file = app.vault.getAbstractFileByPath(filePath);
     if (!(file instanceof TFile)) { new Notice("Failed to create workout log."); return; }
 
-    const { totalSets, totalVolume, totalDurationMin } = await writeWorkoutLogContent(app, settings, file, routineName, logged);
+    const { totalSets, totalVolume } = await writeWorkoutLogContent(app, settings, file, routineName, timeMin, logged);
 
     const parts: string[] = [];
     if (logged.some(isStrength)) parts.push(`${totalSets} sets, ${totalVolume} total volume`);
-    if (logged.some(isCardioLog)) parts.push(`${totalDurationMin} cardio minutes`);
-    new Notice(`✓ Workout logged: ${parts.join(" · ")}.`);
+    if (timeMin !== undefined) parts.push(`${timeMin} minutes`);
+    new Notice(parts.length > 0 ? `✓ Workout logged: ${parts.join(" · ")}.` : "✓ Workout logged.");
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -1133,11 +1134,11 @@ function parseWorkoutLogBody(
 
         const exerciseFile = exerciseFiles.find(f => f.basename === name);
         const fm = exerciseFile ? (app.metadataCache.getFileCache(exerciseFile)?.frontmatter ?? {}) : {};
-        const category = String(fm.category ?? "");
+        const mode = String(fm.mode ?? "");
         const setLines = sectionLines.filter(l => /^-\s+Set\s+\d+:/.test(l));
 
-        const cardio = exerciseFile && category
-            ? isCardioCategory(category)
+        const cardio = exerciseFile && mode
+            ? isCardioMode(mode)
             : setLines.length === 0 && sectionLines.some(l => l.trim().startsWith("-"));
 
         if (!cardio) {
@@ -1234,10 +1235,61 @@ export async function logWorkout(app: App, settings: TrackerSettings): Promise<v
         return;
     }
 
-    await saveWorkoutLog(app, settings, routineName, logged);
+    const timeMinResult = await new Promise<{ timeMin?: number } | null>(res =>
+        new TotalTimeModal(app, {}, res).open()
+    );
+
+    await saveWorkoutLog(app, settings, routineName, timeMinResult?.timeMin, logged);
 }
 
 // ─── Field-Edit Modals ────────────────────────────────────────────────────────
+
+class TotalTimeModal extends Modal {
+    private resolved = false;
+    constructor(
+        app: App,
+        private initial: { timeMin?: number },
+        private resolve: (result: { timeMin?: number } | null) => void
+    ) { super(app); }
+
+    onOpen(): void {
+        const { contentEl } = this;
+        contentEl.createEl("h3", { text: "Total time" });
+
+        const labelStyle = "font-size:0.9em;color:var(--text-muted);";
+        const inputStyle = "display:block;width:100%;padding:8px 10px;margin:4px 0 12px;" +
+            "border:1px solid var(--background-modifier-border);border-radius:6px;" +
+            "background:var(--background-primary);color:var(--text-normal);";
+
+        contentEl.createEl("label", {
+            text: "Total time — minutes (optional, leave blank to skip)",
+            attr: { style: labelStyle },
+        });
+        const timeInput = contentEl.createEl("input", {
+            attr: {
+                type: "number", step: "1", min: "0", style: inputStyle,
+                value: this.initial.timeMin !== undefined ? String(this.initial.timeMin) : "",
+            },
+        }) as HTMLInputElement;
+
+        const btnRow = contentEl.createDiv({ attr: { style: "display:flex;gap:8px;" } });
+        const saveBtn = btnRow.createEl("button", { text: "Save", cls: "mod-cta" });
+        saveBtn.addEventListener("click", () => {
+            const timeMin = parseFloat(timeInput.value);
+            this.resolved = true;
+            this.close();
+            this.resolve({ timeMin: isNaN(timeMin) ? undefined : timeMin });
+        });
+        btnRow.createEl("button", { text: "Cancel" }).addEventListener("click", () => this.close());
+
+        timeInput.focus();
+    }
+
+    onClose(): void {
+        this.contentEl.empty();
+        if (!this.resolved) this.resolve(null);
+    }
+}
 
 class SetEditModal extends Modal {
     private resolved = false;
@@ -1404,6 +1456,7 @@ function getRecentWorkoutLogFiles(app: App, settings: TrackerSettings, limit: nu
 
 class EditWorkoutLogModal extends Modal {
     private routineName: string | null = null;
+    private timeMin: number | undefined = undefined;
     private exercises: LoggedExercise[] = [];
     private notesLines: string[] = [];
     private exerciseFiles: TFile[];
@@ -1422,6 +1475,7 @@ class EditWorkoutLogModal extends Modal {
         const content = await this.app.vault.read(this.file);
         const fm = this.app.metadataCache.getFileCache(this.file)?.frontmatter ?? {};
         this.routineName = fm.routine ? String(fm.routine) : null;
+        this.timeMin = fm.time_min !== undefined && fm.time_min !== null ? Number(fm.time_min) : undefined;
         this.exercises = parseWorkoutLogBody(this.app, this.exerciseFiles, content);
         this.notesLines = parseNotesLines(extractBody(content));
     }
@@ -1434,6 +1488,12 @@ class EditWorkoutLogModal extends Modal {
         if (this.routineName) {
             contentEl.createEl("div", {
                 text: `Routine: ${this.routineName}`,
+                attr: { style: "color:var(--text-muted);font-size:0.85em;margin-bottom:8px;" },
+            });
+        }
+        if (this.timeMin !== undefined) {
+            contentEl.createEl("div", {
+                text: `Total time: ${this.timeMin} min`,
                 attr: { style: "color:var(--text-muted);font-size:0.85em;margin-bottom:8px;" },
             });
         }
@@ -1458,6 +1518,7 @@ class EditWorkoutLogModal extends Modal {
             { label: "Edit an exercise", fn: () => this.editExercise() },
             { label: "Add an exercise", fn: () => this.addExercise() },
             { label: "Remove an exercise", fn: () => this.removeExercise() },
+            { label: "Edit total time", fn: () => this.editTotalTime() },
         ];
         for (const action of actions) {
             const btn = actionList.createEl("button", { text: action.label });
@@ -1584,11 +1645,18 @@ class EditWorkoutLogModal extends Modal {
         }).open();
     }
 
+    private editTotalTime(): void {
+        new TotalTimeModal(this.app, { timeMin: this.timeMin }, (result) => {
+            if (result) this.timeMin = result.timeMin;
+            this.render();
+        }).open();
+    }
+
     private save(): void {
         const dateStr = (window as any).moment().format("YYYY-MM-DD");
         const newNotesLines = [...this.notesLines, `- ${dateStr} — Log recalculated`];
 
-        writeWorkoutLogContent(this.app, this.settings, this.file, this.routineName, this.exercises, newNotesLines)
+        writeWorkoutLogContent(this.app, this.settings, this.file, this.routineName, this.timeMin, this.exercises, newNotesLines)
             .then(() => {
                 new Notice(`✓ ${this.file.basename} saved and recalculated`);
                 this.close();
