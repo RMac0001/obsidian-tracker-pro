@@ -34,6 +34,14 @@ export interface TrackerSettings {
     vitaminsFolder: string;
     vitaminPeriods: string[];
 
+    // ── Workout Routines ──────────────────────────────────────────────────────
+    exerciseFolder: string;
+    routineFolder: string;
+    workoutLogFolder: string;
+    workoutLogFilename: string;
+    weightUnit: string;
+    equipmentTypes: string[];
+
     // ── Tracker Pro General Settings ──────────────────────────────────────────
     folder: string;
     dateFormat: string;
@@ -73,6 +81,14 @@ export const DEFAULT_SETTINGS: TrackerSettings = {
     vitaminsFolder: "Data/Vitamins",
     vitaminPeriods: ["Morning", "Evening"],
 
+    // ── Workout Routines ──────────────────────────────────────────────────────
+    exerciseFolder:     "Data/Exercises",
+    routineFolder:      "Data/Routines",
+    workoutLogFolder:   "Data/Workouts/{{DATE:YYYY}}/{{DATE:YYYY-MM}}",
+    workoutLogFilename: "WL-{{DATE:YYYY-MM-DD}}-{{DATE:HHmmss}}",
+    weightUnit:         "lb",
+    equipmentTypes:     ["Barbell", "Dumbbell", "Machine", "Band", "Bodyweight"],
+
     // ── Tracker Pro General Settings ──────────────────────────────────────────
     folder: "/",
     dateFormat: "YYYY-MM-DD",
@@ -95,7 +111,7 @@ export class TrackerSettingTab extends PluginSettingTab {
         // Sections are ordered alphabetically by heading name.
         // When adding a new settings section, insert it in alphabetical order here
         // and add a matching entry to the interface comment block in DEFAULT_SETTINGS.
-        // Current order: Achievements · Bills · Meal Logger · Reading Challenge · Vitamins · Tracker Pro General Settings
+        // Current order: Achievements · Bills · Meal Logger · Reading Challenge · Vitamins · Workout Routines · Tracker Pro General Settings
         // ─────────────────────────────────────────────────────────────────────
 
         // ── Achievements ──────────────────────────────────────────────────────
@@ -487,6 +503,188 @@ export class TrackerSettingTab extends PluginSettingTab {
 
         addPeriodRow.createEl("button", { text: "Add" }).addEventListener("click", doAddPeriod);
         addPeriodInput.addEventListener("keydown", (e) => { if (e.key === "Enter") doAddPeriod(); });
+
+        // ── Workout Routines ─────────────────────────────────────────────────
+
+        containerEl.createEl("h2", { text: "Workout Routines" });
+
+        containerEl.createEl("p", {
+            text: "Path templates support {{DATE:FORMAT}} tokens — the same syntax as the Meal Logger. " +
+                  "FORMAT is any moment.js format string, e.g. {{DATE:YYYY}}, {{DATE:MM}}, {{DATE:HHmmss}}.",
+            attr: { style: "font-size:0.85em;color:var(--text-muted);margin:0 0 12px;" },
+        });
+
+        new Setting(containerEl)
+            .setName("Exercise database folder")
+            .setDesc("Folder containing individual exercise notes (one note per exercise).")
+            .addText((text) =>
+                text
+                    .setPlaceholder("Data/Exercises")
+                    .setValue(this.plugin.settings.exerciseFolder)
+                    .onChange(async (value) => {
+                        this.plugin.settings.exerciseFolder = value.trim();
+                        await this.plugin.saveSettings();
+                    })
+            );
+
+        new Setting(containerEl)
+            .setName("Routines folder")
+            .setDesc("Folder containing routine definition notes.")
+            .addText((text) =>
+                text
+                    .setPlaceholder("Data/Routines")
+                    .setValue(this.plugin.settings.routineFolder)
+                    .onChange(async (value) => {
+                        this.plugin.settings.routineFolder = value.trim();
+                        await this.plugin.saveSettings();
+                    })
+            );
+
+        new Setting(containerEl)
+            .setName("Workout log folder")
+            .setDesc(
+                "Folder path template where workout session notes are stored. Supports {{DATE:FORMAT}} tokens.\n" +
+                "Example: Data/Workouts/{{DATE:YYYY}}/{{DATE:YYYY-MM}}"
+            )
+            .addText((text) =>
+                text
+                    .setPlaceholder("Data/Workouts/{{DATE:YYYY}}/{{DATE:YYYY-MM}}")
+                    .setValue(this.plugin.settings.workoutLogFolder)
+                    .onChange(async (value) => {
+                        this.plugin.settings.workoutLogFolder = value.trim();
+                        await this.plugin.saveSettings();
+                    })
+            );
+
+        new Setting(containerEl)
+            .setName("Workout log filename")
+            .setDesc(
+                "Filename template for workout session notes (without .md). Supports {{DATE:FORMAT}} tokens. " +
+                "Includes a time component so multiple workouts on the same day get distinct files.\n" +
+                "Example: WL-{{DATE:YYYY-MM-DD}}-{{DATE:HHmmss}}"
+            )
+            .addText((text) =>
+                text
+                    .setPlaceholder("WL-{{DATE:YYYY-MM-DD}}-{{DATE:HHmmss}}")
+                    .setValue(this.plugin.settings.workoutLogFilename)
+                    .onChange(async (value) => {
+                        this.plugin.settings.workoutLogFilename = value.trim();
+                        await this.plugin.saveSettings();
+                    })
+            );
+
+        new Setting(containerEl)
+            .setName("Weight unit")
+            .setDesc("Display label only — appended after logged weights. No unit conversion is performed.")
+            .addText((text) =>
+                text
+                    .setPlaceholder("lb")
+                    .setValue(this.plugin.settings.weightUnit)
+                    .onChange(async (value) => {
+                        this.plugin.settings.weightUnit = value.trim();
+                        await this.plugin.saveSettings();
+                    })
+            );
+
+        // Equipment types drag-to-reorder list
+        new Setting(containerEl)
+            .setName("Equipment types")
+            .setDesc(
+                "Options offered when logging equipment for an exercise, and for an exercise's default equipment. " +
+                "Drag to reorder, × to delete. Renaming or removing an entry does not rewrite equipment values " +
+                "already written to past workout notes."
+            );
+
+        const equipmentListEl = containerEl.createEl("div", {
+            attr: {
+                style: "border:1px solid var(--background-modifier-border);border-radius:6px;" +
+                       "padding:6px 8px;margin:0 0 8px;",
+            },
+        });
+
+        const renderEquipmentList = () => {
+            equipmentListEl.empty();
+            const equipment = this.plugin.settings.equipmentTypes;
+            let dragSrcIdx: number | null = null;
+
+            for (let i = 0; i < equipment.length; i++) {
+                const item = equipmentListEl.createEl("div", {
+                    attr: {
+                        draggable: "true",
+                        style: "display:flex;align-items:center;gap:8px;padding:4px 6px;" +
+                               "border-radius:4px;user-select:none;",
+                    },
+                });
+
+                item.createEl("span", {
+                    text: "⠿",
+                    attr: { style: "cursor:grab;color:var(--text-muted);font-size:1.1em;line-height:1;" },
+                });
+
+                item.createEl("span", { text: equipment[i], attr: { style: "flex:1;" } });
+
+                const delBtn = item.createEl("button", { text: "✕" });
+                delBtn.setAttribute("style", "padding:1px 6px;font-size:0.8em;line-height:1.4;" +
+                    "background:none;border:1px solid var(--background-modifier-border);" +
+                    "border-radius:4px;cursor:pointer;color:var(--text-muted);");
+                delBtn.addEventListener("click", async () => {
+                    this.plugin.settings.equipmentTypes.splice(i, 1);
+                    await this.plugin.saveSettings();
+                    renderEquipmentList();
+                });
+
+                item.addEventListener("dragstart", (e) => {
+                    dragSrcIdx = i;
+                    (e as DragEvent).dataTransfer!.effectAllowed = "move";
+                    item.style.opacity = "0.5";
+                });
+                item.addEventListener("dragend", () => { item.style.opacity = "1"; });
+                item.addEventListener("dragover", (e) => {
+                    e.preventDefault();
+                    (e as DragEvent).dataTransfer!.dropEffect = "move";
+                    item.style.background = "var(--background-modifier-hover)";
+                });
+                item.addEventListener("dragleave", () => { item.style.background = ""; });
+                item.addEventListener("drop", async (e) => {
+                    e.preventDefault();
+                    item.style.background = "";
+                    if (dragSrcIdx === null || dragSrcIdx === i) return;
+                    const arr = this.plugin.settings.equipmentTypes;
+                    const [moved] = arr.splice(dragSrcIdx, 1);
+                    arr.splice(i, 0, moved);
+                    dragSrcIdx = null;
+                    await this.plugin.saveSettings();
+                    renderEquipmentList();
+                });
+            }
+        };
+
+        renderEquipmentList();
+
+        const addEquipmentRow = containerEl.createEl("div", {
+            attr: { style: "display:flex;gap:8px;margin-bottom:16px;" },
+        });
+        const addEquipmentInput = addEquipmentRow.createEl("input", {
+            attr: {
+                type: "text",
+                placeholder: "New equipment type",
+                style: "flex:1;padding:4px 10px;" +
+                    "border:1px solid var(--background-modifier-border);" +
+                    "border-radius:6px;background:var(--background-primary);color:var(--text-normal);",
+            },
+        }) as HTMLInputElement;
+
+        const doAddEquipment = async () => {
+            const val = addEquipmentInput.value.trim();
+            if (!val) return;
+            this.plugin.settings.equipmentTypes.push(val);
+            await this.plugin.saveSettings();
+            addEquipmentInput.value = "";
+            renderEquipmentList();
+        };
+
+        addEquipmentRow.createEl("button", { text: "Add" }).addEventListener("click", doAddEquipment);
+        addEquipmentInput.addEventListener("keydown", (e) => { if (e.key === "Enter") doAddEquipment(); });
 
         // ── Tracker Pro General Settings ──────────────────────────────────────
 

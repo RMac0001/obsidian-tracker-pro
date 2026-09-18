@@ -41,10 +41,16 @@ and renders them as charts and summaries. It requires no Dataview dependency.
    - [daily-table](#daily-table)
    - [bills](#bills)
 7. [Reading Challenge](#reading-challenge)
-8. [Advanced Features](#advanced-features)
+8. [Workout Routines](#workout-routines)
+   - [Vault Structure](#workout-vault-structure)
+   - [Create/edit exercise](#createedit-exercise)
+   - [Create/edit routine](#createedit-routine)
+   - [Log workout](#log-workout)
+   - [Chart Compatibility](#workout-chart-compatibility)
+9. [Advanced Features](#advanced-features)
    - [source: fileMeta](#source-filemeta)
    - [dateAggregation](#dateaggregation)
-9. [Full Parameter Reference](#full-parameter-reference)
+10. [Full Parameter Reference](#full-parameter-reference)
 
 ---
 
@@ -93,6 +99,17 @@ Open **Settings → Tracker Pro** to configure defaults that apply to every bloc
 | **Book notes folder** | Folder containing your book review notes (default: `Data/Book Reviews`). |
 | **Book note prefix** | Filename prefix that identifies book notes (default: `BR-`). Only notes whose basename starts with this prefix are counted. |
 | **Reading goal file** | Path to the note holding your annual reading goals (default: `Data/Reading Goals.md`). |
+
+**Workout Routines**
+
+| Setting | Description |
+|---|---|
+| **Exercise database folder** | Folder containing individual exercise notes (default: `Data/Exercises`). |
+| **Routines folder** | Folder containing routine definition notes (default: `Data/Routines`). |
+| **Workout log folder** | Folder path template for workout session notes. Supports `{{DATE:FORMAT}}` tokens (default: `Data/Workouts/{{DATE:YYYY}}/{{DATE:YYYY-MM}}`). |
+| **Workout log filename** | Filename template for workout session notes. Supports `{{DATE:FORMAT}}` tokens (default: `WL-{{DATE:YYYY-MM-DD}}-{{DATE:HHmmss}}`). |
+| **Weight unit** | Display label appended after logged weights (default: `lb`). No unit conversion is performed. |
+| **Equipment types** | Ordered list offered when logging equipment and for an exercise's default equipment (default: Barbell, Dumbbell, Machine, Band, Bodyweight). Renaming or removing an entry does not rewrite equipment values already written to past workout notes. |
 
 ---
 
@@ -1438,6 +1455,150 @@ percentage label outside to the right: `[████░░░░] 25%`
 ### Changing Years
 
 The year dropdown in the hero re-renders the block in place for the selected year. The list includes all years that appear in the goals file plus the current year.
+
+---
+
+## Workout Routines
+
+Strength-routine logging: define a routine once, then log a session note
+every time you work through it. There is no dedicated chart type — every
+value written by Log Workout is a plain frontmatter property, so any
+existing `line`, `bar`, `table`, or `summary` block can read it directly.
+Cardio logging (Exercise Notes, used by Achievements) is unaffected.
+
+### Workout Vault Structure
+
+**Exercises** (default `Data/Exercises`) — one note per exercise. The
+filename is the canonical name referenced everywhere else (routine lines,
+session headings).
+
+```yaml
+category: Push
+default_equipment: Barbell
+```
+
+Both fields are optional. `default_equipment` is a prefill for logging,
+not a constraint — the equipment can always be changed for a given session.
+The note body may hold a plain-text description.
+
+**Routines** (default `Data/Routines`) — one note per routine, with an
+optional `category` and a `## Exercises` ordered list:
+
+```yaml
+---
+category: Upper Body
+---
+
+## Exercises
+1. [[Bench Press]] — 3 × 8-12
+2. [[Bent-Over Row]] — 3 × 8-12
+3. [[Overhead Press]] — 4 sets
+4. [[Bicep Curl]]
+```
+
+The `— target sets × rep range` suffix is optional per exercise (as shown
+above, an exercise can have just a rep range, just a set count, or neither).
+It is purely a target/reminder — Log Workout doesn't enforce it.
+
+**Workout logs** (default `Data/Workouts/{{DATE:YYYY}}/{{DATE:YYYY-MM}}`) —
+one note per **session** (not per day), filename
+`WL-{{DATE:YYYY-MM-DD}}-{{DATE:HHmmss}}` so two workouts on the same day
+never collide. Frontmatter:
+
+```yaml
+creation_date: 2026-09-18
+routine: Upper Body
+bench_press_sets: 3
+bench_press_reps: 24
+bench_press_top_weight: 135
+bench_press_volume: 3060
+bench_press_equipment: Barbell
+total_sets: 3
+total_volume: 3060
+```
+
+Per-exercise rollup keys are `slugify(name)`-based (lowercased, non-alphanumeric
+runs collapsed to `_`): `<slug>_sets`, `<slug>_reps`, `<slug>_top_weight`,
+`<slug>_volume`, `<slug>_equipment`, appearing once per exercise in the order
+it was logged, followed by `total_sets` and `total_volume`. The body has one
+`## {Exercise Name} — {Equipment}` heading per exercise (same order), each with
+one `- Set N: {weight} {weightUnit} × {reps}` bullet per set, and a trailing
+empty `## Notes` section.
+
+Weight is always a plain number — a resistance band's printed rating logs
+exactly like a barbell's plate count. Equipment is captured once per exercise
+per session, not per set, and shown in the heading so a weight number is
+never ambiguous between sessions using different equipment for the same lift.
+
+---
+
+### Create/edit exercise
+
+Fuzzy-searches your exercise database; offers **+ Create new exercise** when
+nothing matches. Opens a form for name (locked when editing an existing
+exercise — rename by editing the routine/history references separately),
+category, description, and default equipment (a dropdown built from the
+**Equipment types** setting). Saving creates or fully overwrites the note.
+
+---
+
+### Create/edit routine
+
+Pick an existing routine or create a new one (name + optional category),
+then loop: search the exercise database and add it with an optional target
+sets/rep range, reorder exercises, remove one, or finish and save. Saving is
+a complete rewrite of the routine note's `## Exercises` list.
+
+---
+
+### Log workout
+
+Fuzzy-pick a routine, then for each of its exercises in order:
+
+1. Confirm the equipment for this session (prefilled from the exercise's
+   `default_equipment`). The modal shows the last-logged **top weight × reps
+   for that specific equipment**, so switching equipment shows you the right
+   history instead of a number from a different lift variant.
+2. Log sets — enter weight and reps, add another set, move to the next
+   exercise, or skip this exercise entirely.
+
+After the routine's exercises, you can optionally log additional exercises
+that weren't part of the routine. Finishing generates a new timestamped
+session note (no existing-note check needed — the filename is always unique)
+with the rollups and body described above.
+
+> Known limitation: same-day sets are not deduplicated across separate Log
+> Workout runs — running the command twice in one day just creates two
+> session notes, by design (see Vault Structure above).
+
+---
+
+### Workout Chart Compatibility
+
+No new block type — read the rollup properties like any other frontmatter:
+
+````
+```tracker-pro
+type: line
+folder: Data/Workouts
+dateProperty: creation_date
+properties:
+  - bench_press_top_weight
+```
+````
+
+````
+```tracker-pro
+type: table
+folder: Data/Workouts
+groupBy: routine
+columns:
+  - label: Sessions
+    value: count
+  - label: Total Volume
+    value: sum(total_volume)
+```
+````
 
 ---
 
