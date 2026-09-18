@@ -46,6 +46,7 @@ and renders them as charts and summaries. It requires no Dataview dependency.
    - [Create/edit exercise](#createedit-exercise)
    - [Create/edit routine](#createedit-routine)
    - [Log workout](#log-workout)
+   - [Edit workout log](#edit-workout-log)
    - [Chart Compatibility](#workout-chart-compatibility)
 9. [Advanced Features](#advanced-features)
    - [source: fileMeta](#source-filemeta)
@@ -1636,6 +1637,49 @@ is always unique) with the rollups and body described above.
 > Known limitation: same-day sets/entries are not deduplicated across
 > separate Log Workout runs — running the command twice in one day just
 > creates two session notes, by design (see Vault Structure above).
+
+---
+
+### Edit workout log
+
+Fixes mistakes in an already-saved session note. Always asks which session
+to edit first — a fuzzy picker over the 30 most recently modified workout
+notes, newest first. There is no default-to-today shortcut, unlike Edit
+meal log, since a workout log is one note per session rather than one per
+day.
+
+The chosen note is parsed back into its per-exercise structure — each
+exercise is tagged strength or cardio by reading the **current** category
+on its source exercise note in the exercise database (falling back to the
+body's own shape if that note has since been deleted or recategorized, so
+editing an orphaned entry still works rather than failing outright).
+
+A summary view lists every exercise with one stat line each, and offers:
+
+- **Edit an exercise** — branches by category:
+  - *Strength:* change the equipment for this session, change a set's
+    weight or reps, add a set, or remove a set.
+  - *Cardio:* change the equipment, edit duration and/or distance (pace or
+    speed recomputes automatically from the exercise's `cardio_metric` —
+    it is never edited directly), or edit heart rate (avg/peak, optional
+    and skippable, same as Log workout).
+- **Add an exercise** — reuses Log workout's own per-exercise flow exactly
+  (search the exercise database, confirm equipment, log it per its
+  category), then inserts the new heading and rollup fields.
+- **Remove an exercise** — deletes its `##` heading and body entirely,
+  along with every `<slug>_*` rollup field it contributed to frontmatter.
+
+**Save and recalculate** is a complete rewrite, not a patch — the same
+principle as Edit meal log and the bills master-first rule. Every rollup
+(strength: sets/reps/top_weight/volume; cardio: duration_min/distance/
+pace-or-speed/avg_hr/peak_hr; session totals: total_sets/total_volume/
+total_duration_min) is recomputed fresh from the edited exercise list,
+never incrementally adjusted from what was previously stored — so a
+removed exercise's old fields can't linger. A timestamped line is appended
+to `## Notes`: `- {date} — Log recalculated`.
+
+Does not touch a routine's own definition (use Create/edit routine for
+that) or legacy cardio notes in `Data/Exercise Notes`.
 
 ---
 

@@ -973,37 +973,43 @@ function formatCardioBodyLine(ex: LoggedCardioExercise, settings: TrackerSetting
     return line;
 }
 
-async function saveWorkoutLog(
+interface WorkoutTotals {
+    totalSets: number;
+    totalVolume: number;
+    totalDurationMin: number;
+}
+
+// Shared by Log workout (new file) and Edit workout log (existing file) so both
+// commands recompute every rollup fresh from the current exercise list — never
+// incrementally adjusted from what was previously stored.
+async function writeWorkoutLogContent(
     app: App,
     settings: TrackerSettings,
+    file: TFile,
     routineName: string | null,
-    logged: LoggedExercise[]
-): Promise<void> {
-    const folder = resolveDateTemplate(settings.workoutLogFolder);
-    const filename = resolveDateTemplate(settings.workoutLogFilename);
-    const filePath = normalizePath(`${folder}/${filename}.md`);
-
-    await ensureFolders(app, filePath);
-    await app.vault.create(filePath, "");
-    const file = app.vault.getAbstractFileByPath(filePath);
-    if (!(file instanceof TFile)) { new Notice("Failed to create workout log."); return; }
-
-    const dateStr = (window as any).moment().format("YYYY-MM-DD");
-    const strengthLogged = logged.filter(isStrength);
-    const cardioLogged   = logged.filter(isCardioLog);
+    exercises: LoggedExercise[],
+    notesLines: string[] = []
+): Promise<WorkoutTotals> {
+    const strengthLogged = exercises.filter(isStrength);
+    const cardioLogged   = exercises.filter(isCardioLog);
     const totalSets        = strengthLogged.reduce((s, ex) => s + ex.sets.length, 0);
     const totalVolume       = strengthLogged.reduce((s, ex) => s + ex.sets.reduce((ss, x) => ss + x.weight * x.reps, 0), 0);
     const totalDurationMin = cardioLogged.reduce((s, ex) => s + ex.durationMin, 0);
 
     await app.fileManager.processFrontMatter(file, (fm) => {
-        fm.creation_date = dateStr;
+        // Clear everything except creation_date, then rebuild fresh — so a
+        // removed exercise's fields (or a stale routine:) can't linger.
+        for (const key of Object.keys(fm)) {
+            if (key !== "creation_date") delete fm[key];
+        }
+        fm.creation_date = fm.creation_date ?? (window as any).moment().format("YYYY-MM-DD");
         if (routineName) fm.routine = routineName;
-        for (const ex of logged) {
+        for (const ex of exercises) {
             const slug = slugify(ex.name);
             if (ex.kind === "strength") {
                 fm[`${slug}_sets`]       = ex.sets.length;
                 fm[`${slug}_reps`]       = ex.sets.reduce((s, x) => s + x.reps, 0);
-                fm[`${slug}_top_weight`] = Math.max(...ex.sets.map(s => s.weight));
+                fm[`${slug}_top_weight`] = ex.sets.length ? Math.max(...ex.sets.map(s => s.weight)) : 0;
                 fm[`${slug}_volume`]     = ex.sets.reduce((s, x) => s + x.weight * x.reps, 0);
                 fm[`${slug}_equipment`]  = ex.equipment;
             } else {
@@ -1023,7 +1029,7 @@ async function saveWorkoutLog(
 
     // Rebuild body: one heading + entry per exercise, in logged order, then trailing Notes
     let body = "";
-    for (const ex of logged) {
+    for (const ex of exercises) {
         body += `## ${ex.name} — ${ex.equipment}\n`;
         if (ex.kind === "strength") {
             ex.sets.forEach((s, i) => {
@@ -1035,6 +1041,7 @@ async function saveWorkoutLog(
         body += "\n";
     }
     body += "## Notes\n";
+    if (notesLines.length > 0) body += notesLines.join("\n") + "\n";
 
     const updated = await app.vault.read(file);
     const fmLines = updated.split("\n");
@@ -1047,10 +1054,117 @@ async function saveWorkoutLog(
     const fmBlock = fmEnd !== -1 ? fmLines.slice(0, fmEnd + 1).join("\n") : "";
     await app.vault.modify(file, fmBlock + "\n\n" + body);
 
+    return { totalSets, totalVolume, totalDurationMin };
+}
+
+async function saveWorkoutLog(
+    app: App,
+    settings: TrackerSettings,
+    routineName: string | null,
+    logged: LoggedExercise[]
+): Promise<void> {
+    const folder = resolveDateTemplate(settings.workoutLogFolder);
+    const filename = resolveDateTemplate(settings.workoutLogFilename);
+    const filePath = normalizePath(`${folder}/${filename}.md`);
+
+    await ensureFolders(app, filePath);
+    await app.vault.create(filePath, "");
+    const file = app.vault.getAbstractFileByPath(filePath);
+    if (!(file instanceof TFile)) { new Notice("Failed to create workout log."); return; }
+
+    const { totalSets, totalVolume, totalDurationMin } = await writeWorkoutLogContent(app, settings, file, routineName, logged);
+
     const parts: string[] = [];
-    if (strengthLogged.length > 0) parts.push(`${totalSets} sets, ${totalVolume} total volume`);
-    if (cardioLogged.length > 0) parts.push(`${totalDurationMin} cardio minutes`);
+    if (logged.some(isStrength)) parts.push(`${totalSets} sets, ${totalVolume} total volume`);
+    if (logged.some(isCardioLog)) parts.push(`${totalDurationMin} cardio minutes`);
     new Notice(`✓ Workout logged: ${parts.join(" · ")}.`);
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// Edit Workout Log
+// ═══════════════════════════════════════════════════════════════════════════
+
+function parseNotesLines(body: string): string[] {
+    const lines = body.split("\n");
+    let inNotes = false;
+    const notes: string[] = [];
+    for (const line of lines) {
+        if (line.trim() === "## Notes") { inNotes = true; continue; }
+        if (inNotes) {
+            if (line.startsWith("## ")) break;
+            notes.push(line);
+        }
+    }
+    while (notes.length && notes[notes.length - 1].trim() === "") notes.pop();
+    return notes;
+}
+
+// Reconstructs the logged exercises from an existing session note. Each
+// heading section is tagged strength/cardio by looking up the CURRENT
+// category on the source exercise note (the same rule Log workout uses),
+// with a body-shape fallback for a since-deleted or since-recategorized
+// exercise note so parsing degrades gracefully instead of losing data.
+function parseWorkoutLogBody(
+    app: App,
+    exerciseFiles: TFile[],
+    content: string
+): LoggedExercise[] {
+    const lines = extractBody(content).split("\n");
+    const result: LoggedExercise[] = [];
+    let i = 0;
+
+    while (i < lines.length) {
+        const headingMatch = lines[i].match(/^## (.+)$/);
+        if (!headingMatch || headingMatch[1] === "Notes") { i++; continue; }
+
+        const headingText = headingMatch[1];
+        const sepIdx = headingText.lastIndexOf(" — ");
+        i++;
+        if (sepIdx === -1) continue; // malformed heading — skip without consuming as data
+
+        const name = headingText.slice(0, sepIdx);
+        const equipment = headingText.slice(sepIdx + 3);
+
+        const sectionLines: string[] = [];
+        while (i < lines.length && !lines[i].startsWith("## ")) {
+            sectionLines.push(lines[i]);
+            i++;
+        }
+
+        const exerciseFile = exerciseFiles.find(f => f.basename === name);
+        const fm = exerciseFile ? (app.metadataCache.getFileCache(exerciseFile)?.frontmatter ?? {}) : {};
+        const category = String(fm.category ?? "");
+        const setLines = sectionLines.filter(l => /^-\s+Set\s+\d+:/.test(l));
+
+        const cardio = exerciseFile && category
+            ? isCardioCategory(category)
+            : setLines.length === 0 && sectionLines.some(l => l.trim().startsWith("-"));
+
+        if (!cardio) {
+            const sets: LoggedSet[] = [];
+            for (const line of setLines) {
+                const m = line.match(/^-\s+Set\s+\d+:\s+([\d.]+)\s+\S+\s+×\s+(\d+)/);
+                if (m) sets.push({ weight: parseFloat(m[1]), reps: parseInt(m[2], 10) });
+            }
+            result.push({ kind: "strength", name, equipment, sets });
+        } else {
+            const cardioMetric: "Pace" | "Speed" = fm.cardio_metric === "Speed" ? "Speed" : "Pace";
+            const dataLine = sectionLines.find(l => l.trim().startsWith("-"));
+            let durationMin = 0, distance = 0;
+            let avgHr: number | undefined, peakHr: number | undefined;
+            if (dataLine) {
+                const m = dataLine.match(/^-\s+([\d.]+)\s+min\s+·\s+([\d.]+)\s+\S+/);
+                if (m) { durationMin = parseFloat(m[1]); distance = parseFloat(m[2]); }
+                const avgM = dataLine.match(/HR\s+avg\s+([\d.]+)/);
+                const peakM = dataLine.match(/peak\s+([\d.]+)/);
+                if (avgM) avgHr = parseFloat(avgM[1]);
+                if (peakM) peakHr = parseFloat(peakM[1]);
+            }
+            result.push({ kind: "cardio", name, equipment, cardioMetric, durationMin, distance, avgHr, peakHr });
+        }
+    }
+
+    return result;
 }
 
 export async function logWorkout(app: App, settings: TrackerSettings): Promise<void> {
@@ -1121,4 +1235,380 @@ export async function logWorkout(app: App, settings: TrackerSettings): Promise<v
     }
 
     await saveWorkoutLog(app, settings, routineName, logged);
+}
+
+// ─── Field-Edit Modals ────────────────────────────────────────────────────────
+
+class SetEditModal extends Modal {
+    private resolved = false;
+    constructor(
+        app: App,
+        private initial: LoggedSet,
+        private weightUnit: string,
+        private resolve: (result: LoggedSet | null) => void
+    ) { super(app); }
+
+    onOpen(): void {
+        const { contentEl } = this;
+        contentEl.createEl("h3", { text: "Set" });
+
+        const labelStyle = "font-size:0.9em;color:var(--text-muted);";
+        const inputStyle = "display:block;width:100%;padding:8px 10px;margin:4px 0 12px;" +
+            "border:1px solid var(--background-modifier-border);border-radius:6px;" +
+            "background:var(--background-primary);color:var(--text-normal);";
+
+        contentEl.createEl("label", { text: `Weight (${this.weightUnit})`, attr: { style: labelStyle } });
+        const weightInput = contentEl.createEl("input", {
+            attr: { type: "number", step: "0.5", min: "0", value: String(this.initial.weight), style: inputStyle },
+        }) as HTMLInputElement;
+
+        contentEl.createEl("label", { text: "Reps", attr: { style: labelStyle } });
+        const repsInput = contentEl.createEl("input", {
+            attr: { type: "number", step: "1", min: "0", value: String(this.initial.reps), style: inputStyle },
+        }) as HTMLInputElement;
+
+        const btnRow = contentEl.createDiv({ attr: { style: "display:flex;gap:8px;" } });
+        const saveBtn = btnRow.createEl("button", { text: "Save", cls: "mod-cta" });
+        saveBtn.addEventListener("click", () => {
+            const weight = parseFloat(weightInput.value);
+            const reps = parseInt(repsInput.value, 10);
+            if (isNaN(weight) || isNaN(reps)) { new Notice("Enter both weight and reps."); return; }
+            this.resolved = true;
+            this.close();
+            this.resolve({ weight, reps });
+        });
+        btnRow.createEl("button", { text: "Cancel" }).addEventListener("click", () => this.close());
+
+        weightInput.focus();
+    }
+
+    onClose(): void {
+        this.contentEl.empty();
+        if (!this.resolved) this.resolve(null);
+    }
+}
+
+class CardioFieldsEditModal extends Modal {
+    private resolved = false;
+    constructor(
+        app: App,
+        private initial: { durationMin: number; distance: number },
+        private distanceUnit: string,
+        private resolve: (result: { durationMin: number; distance: number } | null) => void
+    ) { super(app); }
+
+    onOpen(): void {
+        const { contentEl } = this;
+        contentEl.createEl("h3", { text: "Duration / distance" });
+
+        const labelStyle = "font-size:0.9em;color:var(--text-muted);";
+        const inputStyle = "display:block;width:100%;padding:8px 10px;margin:4px 0 12px;" +
+            "border:1px solid var(--background-modifier-border);border-radius:6px;" +
+            "background:var(--background-primary);color:var(--text-normal);";
+
+        contentEl.createEl("label", { text: "Duration (minutes)", attr: { style: labelStyle } });
+        const durationInput = contentEl.createEl("input", {
+            attr: { type: "number", step: "0.5", min: "0", value: String(this.initial.durationMin), style: inputStyle },
+        }) as HTMLInputElement;
+
+        contentEl.createEl("label", { text: `Distance (${this.distanceUnit})`, attr: { style: labelStyle } });
+        const distanceInput = contentEl.createEl("input", {
+            attr: { type: "number", step: "0.01", min: "0", value: String(this.initial.distance), style: inputStyle },
+        }) as HTMLInputElement;
+
+        const btnRow = contentEl.createDiv({ attr: { style: "display:flex;gap:8px;" } });
+        const saveBtn = btnRow.createEl("button", { text: "Save", cls: "mod-cta" });
+        saveBtn.addEventListener("click", () => {
+            const durationMin = parseFloat(durationInput.value);
+            const distance = parseFloat(distanceInput.value);
+            if (isNaN(durationMin) || isNaN(distance)) { new Notice("Enter both duration and distance."); return; }
+            this.resolved = true;
+            this.close();
+            this.resolve({ durationMin, distance });
+        });
+        btnRow.createEl("button", { text: "Cancel" }).addEventListener("click", () => this.close());
+
+        durationInput.focus();
+    }
+
+    onClose(): void {
+        this.contentEl.empty();
+        if (!this.resolved) this.resolve(null);
+    }
+}
+
+class HeartRateEditModal extends Modal {
+    private resolved = false;
+    constructor(
+        app: App,
+        private initial: { avgHr?: number; peakHr?: number },
+        private resolve: (result: { avgHr?: number; peakHr?: number } | null) => void
+    ) { super(app); }
+
+    onOpen(): void {
+        const { contentEl } = this;
+        contentEl.createEl("h3", { text: "Heart rate" });
+
+        const labelStyle = "font-size:0.9em;color:var(--text-muted);";
+        const inputStyle = "display:block;width:100%;padding:8px 10px;margin:4px 0 12px;" +
+            "border:1px solid var(--background-modifier-border);border-radius:6px;" +
+            "background:var(--background-primary);color:var(--text-normal);";
+
+        contentEl.createEl("label", { text: "Avg heart rate — BPM (optional, leave blank to skip)", attr: { style: labelStyle } });
+        const avgInput = contentEl.createEl("input", {
+            attr: {
+                type: "number", step: "1", min: "0", style: inputStyle,
+                value: this.initial.avgHr !== undefined ? String(this.initial.avgHr) : "",
+            },
+        }) as HTMLInputElement;
+
+        contentEl.createEl("label", { text: "Peak heart rate — BPM (optional, leave blank to skip)", attr: { style: labelStyle } });
+        const peakInput = contentEl.createEl("input", {
+            attr: {
+                type: "number", step: "1", min: "0", style: inputStyle,
+                value: this.initial.peakHr !== undefined ? String(this.initial.peakHr) : "",
+            },
+        }) as HTMLInputElement;
+
+        const btnRow = contentEl.createDiv({ attr: { style: "display:flex;gap:8px;" } });
+        const saveBtn = btnRow.createEl("button", { text: "Save", cls: "mod-cta" });
+        saveBtn.addEventListener("click", () => {
+            const avgHr = parseFloat(avgInput.value);
+            const peakHr = parseFloat(peakInput.value);
+            this.resolved = true;
+            this.close();
+            this.resolve({
+                avgHr: isNaN(avgHr) ? undefined : avgHr,
+                peakHr: isNaN(peakHr) ? undefined : peakHr,
+            });
+        });
+        btnRow.createEl("button", { text: "Cancel" }).addEventListener("click", () => this.close());
+
+        avgInput.focus();
+    }
+
+    onClose(): void {
+        this.contentEl.empty();
+        if (!this.resolved) this.resolve(null);
+    }
+}
+
+// ─── Edit Workout Log Modal ───────────────────────────────────────────────────
+
+function getRecentWorkoutLogFiles(app: App, settings: TrackerSettings, limit: number): TFile[] {
+    const base = getWorkoutLogBaseFolder(settings);
+    const files = app.vault.getMarkdownFiles();
+    const filtered = base ? files.filter(f => f.path.startsWith(base + "/")) : files;
+    return filtered.sort((a, b) => b.stat.mtime - a.stat.mtime).slice(0, limit);
+}
+
+class EditWorkoutLogModal extends Modal {
+    private routineName: string | null = null;
+    private exercises: LoggedExercise[] = [];
+    private notesLines: string[] = [];
+    private exerciseFiles: TFile[];
+
+    constructor(app: App, private settings: TrackerSettings, private file: TFile) {
+        super(app);
+        this.exerciseFiles = getExerciseFiles(app, settings);
+    }
+
+    onOpen(): void {
+        this.contentEl.setText("Loading…");
+        this.loadFile().then(() => this.render());
+    }
+
+    private async loadFile(): Promise<void> {
+        const content = await this.app.vault.read(this.file);
+        const fm = this.app.metadataCache.getFileCache(this.file)?.frontmatter ?? {};
+        this.routineName = fm.routine ? String(fm.routine) : null;
+        this.exercises = parseWorkoutLogBody(this.app, this.exerciseFiles, content);
+        this.notesLines = parseNotesLines(extractBody(content));
+    }
+
+    private render(): void {
+        const { contentEl } = this;
+        contentEl.empty();
+
+        contentEl.createEl("div", { text: this.file.basename, attr: { style: "font-weight:600;margin-bottom:2px;" } });
+        if (this.routineName) {
+            contentEl.createEl("div", {
+                text: `Routine: ${this.routineName}`,
+                attr: { style: "color:var(--text-muted);font-size:0.85em;margin-bottom:8px;" },
+            });
+        }
+
+        const summary = contentEl.createDiv({ attr: { style: "margin:8px 0 12px;" } });
+        if (this.exercises.length === 0) {
+            summary.createEl("p", {
+                text: "No exercises logged in this session.",
+                attr: { style: "color:var(--text-muted);font-size:0.85em;" },
+            });
+        }
+        for (const ex of this.exercises) {
+            const line = ex.kind === "strength"
+                ? `${ex.name} (${ex.equipment}): ${ex.sets.length} set${ex.sets.length !== 1 ? "s" : ""}` +
+                  (ex.sets.length ? `, top ${Math.max(...ex.sets.map(s => s.weight))} ${this.settings.weightUnit}` : "")
+                : `${ex.name} (${ex.equipment}): ${ex.durationMin} min · ${ex.distance} ${this.settings.distanceUnit}`;
+            summary.createDiv({ text: line, attr: { style: "padding:2px 0;font-size:0.9em;" } });
+        }
+
+        const actionList = contentEl.createDiv({ attr: { style: "display:flex;flex-direction:column;gap:6px;margin-bottom:12px;" } });
+        const actions: { label: string; fn: () => void }[] = [
+            { label: "Edit an exercise", fn: () => this.editExercise() },
+            { label: "Add an exercise", fn: () => this.addExercise() },
+            { label: "Remove an exercise", fn: () => this.removeExercise() },
+        ];
+        for (const action of actions) {
+            const btn = actionList.createEl("button", { text: action.label });
+            btn.onclick = () => action.fn();
+        }
+
+        const saveBtn = contentEl.createEl("button", {
+            text: "Save and recalculate",
+            cls: "mod-cta",
+            attr: { style: "width:100%;margin-top:8px;" },
+        });
+        saveBtn.onclick = () => this.save();
+    }
+
+    private editExercise(): void {
+        if (this.exercises.length === 0) { new Notice("No exercises to edit."); return; }
+        const labels = this.exercises.map(ex => `${ex.name} (${ex.equipment})`);
+        new StringSuggestModal(this.app, labels, "Edit which exercise?", (label) => {
+            if (label === null) { this.render(); return; }
+            const ex = this.exercises[labels.indexOf(label)];
+            if (ex.kind === "strength") this.editStrengthExercise(ex);
+            else this.editCardioExercise(ex);
+        }).open();
+    }
+
+    private editStrengthExercise(ex: LoggedStrengthExercise): void {
+        const options = ["Change equipment", "Change a set", "Add a set", "Remove a set", "Done"];
+        new StringSuggestModal(this.app, options, `${ex.name} — ${ex.equipment}`, (choice) => {
+            if (choice === null || choice === "Done") { this.render(); return; }
+
+            if (choice === "Change equipment") {
+                new StringSuggestModal(this.app, this.settings.equipmentTypes, "New equipment?", (eq) => {
+                    if (eq) ex.equipment = eq;
+                    this.render();
+                }).open();
+                return;
+            }
+
+            if (choice === "Change a set") {
+                if (ex.sets.length === 0) { new Notice("No sets to change."); this.render(); return; }
+                const setLabels = ex.sets.map((s, i) => `Set ${i + 1}: ${s.weight} ${this.settings.weightUnit} × ${s.reps}`);
+                new StringSuggestModal(this.app, setLabels, "Change which set?", (setLabel) => {
+                    if (setLabel === null) { this.render(); return; }
+                    const setIdx = setLabels.indexOf(setLabel);
+                    new SetEditModal(this.app, ex.sets[setIdx], this.settings.weightUnit, (updated) => {
+                        if (updated) ex.sets[setIdx] = updated;
+                        this.render();
+                    }).open();
+                }).open();
+                return;
+            }
+
+            if (choice === "Add a set") {
+                new SetEditModal(this.app, { weight: 0, reps: 0 }, this.settings.weightUnit, (added) => {
+                    if (added) ex.sets.push(added);
+                    this.render();
+                }).open();
+                return;
+            }
+
+            // "Remove a set"
+            if (ex.sets.length === 0) { new Notice("No sets to remove."); this.render(); return; }
+            const setLabels = ex.sets.map((s, i) => `Set ${i + 1}: ${s.weight} ${this.settings.weightUnit} × ${s.reps}`);
+            new StringSuggestModal(this.app, setLabels, "Remove which set?", (setLabel) => {
+                if (setLabel !== null) ex.sets.splice(setLabels.indexOf(setLabel), 1);
+                this.render();
+            }).open();
+        }).open();
+    }
+
+    private editCardioExercise(ex: LoggedCardioExercise): void {
+        const options = ["Change equipment", "Edit duration/distance", "Edit heart rate", "Done"];
+        new StringSuggestModal(this.app, options, `${ex.name} — ${ex.equipment}`, (choice) => {
+            if (choice === null || choice === "Done") { this.render(); return; }
+
+            if (choice === "Change equipment") {
+                new StringSuggestModal(this.app, this.settings.equipmentTypes, "New equipment?", (eq) => {
+                    if (eq) ex.equipment = eq;
+                    this.render();
+                }).open();
+                return;
+            }
+
+            if (choice === "Edit duration/distance") {
+                new CardioFieldsEditModal(this.app, ex, this.settings.distanceUnit, (updated) => {
+                    if (updated) { ex.durationMin = updated.durationMin; ex.distance = updated.distance; }
+                    this.render();
+                }).open();
+                return;
+            }
+
+            // "Edit heart rate" — pace/speed is never edited directly; it's
+            // always recomputed from duration/distance on save.
+            new HeartRateEditModal(this.app, ex, (updated) => {
+                if (updated) { ex.avgHr = updated.avgHr; ex.peakHr = updated.peakHr; }
+                this.render();
+            }).open();
+        }).open();
+    }
+
+    private addExercise(): void {
+        if (this.exerciseFiles.length === 0) {
+            new Notice(`No exercises found in ${this.settings.exerciseFolder}.`);
+            return;
+        }
+        new FileSuggestModal(this.app, this.exerciseFiles, "Search exercise database…", (file) => {
+            if (!file) { this.render(); return; }
+            logOneExercise(this.app, this.settings, file.basename, this.exerciseFiles).then((result) => {
+                if (result) {
+                    this.exercises.push(result);
+                    new Notice(`Added: ${file.basename}`);
+                }
+                this.render();
+            });
+        }).open();
+    }
+
+    private removeExercise(): void {
+        if (this.exercises.length === 0) { new Notice("No exercises to remove."); return; }
+        const labels = this.exercises.map(ex => `${ex.name} (${ex.equipment})`);
+        new StringSuggestModal(this.app, labels, "Remove which exercise?", (label) => {
+            if (label !== null) this.exercises.splice(labels.indexOf(label), 1);
+            this.render();
+        }).open();
+    }
+
+    private save(): void {
+        const dateStr = (window as any).moment().format("YYYY-MM-DD");
+        const newNotesLines = [...this.notesLines, `- ${dateStr} — Log recalculated`];
+
+        writeWorkoutLogContent(this.app, this.settings, this.file, this.routineName, this.exercises, newNotesLines)
+            .then(() => {
+                new Notice(`✓ ${this.file.basename} saved and recalculated`);
+                this.close();
+            })
+            .catch((e) => {
+                new Notice(`Error saving: ${String(e)}`);
+                console.error(e);
+            });
+    }
+
+    onClose(): void { this.contentEl.empty(); }
+}
+
+export function editWorkoutLog(app: App, settings: TrackerSettings): void {
+    const files = getRecentWorkoutLogFiles(app, settings, 30);
+    if (files.length === 0) {
+        new Notice("No workout logs found.");
+        return;
+    }
+    new FileSuggestModal(app, files, "Which workout session?", (file) => {
+        if (file) new EditWorkoutLogModal(app, settings, file).open();
+    }).open();
 }
