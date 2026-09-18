@@ -4,6 +4,24 @@
 
 ---
 
+### v1.8.1 — Workout Log Editor (Phase 3)
+
+New command **"Edit workout log"** — fixes mistakes in an already-saved session note (`Data/Workouts`), same shape as the existing Edit meal log. Does not touch routine definitions (already editable via Create/edit routine) or legacy `Data/Exercise Notes` cardio.
+
+**Flow:** always asks which session first — fuzzy picker over the 30 most recently modified workout notes, newest first (no default-to-today, unlike Edit meal log, since this is one note per session rather than per day). Loads the note, tags each exercise strength/cardio by reading the **current** category off its source exercise note (falls back to body-shape sniffing if that note was deleted/recategorized since logging, so editing an orphaned entry doesn't hard-fail). Shows a per-exercise summary with three actions:
+
+- **Edit an exercise** — strength: change equipment, change/add/remove a set. Cardio: change equipment, edit duration/distance (pace or speed recomputes automatically from `cardio_metric`, never edited directly), edit heart rate (optional, skippable).
+- **Add an exercise** — reuses `logOneExercise` (the exact same per-exercise flow Log workout already uses) so search/equipment/logging behavior is identical, not reimplemented.
+- **Remove an exercise** — deletes its `##` heading/body and every `<slug>_*` rollup field it wrote.
+
+**Save and recalculate** is a full rewrite, not a patch: refactored the rollup+body write logic out of `saveWorkoutLog` into a shared `writeWorkoutLogContent(app, settings, file, routineName, exercises, notesLines)`, called by both Log workout (new file) and Edit workout log (existing file) — guarantees identical, always-fresh rollup computation with no drift between the two commands. Frontmatter is cleared (except `creation_date`) and rebuilt from the current exercise list every save, so a removed exercise can't leave stale fields behind. Appends `- {date} — Log recalculated` to `## Notes`, same pattern as Edit meal log.
+
+**Version note:** the spec for this phase asked for v1.7.2, but Phase 1/2 had already shipped through v1.8.0 by the time this landed — bumped forward to v1.8.1 instead of going backward.
+
+**Files changed:** `src/routineTracker.ts` (`writeWorkoutLogContent` refactor, `parseWorkoutLogBody`, `parseNotesLines`, `SetEditModal`, `CardioFieldsEditModal`, `HeartRateEditModal`, `EditWorkoutLogModal`, `getRecentWorkoutLogFiles`, `editWorkoutLog`), `src/main.ts` (new command), `Documentation.md`.
+
+---
+
 ### v1.8.0 — Unified Exercise Log (Phase 2): Cardio Joins Workout Routines
 
 Folds cardio (walking, riding, etc.) into the Phase 1 Routine Tracking system as a `category: Cardio` exercise type, logged through the same **Log workout** command. Replaces the Templater/QuickAdd cardio template going forward. Historical cardio notes in `Data/Exercise Notes` are **not migrated** — left exactly as they are; Achievements' Exercise Streak (which scans that folder) is unaffected and out of scope for this pass.
