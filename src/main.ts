@@ -12,6 +12,7 @@ import { calculateRecipeNutrition, recalcFoodNoteCalories } from "./recipeCalcul
 import { normalizeRecipeIngredients } from "./recipeNormalizer";
 import { createEditExercise, createEditRoutine, logWorkout, editWorkoutLog } from "./routineTracker";
 import { exportRoutineCircuitCaller } from "./circuitCallerExport";
+import { migrateLegacyExerciseNotes } from "./exerciseMigration";
 import { TrackerConfig } from "./types";
 
 function isRelevantFile(changedPath: string, config: TrackerConfig, settings?: TrackerSettings): boolean {
@@ -147,6 +148,12 @@ export default class Tracker extends Plugin {
             id: "export-routine-circuit-caller",
             name: "Export routine (Circuit Caller)",
             callback: () => exportRoutineCircuitCaller(this.app, this.settings),
+        });
+
+        this.addCommand({
+            id: "migrate-legacy-exercise-notes",
+            name: "Migrate legacy exercise notes",
+            callback: () => migrateLegacyExerciseNotes(this.app, this.settings),
         });
 
         // ── Tracker code block processor ──────────────────────────────────────
