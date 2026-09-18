@@ -22661,7 +22661,7 @@ let StringSuggestModal$1 = class StringSuggestModal extends obsidian.FuzzySugges
     getItemText(item) { return item; }
     onChooseItem(item) { this.onChoose(item); }
 };
-let FileSuggestModal$1 = class FileSuggestModal extends obsidian.FuzzySuggestModal {
+let FileSuggestModal$2 = class FileSuggestModal extends obsidian.FuzzySuggestModal {
     constructor(app, files, placeholder, onChoose) {
         super(app);
         this.files = files;
@@ -23403,7 +23403,7 @@ class EditMealLogModal extends obsidian.Modal {
             new obsidian.Notice("No log files found.");
             return;
         }
-        new FileSuggestModal$1(this.app, files, "Select a log to edit…", async (f) => {
+        new FileSuggestModal$2(this.app, files, "Select a log to edit…", async (f) => {
             this.file = f;
             await this.loadFile();
             this.render();
@@ -23480,7 +23480,7 @@ class EditMealLogModal extends obsidian.Modal {
                 new obsidian.Notice(`No files found in: ${folder}`);
                 return;
             }
-            new FileSuggestModal$1(this.app, files, `Search ${label}…`, (file) => {
+            new FileSuggestModal$2(this.app, files, `Search ${label}…`, (file) => {
                 const meta = isFood
                     ? getFoodMeta(this.app, file)
                     : getRecipeMeta(this.app, file);
@@ -23590,7 +23590,7 @@ async function logMeal(app, settings) {
                 promptForItem(mealType);
                 return;
             }
-            new FileSuggestModal$1(app, files, `Search ${label}...`, (file) => {
+            new FileSuggestModal$2(app, files, `Search ${label}...`, (file) => {
                 const meta = isFood ? getFoodMeta(app, file) : getRecipeMeta(app, file);
                 new AmountModal(app, file.basename, meta, isFood, (multiplier, displayAmount) => {
                     entries.push({
@@ -24522,7 +24522,7 @@ class StringSuggestModal extends obsidian.FuzzySuggestModal {
             this.onChoose(null);
     }
 }
-class FileSuggestModal extends obsidian.FuzzySuggestModal {
+let FileSuggestModal$1 = class FileSuggestModal extends obsidian.FuzzySuggestModal {
     constructor(app, files, placeholder, onChoose) {
         super(app);
         this.files = files;
@@ -24538,7 +24538,7 @@ class FileSuggestModal extends obsidian.FuzzySuggestModal {
         if (!this.chosen)
             this.onChoose(null);
     }
-}
+};
 async function loadExerciseForEdit(app, file) {
     var _a, _b, _c, _d, _e;
     const fm = (_b = (_a = app.metadataCache.getFileCache(file)) === null || _a === void 0 ? void 0 : _a.frontmatter) !== null && _b !== void 0 ? _b : {};
@@ -24869,7 +24869,7 @@ async function createEditRoutine(app, settings) {
             return;
         }
         if (menuChoice === "Add an exercise") {
-            const file = await new Promise(res => new FileSuggestModal(app, exerciseFiles, "Search exercise database…", res).open());
+            const file = await new Promise(res => new FileSuggestModal$1(app, exerciseFiles, "Search exercise database…", res).open());
             if (!file)
                 continue;
             const target = await new Promise(res => new RoutineTargetModal(app, file.basename, res).open());
@@ -25459,7 +25459,7 @@ async function logWorkout(app, settings) {
             new obsidian.Notice(`No routines found in ${settings.routineFolder}. Create a routine first.`);
             return;
         }
-        const routineFile = await new Promise(res => new FileSuggestModal(app, routineFiles, "Which routine?", res).open());
+        const routineFile = await new Promise(res => new FileSuggestModal$1(app, routineFiles, "Which routine?", res).open());
         if (!routineFile)
             return;
         const targets = parseRoutineBody(await app.vault.read(routineFile));
@@ -25488,7 +25488,7 @@ async function logWorkout(app, settings) {
             const choice = await new Promise(res => new StringSuggestModal(app, [addPrompt, "Finish workout"], "Anything else?", res).open());
             if (choice === null || choice === "Finish workout")
                 break;
-            const file = await new Promise(res => new FileSuggestModal(app, exerciseFiles, "Search exercise database…", res).open());
+            const file = await new Promise(res => new FileSuggestModal$1(app, exerciseFiles, "Search exercise database…", res).open());
             if (!file)
                 continue;
             const result = await logOneExercise(app, settings, file.basename, exerciseFiles);
@@ -25829,7 +25829,7 @@ class EditWorkoutLogModal extends obsidian.Modal {
             new obsidian.Notice(`No exercises found in ${this.settings.exerciseFolder}.`);
             return;
         }
-        new FileSuggestModal(this.app, this.exerciseFiles, "Search exercise database…", (file) => {
+        new FileSuggestModal$1(this.app, this.exerciseFiles, "Search exercise database…", (file) => {
             if (!file) {
                 this.render();
                 return;
@@ -25876,10 +25876,136 @@ function editWorkoutLog(app, settings) {
         new obsidian.Notice("No workout logs found.");
         return;
     }
-    new FileSuggestModal(app, files, "Which workout session?", (file) => {
+    new FileSuggestModal$1(app, files, "Which workout session?", (file) => {
         if (file)
             new EditWorkoutLogModal(app, settings, file).open();
     }).open();
+}
+
+// ─── Fixed Export Assumptions ─────────────────────────────────────────────────
+// Timing and app settings are hardcoded per spec — not stored on the routine
+// note, not prompted for at export time, not configurable anywhere.
+const WORK_SECONDS = 60;
+const REST_SECONDS = 30;
+const FIXED_SETTINGS = {
+    voiceEnabled: true,
+    countdownEnabled: true,
+    beepsEnabled: true,
+    vibrateEnabled: true,
+    keepScreenOn: true,
+    halfwayCallout: false,
+    ttsVoiceName: "",
+    speechRate: 1,
+    prepSeconds: 3,
+};
+function buildCircuitCallerExport(routineName, exercises) {
+    return {
+        version: 1,
+        exportedAt: Date.now(),
+        settings: { ...FIXED_SETTINGS },
+        workouts: [
+            {
+                name: routineName,
+                rounds: 1,
+                defaultRestSeconds: REST_SECONDS,
+                prepOverrideSeconds: -1,
+                exercises: exercises.map(ex => ({
+                    name: ex.name,
+                    workSeconds: WORK_SECONDS,
+                    restSeconds: REST_SECONDS,
+                })),
+            },
+        ],
+    };
+}
+function sanitizeFilename(name) {
+    return name.replace(/[<>:"/\\|?*\x00-\x1F]/g, "_").trim();
+}
+// ─── Suggest Modal ────────────────────────────────────────────────────────────
+class FileSuggestModal extends obsidian.FuzzySuggestModal {
+    constructor(app, files, placeholder, onChoose) {
+        super(app);
+        this.files = files;
+        this.onChoose = onChoose;
+        this.chosen = false;
+        this.setPlaceholder(placeholder);
+    }
+    getItems() { return this.files; }
+    getItemText(file) { return file.basename; }
+    onChooseItem(file) { this.chosen = true; this.onChoose(file); }
+    onClose() {
+        this.contentEl.empty();
+        if (!this.chosen)
+            this.onChoose(null);
+    }
+}
+// ─── Save — platform-specific, never written into the vault ──────────────────
+async function saveOnDesktop(jsonStr, defaultFilename) {
+    var _a;
+    const electron = window.require("electron");
+    const dialog = (_a = electron === null || electron === void 0 ? void 0 : electron.remote) === null || _a === void 0 ? void 0 : _a.dialog;
+    if (!dialog) {
+        new obsidian.Notice("Save dialog unavailable on this desktop build. Please update Obsidian.");
+        return;
+    }
+    const result = await dialog.showSaveDialog({
+        defaultPath: defaultFilename,
+        filters: [{ name: "JSON", extensions: ["json"] }],
+    });
+    if (result.canceled || !result.filePath) {
+        new obsidian.Notice("Export cancelled.");
+        return;
+    }
+    const fs = window.require("fs");
+    fs.writeFileSync(result.filePath, jsonStr, "utf8");
+    new obsidian.Notice(`✓ Exported to ${result.filePath}`);
+}
+async function saveOnMobile(jsonStr, filename) {
+    const nav = navigator;
+    const file = new File([jsonStr], filename, { type: "application/json" });
+    if (!nav.canShare || !nav.canShare({ files: [file] })) {
+        new obsidian.Notice("File sharing isn't supported on this device. Please export from desktop instead.");
+        return;
+    }
+    try {
+        await nav.share({ files: [file], title: filename });
+        new obsidian.Notice(`✓ Shared ${filename}`);
+    }
+    catch (e) {
+        if ((e === null || e === void 0 ? void 0 : e.name) === "AbortError")
+            return; // user cancelled the share sheet
+        new obsidian.Notice("Share failed. Please export from desktop instead.");
+        console.error(e);
+    }
+}
+async function saveExportFile(data, filename) {
+    const jsonStr = JSON.stringify(data, null, 2);
+    if (obsidian.Platform.isDesktopApp) {
+        await saveOnDesktop(jsonStr, filename);
+    }
+    else {
+        await saveOnMobile(jsonStr, filename);
+    }
+}
+// ─── Main Command ─────────────────────────────────────────────────────────────
+async function exportRoutineCircuitCaller(app, settings) {
+    const folder = settings.routineFolder.replace(/\/$/, "");
+    const routineFiles = app.vault.getMarkdownFiles().filter(f => f.path.startsWith(folder + "/"));
+    if (routineFiles.length === 0) {
+        new obsidian.Notice(`No routines found in ${settings.routineFolder}.`);
+        return;
+    }
+    const routineFile = await new Promise(res => new FileSuggestModal(app, routineFiles, "Which routine to export?", res).open());
+    if (!routineFile)
+        return;
+    const exercises = parseRoutineBody(await app.vault.read(routineFile));
+    if (exercises.length === 0) {
+        new obsidian.Notice(`Routine "${routineFile.basename}" has no exercises.`);
+        return;
+    }
+    const data = buildCircuitCallerExport(routineFile.basename, exercises);
+    const filename = sanitizeFilename(routineFile.basename) + ".json";
+    await saveExportFile(data, filename);
 }
 
 function isRelevantFile(changedPath, config, settings) {
@@ -25994,6 +26120,11 @@ class Tracker extends obsidian.Plugin {
             id: "edit-workout-log",
             name: "Edit workout log",
             callback: () => editWorkoutLog(this.app, this.settings),
+        });
+        this.addCommand({
+            id: "export-routine-circuit-caller",
+            name: "Export routine (Circuit Caller)",
+            callback: () => exportRoutineCircuitCaller(this.app, this.settings),
         });
         // ── Tracker code block processor ──────────────────────────────────────
         this.registerMarkdownCodeBlockProcessor("tracker-pro", async (source, el, ctx) => {
