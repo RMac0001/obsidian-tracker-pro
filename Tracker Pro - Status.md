@@ -4,6 +4,20 @@
 
 ---
 
+### v1.7.6 — Auto-Pivot: Phantom Total & Missing Links (Phase 7)
+
+Fixes a regression in Phase 6's table-chart auto-pivot (v1.7.5), root-caused live by instrumenting the running plugin in Obsidian's DevTools console (wrapping `Map.prototype.set`/`Array.prototype.push` with stack-trace capture, then restoring everything — no vault changes).
+
+**Bug:** `buildPivotGroups` recovers each note's exercise slug by stripping known rollup suffixes (`_sets`, `_volume`, etc.) off every frontmatter key. But `total_sets`/`total_volume` — whole-session convenience fields present on every workout note — match that exact `<word>_suffix` shape (`total_volume` strips just like `recumbent_bike_speed` does), inventing a 4th phantom "exercise" literally named `total` on every session. That phantom group got its own row, and the totals row (which flattens all groups together) double-counted it into the grand total. Separately, the pivot row-label cell was always plain text — it never built a link the way the older literal-`groupBy` path does, so exercise names stopped linking to their Data/Exercises note.
+
+**Fix 1:** `SESSION_LEVEL_KEYS = new Set(["time_min", "total_sets", "total_volume", "creation_date"])`, checked before the suffix-regex match in `buildPivotGroups`'s per-key loop — these keys are never candidates for slug-stripping. No phantom row; the real totals row goes back to summing only real exercises. (The existing per-slug `time_min`-credit fallback reads `entry.frontmatter["time_min"]` directly in a separate loop, so excluding it here doesn't touch that logic.)
+
+**Fix 2:** `resolveDisplayNameForSlug` renamed to `resolveExerciseForSlug`, now returns `{ file, displayName }` instead of a bare string. The pivot row-label cell builds a real `<a class="internal-link">` when the file resolves, matching `renderGroupByCell`'s existing convention exactly; falls back to today's plain humanized text only for a genuinely orphaned (renamed/deleted) exercise — which, once Fix 1 lands, `total` can never be again. Resolution is cached per slug within a single render so sort + row rendering don't each rescan the exercise database.
+
+**Files changed:** `src/charts/tableChart.ts` only.
+
+---
+
 ### v1.7.5 — Exercise Names & Legacy Migration (Phase 6)
 
 Reading the real vault directly turned up two gaps the earlier specs missed: (1) exercise notes are filed under an internal name (e.g. `Exercise-Recumbent-Bike.md`) with a separate `display_name`, but the plugin used `file.basename` as "the exercise name" everywhere; (2) 105 legacy timestamped single-exercise notes in the Exercise Notes folder needed a path into `Data/Workouts` so charts can show full history in one place.
