@@ -4,6 +4,32 @@
 
 ---
 
+### v1.8.0 — Unified Exercise Log (Phase 2): Cardio Joins Workout Routines
+
+Folds cardio (walking, riding, etc.) into the Phase 1 Routine Tracking system as a `category: Cardio` exercise type, logged through the same **Log workout** command. Replaces the Templater/QuickAdd cardio template going forward. Historical cardio notes in `Data/Exercise Notes` are **not migrated** — left exactly as they are; Achievements' Exercise Streak (which scans that folder) is unaffected and out of scope for this pass.
+
+**Exercise note — new field:** optional `cardio_metric` (`Pace` | `Speed`), read only when `category: Cardio`. `default_equipment` (Phase 1) now defaults to include `Outdoor`/`Treadmill` alongside the strength equipment types.
+
+**Log workout — cardio branch:** confirm equipment → one entry (duration in minutes + distance, no interval loop — cardio is always a single continuous effort) → optional avg/peak heart rate (BPM, new — RPE deliberately excluded, no real number behind it) → pace or speed auto-computed from `cardio_metric` and written to the session note. Pace formatting reuses the existing `parseTimeToSeconds`/`formatSecondsAsTime` mm:ss utilities (from the v1.6.7 pace-charting work) rather than reimplementing.
+
+**Pace/speed formulas:**
+```
+pace  = formatSecondsAsTime((durationMin * 60) / distance)   // e.g. 35 min / 3.0 km → 11:40
+speed = (distance * 60 / durationMin).toFixed(1)              // e.g. 30 min / 8.5 km → 17.0
+```
+
+**Session note rollups — cardio:** `<slug>_duration_min`, `<slug>_distance`, `<slug>_pace` (only if metric is Pace) or `<slug>_speed` (only if Speed), `<slug>_avg_hr`/`<slug>_peak_hr` (only when entered), `<slug>_equipment`. New `total_duration_min` alongside the existing `total_sets`/`total_volume` — always written (0 when a session has none of that kind). A session can freely mix strength and cardio exercises. Body: single line per cardio exercise (`- {duration} min · {distance} {distanceUnit} · Pace {pace}/{distanceUnit}` or `Speed {speed} {distanceUnit}/h`, with HR appended only when entered) — no per-set bullets.
+
+**Log workout gets a true ad hoc entry point:** first step is now a choice — "Pick a routine" (Phase 1 flow, unchanged) or "Log without a routine" (search the exercise database directly, log one exercise at a time, reusing the existing "add an exercise" loop as the whole flow). Both paths converge on the same finish/save step. An ad hoc session omits the `routine:` frontmatter key entirely rather than writing an empty value. No structural change to the routine creator — cardio exercises are added to routines exactly like strength ones, target hints stay freeform text (e.g. "20 min" fits the existing target-rep-range field).
+
+**New setting:** `distanceUnit` (display-only, default `km`), alongside the existing `weightUnit`.
+
+**Explicitly out of scope:** RPE, unit conversion (km↔mi), migrating historical cardio notes, editing the Templater/QuickAdd config (manual step for the user), interval-style multiple cardio entries per exercise, Achievements/Exercise Streak changes.
+
+**Files changed:** `src/routineTracker.ts` (discriminated `LoggedExercise` union, `CardioEntryModal`, `findLastLoggedCardio`, generalized `EquipmentModal` hint mechanism, cardio branch in `logOneExercise`/`saveWorkoutLog`, ad hoc entry point in `logWorkout`, `cardio_metric` field in the exercise form), `src/settings.ts` (`distanceUnit`, expanded `equipmentTypes` default), `Documentation.md`.
+
+---
+
 ### v1.7.0 — Workout Routine Tracking
 
 New strength-routine logging system: define a routine once, then log a session against it exercise-by-exercise with per-set weight/reps. Cardio logging (Exercise Notes / Achievements) is untouched — no changes to that code path.

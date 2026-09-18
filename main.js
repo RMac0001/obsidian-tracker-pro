@@ -22040,7 +22040,8 @@ const DEFAULT_SETTINGS = {
     workoutLogFolder: "Data/Workouts/{{DATE:YYYY}}/{{DATE:YYYY-MM}}",
     workoutLogFilename: "WL-{{DATE:YYYY-MM-DD}}-{{DATE:HHmmss}}",
     weightUnit: "lb",
-    equipmentTypes: ["Barbell", "Dumbbell", "Machine", "Band", "Bodyweight"],
+    distanceUnit: "km",
+    equipmentTypes: ["Barbell", "Dumbbell", "Machine", "Band", "Bodyweight", "Outdoor", "Treadmill"],
     // ── Tracker Pro General Settings ──────────────────────────────────────────
     folder: "/",
     dateFormat: "YYYY-MM-DD",
@@ -22455,6 +22456,16 @@ class TrackerSettingTab extends obsidian.PluginSettingTab {
             .setValue(this.plugin.settings.weightUnit)
             .onChange(async (value) => {
             this.plugin.settings.weightUnit = value.trim();
+            await this.plugin.saveSettings();
+        }));
+        new obsidian.Setting(containerEl)
+            .setName("Distance unit")
+            .setDesc("Display label only — appended after logged cardio distances and speeds. No unit conversion is performed.")
+            .addText((text) => text
+            .setPlaceholder("km")
+            .setValue(this.plugin.settings.distanceUnit)
+            .onChange(async (value) => {
+            this.plugin.settings.distanceUnit = value.trim();
             await this.plugin.saveSettings();
         }));
         // Equipment types drag-to-reorder list
@@ -24453,6 +24464,13 @@ async function normalizeRecipeIngredients(app, settings) {
     new obsidian.Notice(`Normalized ${normalizedCount} lines, linked ${linkedCount}, ${flaggedCount} flagged for new food notes, ${leftUnlinkedCount} left unlinked.`);
 }
 
+function isStrength(ex) { return ex.kind === "strength"; }
+function isCardioLog(ex) { return ex.kind === "cardio"; }
+// Category is free text on exercise notes — compare case-insensitively so
+// "cardio", "Cardio", " Cardio " etc. are all treated the same.
+function isCardioCategory(category) {
+    return category.trim().toLowerCase() === "cardio";
+}
 // ─── Shared Helpers ───────────────────────────────────────────────────────────
 async function ensureFolders(app, filePath) {
     const parts = filePath.split("/");
@@ -24522,23 +24540,26 @@ class FileSuggestModal extends obsidian.FuzzySuggestModal {
     }
 }
 async function loadExerciseForEdit(app, file) {
-    var _a, _b, _c, _d;
+    var _a, _b, _c, _d, _e;
     const fm = (_b = (_a = app.metadataCache.getFileCache(file)) === null || _a === void 0 ? void 0 : _a.frontmatter) !== null && _b !== void 0 ? _b : {};
     const content = await app.vault.read(file);
     return {
         category: String((_c = fm.category) !== null && _c !== void 0 ? _c : ""),
         defaultEquipment: String((_d = fm.default_equipment) !== null && _d !== void 0 ? _d : ""),
+        cardioMetric: String((_e = fm.cardio_metric) !== null && _e !== void 0 ? _e : ""),
         description: extractBody(content).trim(),
     };
 }
-function buildExerciseContent(category, defaultEquipment, description) {
+function buildExerciseContent(category, defaultEquipment, cardioMetric, description) {
     let content = "";
-    if (category || defaultEquipment) {
+    if (category || defaultEquipment || cardioMetric) {
         content += "---\n";
         if (category)
             content += `category: ${category}\n`;
         if (defaultEquipment)
             content += `default_equipment: ${defaultEquipment}\n`;
+        if (cardioMetric)
+            content += `cardio_metric: ${cardioMetric}\n`;
         content += "---\n\n";
     }
     if (description)
@@ -24570,6 +24591,20 @@ class ExerciseFormModal extends obsidian.Modal {
         const categoryInput = contentEl.createEl("input", {
             attr: { type: "text", value: this.initial.category, style: inputStyle },
         });
+        // Cardio metric — shown only when category is Cardio (e.g. "Cardio")
+        const metricWrap = contentEl.createDiv();
+        metricWrap.createEl("label", { text: "Cardio metric", attr: { style: labelStyle } });
+        const metricSelect = metricWrap.createEl("select", { attr: { style: inputStyle } });
+        for (const m of ["Pace", "Speed"]) {
+            const opt = metricSelect.createEl("option", { text: m });
+            opt.value = m;
+        }
+        metricSelect.value = this.initial.cardioMetric === "Speed" ? "Speed" : "Pace";
+        const updateMetricVisibility = () => {
+            metricWrap.style.display = isCardioCategory(categoryInput.value) ? "" : "none";
+        };
+        updateMetricVisibility();
+        categoryInput.addEventListener("input", updateMetricVisibility);
         contentEl.createEl("label", { text: "Default equipment (optional)", attr: { style: labelStyle } });
         const equipmentSelect = contentEl.createEl("select", { attr: { style: inputStyle } });
         const noneOpt = equipmentSelect.createEl("option", { text: "— None —" });
@@ -24594,13 +24629,15 @@ class ExerciseFormModal extends obsidian.Modal {
                 new obsidian.Notice("Name is required.");
                 return;
             }
+            const category = categoryInput.value.trim();
             this.resolved = true;
             this.close();
             this.resolve({
                 name,
-                category: categoryInput.value.trim(),
+                category,
                 description: descInput.value.trim(),
                 defaultEquipment: equipmentSelect.value,
+                cardioMetric: isCardioCategory(category) ? metricSelect.value : undefined,
             });
         });
         btnRow.createEl("button", { text: "Cancel" }).addEventListener("click", () => this.close());
@@ -24620,7 +24657,7 @@ async function createEditExercise(app, settings) {
     if (choice === null)
         return;
     let isEdit = false;
-    let initial = { name: "", category: "", description: "", defaultEquipment: "" };
+    let initial = { name: "", category: "", description: "", defaultEquipment: "", cardioMetric: "" };
     if (choice !== CREATE_NEW) {
         const existingFile = files.find(f => f.basename === choice);
         if (existingFile) {
@@ -24633,7 +24670,7 @@ async function createEditExercise(app, settings) {
         return;
     const folder = settings.exerciseFolder.replace(/\/$/, "");
     const filePath = obsidian.normalizePath(`${folder}/${result.name}.md`);
-    const content = buildExerciseContent(result.category, result.defaultEquipment, result.description);
+    const content = buildExerciseContent(result.category, result.defaultEquipment, result.cardioMetric, result.description);
     await ensureFolders(app, filePath);
     const existingAtPath = app.vault.getAbstractFileByPath(filePath);
     if (existingAtPath instanceof obsidian.TFile) {
@@ -24943,13 +24980,50 @@ async function findLastLoggedSet(app, settings, exerciseName, equipment) {
     }
     return null;
 }
+// Cardio rollups are stored directly as frontmatter fields, so — unlike strength's
+// top-weight/reps pairing — no body parsing is needed to recover the hint.
+async function findLastLoggedCardio(app, settings, exerciseName, equipment) {
+    var _a, _b;
+    const slug = slugify(exerciseName);
+    const base = getWorkoutLogBaseFolder(settings);
+    const files = app.vault.getMarkdownFiles().filter(f => !base || f.path.startsWith(base + "/"));
+    const matches = files
+        .filter(f => { var _a, _b; return ((_b = (_a = app.metadataCache.getFileCache(f)) === null || _a === void 0 ? void 0 : _a.frontmatter) !== null && _b !== void 0 ? _b : {})[`${slug}_equipment`] === equipment; })
+        .sort((a, b) => { var _a, _b, _c, _d; return ((_b = (_a = getFileDateWL(app, b)) === null || _a === void 0 ? void 0 : _a.getTime()) !== null && _b !== void 0 ? _b : 0) - ((_d = (_c = getFileDateWL(app, a)) === null || _c === void 0 ? void 0 : _c.getTime()) !== null && _d !== void 0 ? _d : 0); });
+    for (const file of matches) {
+        const fm = (_b = (_a = app.metadataCache.getFileCache(file)) === null || _a === void 0 ? void 0 : _a.frontmatter) !== null && _b !== void 0 ? _b : {};
+        const durationMin = Number(fm[`${slug}_duration_min`]);
+        const distance = Number(fm[`${slug}_distance`]);
+        if (isNaN(durationMin) || isNaN(distance))
+            continue;
+        return {
+            durationMin,
+            distance,
+            pace: fm[`${slug}_pace`] !== undefined ? String(fm[`${slug}_pace`]) : undefined,
+            speed: fm[`${slug}_speed`] !== undefined ? Number(fm[`${slug}_speed`]) : undefined,
+        };
+    }
+    return null;
+}
+function formatStrengthHint(hint, weightUnit) {
+    return hint ? `${hint.weight} ${weightUnit} × ${hint.reps}` : null;
+}
+function formatCardioHint(hint, distanceUnit, cardioMetric) {
+    if (!hint)
+        return null;
+    const metricStr = cardioMetric === "Pace" && hint.pace
+        ? `Pace ${hint.pace}/${distanceUnit}`
+        : cardioMetric === "Speed" && hint.speed !== undefined
+            ? `Speed ${hint.speed} ${distanceUnit}/h`
+            : "";
+    return `${hint.durationMin} min · ${hint.distance} ${distanceUnit}${metricStr ? " · " + metricStr : ""}`;
+}
 class EquipmentModal extends obsidian.Modal {
-    constructor(app, exerciseName, equipmentTypes, defaultEquipment, weightUnit, getHint, resolve) {
+    constructor(app, exerciseName, equipmentTypes, defaultEquipment, getHint, resolve) {
         super(app);
         this.exerciseName = exerciseName;
         this.equipmentTypes = equipmentTypes;
         this.defaultEquipment = defaultEquipment;
-        this.weightUnit = weightUnit;
         this.getHint = getHint;
         this.resolve = resolve;
         this.resolved = false;
@@ -24993,9 +25067,7 @@ class EquipmentModal extends obsidian.Modal {
     updateHint(equipment) {
         this.hintEl.setText("Loading last log…");
         this.getHint(equipment).then(hint => {
-            this.hintEl.setText(hint
-                ? `Last (${equipment}): ${hint.weight} ${this.weightUnit} × ${hint.reps}`
-                : `No previous log for ${equipment}.`);
+            this.hintEl.setText(hint ? `Last (${equipment}): ${hint}` : `No previous log for ${equipment}.`);
         });
     }
     onClose() {
@@ -25083,18 +25155,109 @@ class SetLoggingModal extends obsidian.Modal {
             this.resolve(null);
     }
 }
+class CardioEntryModal extends obsidian.Modal {
+    constructor(app, exerciseName, equipment, distanceUnit, resolve) {
+        super(app);
+        this.exerciseName = exerciseName;
+        this.equipment = equipment;
+        this.distanceUnit = distanceUnit;
+        this.resolve = resolve;
+        this.resolved = false;
+    }
+    onOpen() {
+        const { contentEl } = this;
+        contentEl.createEl("h3", { text: `${this.exerciseName} — ${this.equipment}` });
+        const labelStyle = "font-size:0.9em;color:var(--text-muted);";
+        const inputStyle = "display:block;width:100%;padding:8px 10px;margin:4px 0 12px;" +
+            "border:1px solid var(--background-modifier-border);border-radius:6px;" +
+            "background:var(--background-primary);color:var(--text-normal);";
+        contentEl.createEl("label", { text: "Duration (minutes)", attr: { style: labelStyle } });
+        const durationInput = contentEl.createEl("input", { attr: { type: "number", step: "0.5", min: "0", style: inputStyle } });
+        contentEl.createEl("label", { text: `Distance (${this.distanceUnit})`, attr: { style: labelStyle } });
+        const distanceInput = contentEl.createEl("input", { attr: { type: "number", step: "0.01", min: "0", style: inputStyle } });
+        contentEl.createEl("label", { text: "Avg heart rate — BPM (optional)", attr: { style: labelStyle } });
+        const avgHrInput = contentEl.createEl("input", { attr: { type: "number", step: "1", min: "0", style: inputStyle } });
+        contentEl.createEl("label", { text: "Peak heart rate — BPM (optional)", attr: { style: labelStyle } });
+        const peakHrInput = contentEl.createEl("input", { attr: { type: "number", step: "1", min: "0", style: inputStyle } });
+        const btnRow = contentEl.createDiv({ attr: { style: "display:flex;gap:8px;" } });
+        const doneBtn = btnRow.createEl("button", { text: "Done", cls: "mod-cta" });
+        doneBtn.addEventListener("click", () => {
+            const durationMin = parseFloat(durationInput.value);
+            const distance = parseFloat(distanceInput.value);
+            if (isNaN(durationMin) || isNaN(distance)) {
+                new obsidian.Notice("Enter both duration and distance.");
+                return;
+            }
+            const avgHr = parseFloat(avgHrInput.value);
+            const peakHr = parseFloat(peakHrInput.value);
+            this.resolved = true;
+            this.close();
+            this.resolve({
+                durationMin,
+                distance,
+                avgHr: isNaN(avgHr) ? undefined : avgHr,
+                peakHr: isNaN(peakHr) ? undefined : peakHr,
+            });
+        });
+        btnRow.createEl("button", { text: "Skip exercise" }).addEventListener("click", () => {
+            this.resolved = true;
+            this.close();
+            this.resolve(null);
+        });
+        durationInput.focus();
+    }
+    onClose() {
+        this.contentEl.empty();
+        if (!this.resolved)
+            this.resolve(null);
+    }
+}
 async function logOneExercise(app, settings, exerciseName, exerciseFiles) {
-    var _a, _b, _c, _d;
+    var _a, _b, _c, _d, _e;
     const exerciseFile = exerciseFiles.find(f => f.basename === exerciseName);
     const fm = exerciseFile ? ((_b = (_a = app.metadataCache.getFileCache(exerciseFile)) === null || _a === void 0 ? void 0 : _a.frontmatter) !== null && _b !== void 0 ? _b : {}) : {};
     const defaultEquipment = String((_d = (_c = fm.default_equipment) !== null && _c !== void 0 ? _c : settings.equipmentTypes[0]) !== null && _d !== void 0 ? _d : "");
-    const equipment = await new Promise(res => new EquipmentModal(app, exerciseName, settings.equipmentTypes, defaultEquipment, settings.weightUnit, (eq) => findLastLoggedSet(app, settings, exerciseName, eq), res).open());
+    const cardio = isCardioCategory(String((_e = fm.category) !== null && _e !== void 0 ? _e : ""));
+    const cardioMetric = fm.cardio_metric === "Speed" ? "Speed" : "Pace";
+    const getHint = cardio
+        ? (eq) => findLastLoggedCardio(app, settings, exerciseName, eq)
+            .then(hint => formatCardioHint(hint, settings.distanceUnit, cardioMetric))
+        : (eq) => findLastLoggedSet(app, settings, exerciseName, eq)
+            .then(hint => formatStrengthHint(hint, settings.weightUnit));
+    const equipment = await new Promise(res => new EquipmentModal(app, exerciseName, settings.equipmentTypes, defaultEquipment, getHint, res).open());
     if (!equipment)
         return null;
+    if (cardio) {
+        const entry = await new Promise(res => new CardioEntryModal(app, exerciseName, equipment, settings.distanceUnit, res).open());
+        if (!entry)
+            return null;
+        return { kind: "cardio", name: exerciseName, equipment, cardioMetric, ...entry };
+    }
     const sets = await new Promise(res => new SetLoggingModal(app, exerciseName, equipment, settings.weightUnit, res).open());
     if (!sets || sets.length === 0)
         return null;
-    return { name: exerciseName, equipment, sets };
+    return { kind: "strength", name: exerciseName, equipment, sets };
+}
+function computeCardioMetricField(ex) {
+    return ex.cardioMetric === "Pace"
+        ? { key: "pace", value: formatSecondsAsTime((ex.durationMin * 60) / ex.distance) }
+        : { key: "speed", value: Number(((ex.distance * 60) / ex.durationMin).toFixed(1)) };
+}
+function formatCardioBodyLine(ex, settings) {
+    const metric = computeCardioMetricField(ex);
+    const metricStr = ex.cardioMetric === "Pace"
+        ? `Pace ${metric.value}/${settings.distanceUnit}`
+        : `Speed ${metric.value} ${settings.distanceUnit}/h`;
+    let line = `- ${ex.durationMin} min · ${ex.distance} ${settings.distanceUnit} · ${metricStr}`;
+    if (ex.avgHr !== undefined || ex.peakHr !== undefined) {
+        const parts = [];
+        if (ex.avgHr !== undefined)
+            parts.push(`avg ${ex.avgHr}`);
+        if (ex.peakHr !== undefined)
+            parts.push(`peak ${ex.peakHr}`);
+        line += ` · HR ${parts.join(" / ")}`;
+    }
+    return line;
 }
 async function saveWorkoutLog(app, settings, routineName, logged) {
     const folder = resolveDateTemplate(settings.workoutLogFolder);
@@ -25108,29 +25271,52 @@ async function saveWorkoutLog(app, settings, routineName, logged) {
         return;
     }
     const dateStr = window.moment().format("YYYY-MM-DD");
-    const totalSets = logged.reduce((s, ex) => s + ex.sets.length, 0);
-    const totalVolume = logged.reduce((s, ex) => s + ex.sets.reduce((ss, x) => ss + x.weight * x.reps, 0), 0);
+    const strengthLogged = logged.filter(isStrength);
+    const cardioLogged = logged.filter(isCardioLog);
+    const totalSets = strengthLogged.reduce((s, ex) => s + ex.sets.length, 0);
+    const totalVolume = strengthLogged.reduce((s, ex) => s + ex.sets.reduce((ss, x) => ss + x.weight * x.reps, 0), 0);
+    const totalDurationMin = cardioLogged.reduce((s, ex) => s + ex.durationMin, 0);
     await app.fileManager.processFrontMatter(file, (fm) => {
         fm.creation_date = dateStr;
-        fm.routine = routineName;
+        if (routineName)
+            fm.routine = routineName;
         for (const ex of logged) {
             const slug = slugify(ex.name);
-            fm[`${slug}_sets`] = ex.sets.length;
-            fm[`${slug}_reps`] = ex.sets.reduce((s, x) => s + x.reps, 0);
-            fm[`${slug}_top_weight`] = Math.max(...ex.sets.map(s => s.weight));
-            fm[`${slug}_volume`] = ex.sets.reduce((s, x) => s + x.weight * x.reps, 0);
-            fm[`${slug}_equipment`] = ex.equipment;
+            if (ex.kind === "strength") {
+                fm[`${slug}_sets`] = ex.sets.length;
+                fm[`${slug}_reps`] = ex.sets.reduce((s, x) => s + x.reps, 0);
+                fm[`${slug}_top_weight`] = Math.max(...ex.sets.map(s => s.weight));
+                fm[`${slug}_volume`] = ex.sets.reduce((s, x) => s + x.weight * x.reps, 0);
+                fm[`${slug}_equipment`] = ex.equipment;
+            }
+            else {
+                const metric = computeCardioMetricField(ex);
+                fm[`${slug}_duration_min`] = ex.durationMin;
+                fm[`${slug}_distance`] = ex.distance;
+                fm[`${slug}_${metric.key}`] = metric.value;
+                if (ex.avgHr !== undefined)
+                    fm[`${slug}_avg_hr`] = ex.avgHr;
+                if (ex.peakHr !== undefined)
+                    fm[`${slug}_peak_hr`] = ex.peakHr;
+                fm[`${slug}_equipment`] = ex.equipment;
+            }
         }
         fm.total_sets = totalSets;
         fm.total_volume = totalVolume;
+        fm.total_duration_min = totalDurationMin;
     });
-    // Rebuild body: one heading + set bullets per exercise, in logged order, then trailing Notes
+    // Rebuild body: one heading + entry per exercise, in logged order, then trailing Notes
     let body = "";
     for (const ex of logged) {
         body += `## ${ex.name} — ${ex.equipment}\n`;
-        ex.sets.forEach((s, i) => {
-            body += `- Set ${i + 1}: ${s.weight} ${settings.weightUnit} × ${s.reps}\n`;
-        });
+        if (ex.kind === "strength") {
+            ex.sets.forEach((s, i) => {
+                body += `- Set ${i + 1}: ${s.weight} ${settings.weightUnit} × ${s.reps}\n`;
+            });
+        }
+        else {
+            body += formatCardioBodyLine(ex, settings) + "\n";
+        }
         body += "\n";
     }
     body += "## Notes\n";
@@ -25147,49 +25333,70 @@ async function saveWorkoutLog(app, settings, routineName, logged) {
     }
     const fmBlock = fmEnd !== -1 ? fmLines.slice(0, fmEnd + 1).join("\n") : "";
     await app.vault.modify(file, fmBlock + "\n\n" + body);
-    new obsidian.Notice(`✓ Workout logged: ${totalSets} sets, ${totalVolume} total volume.`);
+    const parts = [];
+    if (strengthLogged.length > 0)
+        parts.push(`${totalSets} sets, ${totalVolume} total volume`);
+    if (cardioLogged.length > 0)
+        parts.push(`${totalDurationMin} cardio minutes`);
+    new obsidian.Notice(`✓ Workout logged: ${parts.join(" · ")}.`);
 }
 async function logWorkout(app, settings) {
-    const routineFiles = getRoutineFiles(app, settings);
-    if (routineFiles.length === 0) {
-        new obsidian.Notice(`No routines found in ${settings.routineFolder}. Create a routine first.`);
+    const PICK_ROUTINE = "Pick a routine";
+    const AD_HOC = "Log without a routine";
+    const entryChoice = await new Promise(res => new StringSuggestModal(app, [PICK_ROUTINE, AD_HOC], "How do you want to log?", res).open());
+    if (entryChoice === null)
         return;
-    }
-    const routineFile = await new Promise(res => new FileSuggestModal(app, routineFiles, "Which routine?", res).open());
-    if (!routineFile)
-        return;
-    const targets = parseRoutineBody(await app.vault.read(routineFile));
-    if (targets.length === 0) {
-        new obsidian.Notice(`Routine "${routineFile.basename}" has no exercises.`);
-        return;
-    }
     const exerciseFiles = getExerciseFiles(app, settings);
     const logged = [];
-    for (const target of targets) {
-        const result = await logOneExercise(app, settings, target.name, exerciseFiles);
-        if (result)
-            logged.push(result);
-    }
-    // Optional: log exercises not in the routine
-    let addingMore = true;
-    while (addingMore) {
-        const choice = await new Promise(res => new StringSuggestModal(app, ["Add an exercise not in this routine", "Finish workout"], "Anything else?", res).open());
-        if (choice === null || choice === "Finish workout") {
-            addingMore = false;
-            continue;
+    let routineName = null;
+    if (entryChoice === PICK_ROUTINE) {
+        const routineFiles = getRoutineFiles(app, settings);
+        if (routineFiles.length === 0) {
+            new obsidian.Notice(`No routines found in ${settings.routineFolder}. Create a routine first.`);
+            return;
         }
-        const file = await new Promise(res => new FileSuggestModal(app, exerciseFiles, "Search exercise database…", res).open());
-        if (!file)
-            continue;
-        const result = await logOneExercise(app, settings, file.basename, exerciseFiles);
-        if (result)
-            logged.push(result);
+        const routineFile = await new Promise(res => new FileSuggestModal(app, routineFiles, "Which routine?", res).open());
+        if (!routineFile)
+            return;
+        const targets = parseRoutineBody(await app.vault.read(routineFile));
+        if (targets.length === 0) {
+            new obsidian.Notice(`Routine "${routineFile.basename}" has no exercises.`);
+            return;
+        }
+        routineName = routineFile.basename;
+        for (const target of targets) {
+            const result = await logOneExercise(app, settings, target.name, exerciseFiles);
+            if (result)
+                logged.push(result);
+        }
+    }
+    // Ad hoc entry lands here with nothing logged yet — this loop is then its whole flow.
+    // Routine entry reuses the same loop to optionally log exercises outside the routine.
+    if (exerciseFiles.length === 0) {
+        if (logged.length === 0) {
+            new obsidian.Notice(`No exercises found in ${settings.exerciseFolder}. Create some exercises first.`);
+            return;
+        }
+    }
+    else {
+        const addPrompt = routineName ? "Add an exercise not in this routine" : "Add an exercise";
+        while (true) {
+            const choice = await new Promise(res => new StringSuggestModal(app, [addPrompt, "Finish workout"], "Anything else?", res).open());
+            if (choice === null || choice === "Finish workout")
+                break;
+            const file = await new Promise(res => new FileSuggestModal(app, exerciseFiles, "Search exercise database…", res).open());
+            if (!file)
+                continue;
+            const result = await logOneExercise(app, settings, file.basename, exerciseFiles);
+            if (result)
+                logged.push(result);
+        }
     }
     if (logged.length === 0) {
         new obsidian.Notice("Workout not saved — no exercises logged.");
         return;
     }
-    await saveWorkoutLog(app, settings, routineFile.basename, logged);
+    await saveWorkoutLog(app, settings, routineName, logged);
 }
 
 function isRelevantFile(changedPath, config, settings) {

@@ -40,6 +40,7 @@ export interface TrackerSettings {
     workoutLogFolder: string;
     workoutLogFilename: string;
     weightUnit: string;
+    distanceUnit: string;
     equipmentTypes: string[];
 
     // ── Tracker Pro General Settings ──────────────────────────────────────────
@@ -87,7 +88,8 @@ export const DEFAULT_SETTINGS: TrackerSettings = {
     workoutLogFolder:   "Data/Workouts/{{DATE:YYYY}}/{{DATE:YYYY-MM}}",
     workoutLogFilename: "WL-{{DATE:YYYY-MM-DD}}-{{DATE:HHmmss}}",
     weightUnit:         "lb",
-    equipmentTypes:     ["Barbell", "Dumbbell", "Machine", "Band", "Bodyweight"],
+    distanceUnit:       "km",
+    equipmentTypes:     ["Barbell", "Dumbbell", "Machine", "Band", "Bodyweight", "Outdoor", "Treadmill"],
 
     // ── Tracker Pro General Settings ──────────────────────────────────────────
     folder: "/",
@@ -582,6 +584,19 @@ export class TrackerSettingTab extends PluginSettingTab {
                     .setValue(this.plugin.settings.weightUnit)
                     .onChange(async (value) => {
                         this.plugin.settings.weightUnit = value.trim();
+                        await this.plugin.saveSettings();
+                    })
+            );
+
+        new Setting(containerEl)
+            .setName("Distance unit")
+            .setDesc("Display label only — appended after logged cardio distances and speeds. No unit conversion is performed.")
+            .addText((text) =>
+                text
+                    .setPlaceholder("km")
+                    .setValue(this.plugin.settings.distanceUnit)
+                    .onChange(async (value) => {
+                        this.plugin.settings.distanceUnit = value.trim();
                         await this.plugin.saveSettings();
                     })
             );
