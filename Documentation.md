@@ -47,6 +47,7 @@ and renders them as charts and summaries. It requires no Dataview dependency.
    - [Create/edit routine](#createedit-routine)
    - [Log workout](#log-workout)
    - [Edit workout log](#edit-workout-log)
+   - [Export routine (Circuit Caller)](#export-routine-circuit-caller)
    - [Chart Compatibility](#workout-chart-compatibility)
 9. [Advanced Features](#advanced-features)
    - [source: fileMeta](#source-filemeta)
@@ -1680,6 +1681,54 @@ to `## Notes`: `- {date} — Log recalculated`.
 
 Does not touch a routine's own definition (use Create/edit routine for
 that) or legacy cardio notes in `Data/Exercise Notes`.
+
+---
+
+### Export routine (Circuit Caller)
+
+Exports one routine at a time as a [Circuit Caller](https://circuitcaller.app)-compatible backup JSON file. This is a one-way, one-off export — nothing is imported back, and nothing is saved into Tracker Pro's own data.
+
+Fuzzy-pick a routine, and its exercise list (names only — the target sets/rep-range hint is dropped, since Circuit Caller has no use for it) is exported with **fixed 60s work / 30s rest per exercise**. This timing is hardcoded into the export logic, not read from or written to the routine note, and not prompted for — there is no way to configure it per exercise or per routine.
+
+```json
+{
+  "version": 1,
+  "exportedAt": 1758160000000,
+  "settings": {
+    "voiceEnabled": true,
+    "countdownEnabled": true,
+    "beepsEnabled": true,
+    "vibrateEnabled": true,
+    "keepScreenOn": true,
+    "halfwayCallout": false,
+    "ttsVoiceName": "",
+    "speechRate": 1,
+    "prepSeconds": 3
+  },
+  "workouts": [
+    {
+      "name": "Push Day",
+      "rounds": 1,
+      "defaultRestSeconds": 30,
+      "prepOverrideSeconds": -1,
+      "exercises": [
+        { "name": "Bench Press", "workSeconds": 60, "restSeconds": 30 },
+        { "name": "Overhead Press", "workSeconds": 60, "restSeconds": 30 },
+        { "name": "Triceps Pushdown", "workSeconds": 60, "restSeconds": 30 }
+      ]
+    }
+  ]
+}
+```
+
+`exportedAt` is generated fresh (epoch milliseconds) on every export. The `settings` block is fixed and identical on every export — it is not configurable anywhere in Tracker Pro. `rounds` is always `1` (no multi-round export) and `prepOverrideSeconds` is always `-1` (defers to Circuit Caller's own global prep-time setting).
+
+**The file is never written into the vault.** You're always asked where to save it:
+
+- **Desktop:** a native OS "Save As" dialog, defaulting to `{Routine Name}.json`, any location on disk.
+- **Mobile:** the OS share sheet (via a file-attached Web Share API call) — pick "Save to Files," AirDrop, or share directly into Circuit Caller if it registers as a share target. If your device's Obsidian build doesn't support sharing a file this way, you'll see an error asking you to export from desktop instead — it will not silently fall back to saving into the vault.
+
+No default folder or last-used location is remembered between exports beyond whatever the OS dialog itself retains.
 
 ---
 

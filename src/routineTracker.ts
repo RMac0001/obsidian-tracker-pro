@@ -11,7 +11,7 @@ import { resolveDateTemplate, findSectionRange, slugify, parseTimeToSeconds, for
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
-interface ExerciseTarget {
+export interface ExerciseTarget {
     name: string;
     targetSets?: number;
     targetRepRange?: string;
@@ -351,7 +351,7 @@ function parseRoutineExerciseLine(line: string): ExerciseTarget | null {
     return { name, targetRepRange: suffix };
 }
 
-function parseRoutineBody(content: string): ExerciseTarget[] {
+export function parseRoutineBody(content: string): ExerciseTarget[] {
     const lines = content.split("\n");
     const range = findSectionRange(lines, "Exercises");
     if (!range) return [];

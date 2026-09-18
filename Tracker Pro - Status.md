@@ -4,6 +4,22 @@
 
 ---
 
+### v1.7.3 — Circuit Caller Export (Phase 4)
+
+New command **"Export routine (Circuit Caller)"** — exports one routine at a time as a Circuit Caller-compatible backup JSON file. One-way, one-off export: nothing is imported back, nothing is saved into Tracker Pro's own data, and the file is never written into the vault.
+
+- Fuzzy-picks a routine and reads its exercise list using the existing `parseRoutineBody` parser from Phase 1 (now exported from `routineTracker.ts`, along with `ExerciseTarget`) — names only, target sets/rep-range dropped.
+- Timing is a fixed assumption hardcoded into the export logic: every exercise gets `workSeconds: 60, restSeconds: 30`. Not stored on the routine note, not prompted for, not configurable.
+- `settings` block (voice/countdown/beeps/vibrate/etc.) is a fixed object, identical on every export. `rounds` is always `1`. `prepOverrideSeconds` is always `-1` (defers to Circuit Caller's own global prep-time setting). `exportedAt` is fresh epoch milliseconds each time.
+- **Save destination is asked every time, platform-branched, never the vault:**
+  - Desktop: Electron's native "Save As" dialog (`electron.remote.dialog.showSaveDialog`), default filename `{Routine Name}.json`.
+  - Mobile: OS share sheet via a file-attached Web Share API call (`navigator.share`). If unsupported on-device, shows an error directing the user to export from desktop instead — explicitly does **not** silently fall back to a vault-saved file.
+- Filename: sanitized routine name + `.json` on both platforms.
+
+**Files changed:** `src/circuitCallerExport.ts` (new), `src/routineTracker.ts` (exported `parseRoutineBody`/`ExerciseTarget`, no logic changes), `src/main.ts` (new command), `Documentation.md`.
+
+---
+
 ### v1.7.2 — Workout Log Editor (Phase 3)
 
 New command **"Edit workout log"** — fixes mistakes in an already-saved session note (`Data/Workouts`), same shape as the existing Edit meal log. Does not touch routine definitions (already editable via Create/edit routine) or legacy `Data/Exercise Notes` cardio.
