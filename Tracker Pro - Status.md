@@ -4,6 +4,20 @@
 
 ---
 
+### v1.7.7 — Suggest Picker Race: Selections Vanish (Phase 8)
+
+Fixes a general defect in this plugin's shared picker infrastructure: selecting **anything** in a `StringSuggestModal`/`FileSuggestModal` (a new routine, an existing routine, an exercise from a search list) silently closed the picker and did nothing — no error anywhere. Root-caused against Obsidian's own shipped `app.js`, fetched live from the console, not guessed.
+
+**Root cause:** Obsidian's own `SuggestModal.prototype.selectSuggestion` calls `this.close()` **before** `this.onChooseSuggestion(...)` on every selection, not just on cancel — `close()`'s `onClose()` body runs synchronously before `selectSuggestion` resumes to invoke `onChooseItem`. Three of this plugin's picker classes used a `chosen` flag idiom that assumed the opposite order (`onChooseItem` sets `chosen = true`, then `onClose` checks `if (!this.chosen) this.onChoose(null)`). Since `onClose` always ran first, the check was always true, `onChoose(null)` resolved the caller's promise immediately, and the real `onChoose(item)` call a moment later was silently discarded — a promise only settles once. The caller then saw `choice === null`, hit its own cancel guard, and exited clean. No exception anywhere, which is exactly why this needed live DevTools instrumentation (wrapped `Map.prototype.set`, real click/keyboard/programmatic `.click()` selection attempts, a `MutationObserver` on modal add/remove) to surface at all.
+
+**Fix:** in exactly three classes — `StringSuggestModal` and `FileSuggestModal` in `src/routineTracker.ts`, and `FileSuggestModal` in `src/circuitCallerExport.ts` — wrapped the existing `if (!this.chosen) this.onChoose(null);` in `setTimeout(() => { ... }, 0)`. Deferring past the synchronous stretch where Obsidian calls `close()` then `onChooseItem` lets the real selection win the race instead of losing it every time. `mealLogger.ts`'s same-named `StringSuggestModal`/`FileSuggestModal` (no `onClose` override at all — nothing to race) and `vitaminTracker.ts`'s `VitaminPickModal` (different pattern) were confirmed unaffected and left untouched, as were every plugin-owned modal that calls its own `close()` and sets its `resolved` flag first (`RoutineNameModal`, `RoutineTargetModal`, `ExerciseFormModal`, etc.) — already correctly ordered.
+
+**Blast radius cleared by this one fix:** Create/edit routine (new and existing), the routine builder's Add/Reorder/Remove-an-exercise pickers, Create/edit exercise (new and existing), Log workout (routine pick, exercise search, "Anything else?"), Edit workout log (session pick, exercise search), and Export routine (Circuit Caller)'s routine picker.
+
+**Files changed:** `src/routineTracker.ts`, `src/circuitCallerExport.ts`.
+
+---
+
 ### v1.7.6 — Auto-Pivot: Phantom Total & Missing Links (Phase 7)
 
 Fixes a regression in Phase 6's table-chart auto-pivot (v1.7.5), root-caused live by instrumenting the running plugin in Obsidian's DevTools console (wrapping `Map.prototype.set`/`Array.prototype.push` with stack-trace capture, then restoring everything — no vault changes).

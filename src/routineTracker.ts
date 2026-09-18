@@ -123,7 +123,14 @@ class StringSuggestModal extends FuzzySuggestModal<string> {
     onChooseItem(item: string): void { this.chosen = true; this.onChoose(item); }
     onClose(): void {
         this.contentEl.empty();
-        if (!this.chosen) this.onChoose(null);
+        // Obsidian's own SuggestModal.selectSuggestion calls close() BEFORE
+        // onChooseSuggestion on every selection, not just on cancel — so
+        // onClose() always runs first. Defer the "was anything chosen?"
+        // check by a macrotask so a real onChooseItem call (which runs a
+        // moment later in that same stretch) gets to set `chosen` first and
+        // win the race, instead of onClose always resolving null first and
+        // silently discarding the real selection.
+        setTimeout(() => { if (!this.chosen) this.onChoose(null); }, 0);
     }
 }
 
@@ -144,7 +151,9 @@ class FileSuggestModal extends FuzzySuggestModal<TFile> {
     onChooseItem(file: TFile): void { this.chosen = true; this.onChoose(file); }
     onClose(): void {
         this.contentEl.empty();
-        if (!this.chosen) this.onChoose(null);
+        // See StringSuggestModal.onClose above — same close()-before-
+        // onChooseSuggestion race in Obsidian's own SuggestModal core.
+        setTimeout(() => { if (!this.chosen) this.onChoose(null); }, 0);
     }
 }
 
