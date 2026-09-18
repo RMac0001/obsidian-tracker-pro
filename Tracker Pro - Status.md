@@ -4,7 +4,7 @@
 
 ---
 
-### v1.8.1 — Workout Log Editor (Phase 3)
+### v1.7.2 — Workout Log Editor (Phase 3)
 
 New command **"Edit workout log"** — fixes mistakes in an already-saved session note (`Data/Workouts`), same shape as the existing Edit meal log. Does not touch routine definitions (already editable via Create/edit routine) or legacy `Data/Exercise Notes` cardio.
 
@@ -16,7 +16,7 @@ New command **"Edit workout log"** — fixes mistakes in an already-saved sessio
 
 **Save and recalculate** is a full rewrite, not a patch: refactored the rollup+body write logic out of `saveWorkoutLog` into a shared `writeWorkoutLogContent(app, settings, file, routineName, exercises, notesLines)`, called by both Log workout (new file) and Edit workout log (existing file) — guarantees identical, always-fresh rollup computation with no drift between the two commands. Frontmatter is cleared (except `creation_date`) and rebuilt from the current exercise list every save, so a removed exercise can't leave stale fields behind. Appends `- {date} — Log recalculated` to `## Notes`, same pattern as Edit meal log.
 
-**Version note:** the spec for this phase asked for v1.7.2, but Phase 1/2 had already shipped through v1.8.0 by the time this landed — bumped forward to v1.8.1 instead of going backward.
+**Version note:** manifest.json on master had been manually corrected to `1.7.1` (independent of this branch, to match the actually-published version), while package.json had drifted to `1.8.0`. This release bumps forward from the corrected `1.7.1` baseline to `1.7.2` — matching the spec's original instruction exactly — and syncs package.json to the same value.
 
 **Files changed:** `src/routineTracker.ts` (`writeWorkoutLogContent` refactor, `parseWorkoutLogBody`, `parseNotesLines`, `SetEditModal`, `CardioFieldsEditModal`, `HeartRateEditModal`, `EditWorkoutLogModal`, `getRecentWorkoutLogFiles`, `editWorkoutLog`), `src/main.ts` (new command), `Documentation.md`.
 
