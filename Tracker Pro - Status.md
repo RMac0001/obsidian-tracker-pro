@@ -4,6 +4,16 @@
 
 ---
 
+### v1.7.8 — Automate Release Publishing on Tag Push
+
+Every prior version (through v1.7.7) shipped by bumping `manifest.json`/`package.json` and merging to `master` — but the actual GitHub Release (tag + published release object) had to be created by hand afterward, same as it always had been for this repo. `.github/workflows/releases.yml` only triggered on `release: types: [published]`, meaning it could attach `main.js`/`manifest.json`/`styles.css` to a release that already existed, but couldn't create one itself.
+
+Changed the trigger to `push: tags: - 'v*'`. `softprops/action-gh-release@v2` auto-creates and publishes a release from the pushed tag when run this way, uploading the same three build artifacts in the same step — no separate "click Publish" needed. Pushing a version tag (e.g. `v1.7.8`) after a merge is now the entire remaining step.
+
+**Files changed:** `.github/workflows/releases.yml` only.
+
+---
+
 ### v1.7.7 — Suggest Picker Race: Selections Vanish (Phase 8)
 
 Fixes a general defect in this plugin's shared picker infrastructure: selecting **anything** in a `StringSuggestModal`/`FileSuggestModal` (a new routine, an existing routine, an exercise from a search list) silently closed the picker and did nothing — no error anywhere. Root-caused against Obsidian's own shipped `app.js`, fetched live from the console, not guessed.
