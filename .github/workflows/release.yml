@@ -1,0 +1,49 @@
+name: Release
+
+# On every push to master: if manifest.json's version has no GitHub release yet, build the
+# plugin and publish one (GitHub creates the tag, no "v" prefix). BRAT installs from it.
+on:
+  push:
+    branches: [master]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check whether this version is already released
+        id: version
+        run: |
+          version=$(node -p "require('./manifest.json').version")
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          if gh release view "$version" > /dev/null 2>&1; then
+            echo "Release $version already exists; nothing to do."
+            echo "exists=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "exists=false" >> "$GITHUB_OUTPUT"
+          fi
+      - uses: actions/setup-node@v4
+        if: steps.version.outputs.exists == 'false'
+        with:
+          node-version: 22
+          cache: npm
+      - if: steps.version.outputs.exists == 'false'
+        run: npm ci
+      - if: steps.version.outputs.exists == 'false'
+        run: npm run build
+      - name: Publish release
+        if: steps.version.outputs.exists == 'false'
+        run: |
+          files="main.js manifest.json"
+          [ -f styles.css ] && files="$files styles.css"
+          gh release create "${{ steps.version.outputs.version }}" \
+            --target "$GITHUB_SHA" \
+            --title "${{ steps.version.outputs.version }}" \
+            --generate-notes \
+            $files
