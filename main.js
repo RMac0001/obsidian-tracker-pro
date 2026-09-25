@@ -19511,6 +19511,43 @@ function calcProteinPct(series, macroProp, calProp) {
         return "0%";
     return ((macroMean * 4) / calMean * 100).toFixed(1) + "%";
 }
+function calcMeanDiff(series, propA, propB) {
+    var _a, _b;
+    const sA = getSeriesByName(series, propA);
+    const sB = getSeriesByName(series, propB);
+    if (!sA || !sB)
+        return "?";
+    const daysA = new Map();
+    for (const pt of sA.points) {
+        if (pt.value === null)
+            continue;
+        const day = toDateOnly(pt.date);
+        daysA.set(day, ((_a = daysA.get(day)) !== null && _a !== void 0 ? _a : 0) + pt.value);
+    }
+    const daysB = new Map();
+    for (const pt of sB.points) {
+        if (pt.value === null)
+            continue;
+        const day = toDateOnly(pt.date);
+        daysB.set(day, ((_b = daysB.get(day)) !== null && _b !== void 0 ? _b : 0) + pt.value);
+    }
+    let sum = 0, pairedDays = 0;
+    for (const [day, valA] of daysA) {
+        const valB = daysB.get(day);
+        if (valB === undefined)
+            continue;
+        sum += valA - valB;
+        pairedDays++;
+    }
+    if (pairedDays === 0)
+        return "N/A";
+    const mean = Math.round(sum / pairedDays);
+    if (mean > 0)
+        return `+${mean}`;
+    if (mean < 0)
+        return `${mean}`;
+    return "0";
+}
 // ─── Date Diff / HM Helpers ──────────────────────────────────────────────────
 function calcMeanDateDiff(entries, field1, field2) {
     let total = 0;
@@ -19732,6 +19769,8 @@ function renderSummaryChart(container, series, config, entries = [], app, settin
             return calcFatPct(series, a1, a2);
         if (fn === "proteinPct")
             return calcProteinPct(series, a1, a2);
+        if (fn === "meanDiff")
+            return calcMeanDiff(series, a1, a2);
         return `{{${fn}(${a1}, ${a2})}}`;
     };
     const rendered = applyTemplate(template, vars, twoArgResolver, latestNum, series)

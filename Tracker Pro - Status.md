@@ -4,6 +4,18 @@
 
 ---
 
+### v1.7.10 — `{{meanDiff(propA, propB)}}` Summary Template Function
+
+Adds a new two-argument `summary` template function for paired-day averages, primarily for food logs: `{{meanDiff(cal_total, calories_burned)}}` gives the average daily net calories (surplus/deficit) instead of the misleading difference of two separate averages.
+
+**Behavior:** for each calendar day where **both** named properties have a value, computes `propA − propB` for that day (summing same-day duplicate points first), then averages those daily differences across only the paired days — days with just one of the two values are skipped entirely, not treated as zero. Returns `"?"` if either property isn't in the block's `properties` list (matching the existing `mean(prop)` convention), and `"N/A"` if no day has both values. Result is rounded to a whole number, prefixed with `+` when positive, a plain `-` when negative, and normalized to `"0"` (no stray `-0`) when it rounds to zero.
+
+**Implementation:** `calcMeanDiff` in `src/charts/summaryChart.ts`, next to the existing macro-percentage helpers, reusing `getSeriesByName` and the existing `toDateOnly` local-date key (avoiding `toISOString()` UTC off-by-one). Wired into `twoArgResolver` alongside `carbPct`/`fatPct`/`proteinPct`.
+
+**Files changed:** `src/charts/summaryChart.ts`, `Documentation.md`.
+
+---
+
 ### v1.7.8 — Automate Release Publishing on Tag Push
 
 Every prior version (through v1.7.7) shipped by bumping `manifest.json`/`package.json` and merging to `master` — but the actual GitHub Release (tag + published release object) had to be created by hand afterward, same as it always had been for this repo. `.github/workflows/releases.yml` only triggered on `release: types: [published]`, meaning it could attach `main.js`/`manifest.json`/`styles.css` to a release that already existed, but couldn't create one itself.

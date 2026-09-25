@@ -959,6 +959,7 @@ These operate on a single named property. The property must be listed in `proper
 | `{{carbPct(macroProp, calProp)}}` | Carb calories as % of total (macro × 4 / cal mean × 100) |
 | `{{fatPct(macroProp, calProp)}}` | Fat calories as % of total (macro × 9 / cal mean × 100) |
 | `{{proteinPct(macroProp, calProp)}}` | Protein calories as % of total (macro × 4 / cal mean × 100) |
+| `{{meanDiff(propA, propB)}}` | Average of daily (propA − propB), counting only days where both properties have a value. Whole number; "+" when propA is higher, "-" when lower. Both properties must be listed in `properties`. Returns "N/A" if no day has both values. |
 | `{{tdee(calProp)}}` | Estimated TDEE (kcal) derived from calorie intake and weight change over the display range. Uses `weight` from the Achievements daily-notes folder by default — override with a `tdee:` block (see below). Returns `N/A` when fewer than two weight readings are available. |
 | `{{deficit(calProp)}}` | Estimated daily calorie deficit (positive = deficit, negative = surplus). Calculated as `tdee − avgCal`. Returns `N/A` when TDEE data is unavailable. |
 | `{{tdeeCalories(calProp)}}` | Average daily intake as a whole number (`tdee − deficit`, which algebraically equals `avgCal`). Shares the same TDEE cache and `N/A` fallback as `{{tdee()}}` and `{{deficit()}}`. Useful for grouping the intake figure alongside the TDEE/deficit stats without a separate decimal-formatted `{{mean()}}` call. |
@@ -1067,6 +1068,32 @@ title: Daily Averages
 summary:
   template: |
     Avg calories: {{mean(cal_total)}}
+    Avg carbs %: {{carbPct(carbs_total, cal_total)}}
+    Avg fat %: {{fatPct(fat_total, cal_total)}}
+    Avg protein %: {{proteinPct(protein_total, cal_total)}}
+```
+
+```yaml
+# Paired-day average difference (e.g. net calories)
+type: summary
+folder: Data/Food Logs
+dateProperty: creation_date
+dateRange: last-28-days
+properties:
+  - cal_total
+  - calories_burned
+  - carbs_total
+  - fat_total
+  - protein_total
+title: Daily Averages
+summary:
+  template: |
+    Avg calories: {{mean(cal_total)}}
+    Avg calories burned: {{mean(calories_burned)}}
+    Avg net calories: {{meanDiff(cal_total, calories_burned)}}
+    Avg carbs (g): {{mean(carbs_total)}}
+    Avg fat (g): {{mean(fat_total)}}
+    Avg protein (g): {{mean(protein_total)}}
     Avg carbs %: {{carbPct(carbs_total, cal_total)}}
     Avg fat %: {{fatPct(fat_total, cal_total)}}
     Avg protein %: {{proteinPct(protein_total, cal_total)}}

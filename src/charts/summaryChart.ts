@@ -225,6 +225,39 @@ function calcProteinPct(series: SeriesData[], macroProp: string, calProp: string
   return ((macroMean * 4) / calMean * 100).toFixed(1) + "%";
 }
 
+function calcMeanDiff(series: SeriesData[], propA: string, propB: string): string {
+  const sA = getSeriesByName(series, propA);
+  const sB = getSeriesByName(series, propB);
+  if (!sA || !sB) return "?";
+
+  const daysA = new Map<number, number>();
+  for (const pt of sA.points) {
+    if (pt.value === null) continue;
+    const day = toDateOnly(pt.date);
+    daysA.set(day, (daysA.get(day) ?? 0) + pt.value);
+  }
+  const daysB = new Map<number, number>();
+  for (const pt of sB.points) {
+    if (pt.value === null) continue;
+    const day = toDateOnly(pt.date);
+    daysB.set(day, (daysB.get(day) ?? 0) + pt.value);
+  }
+
+  let sum = 0, pairedDays = 0;
+  for (const [day, valA] of daysA) {
+    const valB = daysB.get(day);
+    if (valB === undefined) continue;
+    sum += valA - valB;
+    pairedDays++;
+  }
+  if (pairedDays === 0) return "N/A";
+
+  const mean = Math.round(sum / pairedDays);
+  if (mean > 0) return `+${mean}`;
+  if (mean < 0) return `${mean}`;
+  return "0";
+}
+
 // ─── Date Diff / HM Helpers ──────────────────────────────────────────────────
 
 function calcMeanDateDiff(entries: RawEntry[], field1: string, field2: string): string {
@@ -473,6 +506,7 @@ export function renderSummaryChart(
     if (fn === "carbPct")      return calcCarbPct(series, a1, a2);
     if (fn === "fatPct")       return calcFatPct(series, a1, a2);
     if (fn === "proteinPct")   return calcProteinPct(series, a1, a2);
+    if (fn === "meanDiff")     return calcMeanDiff(series, a1, a2);
     return `{{${fn}(${a1}, ${a2})}}`;
   };
   const rendered = applyTemplate(template, vars, twoArgResolver, latestNum, series)
