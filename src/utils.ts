@@ -65,6 +65,34 @@ export function formatSecondsAsTime(totalSeconds: number): string {
     return `${m}:${String(s).padStart(2, "0")}`;
 }
 
+// ─── Named Colours ──────────────────────────────────────────────────────────────
+
+const NAMED_COLORS: Record<string, string> = {
+    red:    "#f76c6c",
+    blue:   "#4f86f7",
+    green:  "#43c59e",
+    yellow: "#f7c948",
+    orange: "#e67e22",
+    purple: "#9b59b6",
+    black:  "#333333",
+};
+
+const HEX6_RE = /^#[0-9a-fA-F]{6}$/;
+const HEX3_RE = /^#([0-9a-fA-F])([0-9a-fA-F])([0-9a-fA-F])$/;
+
+export function resolveColor(input: string): string | null {
+    const trimmed = input.trim();
+    if (HEX6_RE.test(trimmed)) return trimmed;
+    const hex3Match = trimmed.match(HEX3_RE);
+    if (hex3Match) {
+        const [, r, g, b] = hex3Match;
+        return `#${r}${r}${g}${g}${b}${b}`;
+    }
+    const named = NAMED_COLORS[trimmed.toLowerCase()];
+    if (named) return named;
+    return null;
+}
+
 // ─── Slugify ────────────────────────────────────────────────────────────────────
 
 export function slugify(name: string): string {

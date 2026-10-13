@@ -1,5 +1,5 @@
 import { Chart, ChartConfiguration } from "chart.js/auto";
-import { SeriesData, TrackerConfig } from "../types";
+import { AxisConfig, SeriesData, TrackerConfig } from "../types";
 import { formatDateLabel } from "../aggregator";
 import { parseTimeToSeconds, formatSecondsAsTime } from "../utils";
 
@@ -43,7 +43,7 @@ function computeLineYMin(
   return dataMin - range * 0.10;
 }
 
-// ─── Line Chart ───────────────────────────────────────────────────────────────
+// ─── Axis Resolution (shared by line + bar) ───────────────────────────────────
 
 // Resolve a yAxis bound that may be a plain number or a mm:ss string
 function resolveAxisBound(raw: unknown, isTimeFmt: boolean): number | undefined {
@@ -52,33 +52,169 @@ function resolveAxisBound(raw: unknown, isTimeFmt: boolean): number | undefined 
   return undefined;
 }
 
-export function renderLineChart(
-  canvas: HTMLCanvasElement,
-  series: SeriesData[],
-  config: TrackerConfig
-): Chart {
-  const labels = buildLabels(series, config);
-  const isTimeFmt = series.some(s => s.isTimeFormat);
-  const resolvedMin = resolveAxisBound((config.yAxis as any)?.min, isTimeFmt);
-  const resolvedMax = resolveAxisBound((config.yAxis as any)?.max, isTimeFmt);
-  const yMin = computeLineYMin(series, resolvedMin);
-  const unit = config.yAxis?.unit ?? "";
+interface AxisInfo {
+  id: "y" | "y2";
+  series: SeriesData[];
+  isTimeFmt: boolean;
+  min: number | undefined;
+  max: number | undefined;
+  unit: string;
+  label?: string;
+  singleColor?: string;
+}
 
-  const chartConfig: ChartConfiguration = {
-    type: "line",
-    data: {
-      labels,
-      datasets: series.map((s) => ({
+// Splits series across the primary (y) and secondary (y2) axes and resolves
+// each axis's own isTimeFmt/min/max/unit/label independently. With no
+// y2Axis config, this returns a single "y" axis built exactly as before.
+function buildAxes(
+  series: SeriesData[],
+  config: TrackerConfig,
+  kind: "line" | "bar"
+): AxisInfo[] {
+  const y2Conf = config.y2Axis;
+  const y2Names = new Set(y2Conf?.properties ?? []);
+
+  const primarySeries = series.filter((s) => !y2Names.has(s.name));
+  const secondarySeries = series.filter((s) => y2Names.has(s.name));
+
+  const buildOne = (
+    id: "y" | "y2",
+    axisSeries: SeriesData[],
+    axisConf: AxisConfig | undefined
+  ): AxisInfo => {
+    const isTimeFmt = axisSeries.some((s) => s.isTimeFormat);
+    const resolvedMin = resolveAxisBound((axisConf as any)?.min, isTimeFmt);
+    const resolvedMax = resolveAxisBound((axisConf as any)?.max, isTimeFmt);
+    const min = kind === "line" ? computeLineYMin(axisSeries, resolvedMin) : resolvedMin;
+
+    return {
+      id,
+      series: axisSeries,
+      isTimeFmt,
+      min,
+      max: resolvedMax,
+      unit: axisConf?.unit ?? "",
+      label: axisConf?.label,
+      // Only tint an axis when y2Axis is present and that axis holds exactly one series.
+      singleColor: y2Conf && axisSeries.length === 1 ? axisSeries[0].color : undefined,
+    };
+  };
+
+  const axes: AxisInfo[] = [buildOne("y", primarySeries, config.yAxis)];
+  if (y2Conf) axes.push(buildOne("y2", secondarySeries, y2Conf));
+  return axes;
+}
+
+function buildScaleOptions(info: AxisInfo, isLeft: boolean, kind: "line" | "bar"): Record<string, unknown> {
+  const ticks: Record<string, unknown> = {};
+  if (info.isTimeFmt) ticks.callback = (val: unknown) => formatSecondsAsTime(val as number);
+  if (info.singleColor) ticks.color = info.singleColor;
+
+  const title: Record<string, unknown> = {
+    display: !!info.label,
+    text: info.label ?? "",
+  };
+  if (info.singleColor) title.color = info.singleColor;
+
+  const scale: Record<string, unknown> = {
+    position: isLeft ? "left" : "right",
+    title,
+    min: info.min,
+    max: info.max,
+    ticks,
+    grid: { drawOnChartArea: isLeft },
+  };
+  if (kind === "bar") scale.stacked = false;
+  return scale;
+}
+
+// ─── Dataset Builders (shared by line + bar, including combo override) ───────
+
+function buildDatasets(
+  series: SeriesData[],
+  config: TrackerConfig,
+  kind: "line" | "bar",
+  labelsLen: number
+): Record<string, unknown>[] {
+  const y2Conf = config.y2Axis;
+  const y2Names = new Set(y2Conf?.properties ?? []);
+
+  const plan = series.map((s) => {
+    const onY2 = y2Names.has(s.name);
+    const axisId: "y" | "y2" = onY2 ? "y2" : "y";
+    const datasetKind: "line" | "bar" = onY2 && y2Conf?.style ? y2Conf.style : kind;
+    return { s, axisId, datasetKind, overrideType: datasetKind !== kind };
+  });
+
+  // A combo chart mixes line and bar datasets, so Chart.js's draw order (lower
+  // `order` drawn last, i.e. on top) must be set explicitly on every dataset —
+  // otherwise an un-overridden dataset defaults to order 0 and would wrongly
+  // paint over a line dataset that was given an explicit, lower order.
+  const comboActive = plan.some((p) => p.overrideType);
+
+  return plan.map(({ s, axisId, datasetKind, overrideType }) => {
+    if (datasetKind === "line") {
+      return {
+        ...(overrideType ? { type: "line" as const } : {}),
+        ...(comboActive ? { order: 1 } : {}),
         label: s.name,
         data: s.points.map((p) => p.value),
         borderColor: s.color,
         backgroundColor: s.color + "22",
         tension: 0.3,
         fill: false,
-        pointRadius: labels.length > 60 ? 0 : 3,
+        pointRadius: labelsLen > 60 ? 0 : 3,
         spanGaps: config.missingValue === "skip",
-      })),
+        yAxisID: axisId,
+      };
+    }
+
+    return {
+      ...(overrideType ? { type: "bar" as const } : {}),
+      ...(comboActive ? { order: 2 } : {}),
+      label: s.name,
+      data: s.points.map((p) => p.value),
+      backgroundColor: s.color + "cc",
+      borderColor: s.color,
+      borderWidth: 1,
+      borderRadius: 3,
+      yAxisID: axisId,
+    };
+  });
+}
+
+// Looks up the right axis's isTimeFmt/unit for the hovered dataset in a tooltip callback.
+function axisInfoFor(axes: AxisInfo[], yAxisID: unknown): AxisInfo | undefined {
+  const id = (yAxisID as "y" | "y2" | undefined) ?? "y";
+  return axes.find((a) => a.id === id);
+}
+
+// ─── Line Chart ───────────────────────────────────────────────────────────────
+
+export function renderLineChart(
+  canvas: HTMLCanvasElement,
+  series: SeriesData[],
+  config: TrackerConfig
+): Chart {
+  const labels = buildLabels(series, config);
+  const axes = buildAxes(series, config, "line");
+  const datasets = buildDatasets(series, config, "line", labels.length);
+
+  const scales: Record<string, unknown> = {
+    x: {
+      title: {
+        display: !!config.xAxis?.label,
+        text: config.xAxis?.label ?? "",
+      },
     },
+    y: buildScaleOptions(axes.find((a) => a.id === "y")!, true, "line"),
+  };
+  const y2Info = axes.find((a) => a.id === "y2");
+  if (y2Info) scales.y2 = buildScaleOptions(y2Info, false, "line");
+
+  const chartConfig: ChartConfiguration = {
+    type: "line",
+    data: { labels, datasets: datasets as any },
     options: {
       responsive: true,
       animation: false,
@@ -96,32 +232,15 @@ export function renderLineChart(
         tooltip: {
           callbacks: {
             label: (ctx) => {
+              const info = axisInfoFor(axes, ctx.dataset.yAxisID);
               const val = ctx.parsed.y;
-              const formatted = isTimeFmt ? formatSecondsAsTime(val) : val?.toFixed(2);
-              return `${ctx.dataset.label}: ${formatted}${unit}`;
+              const formatted = info?.isTimeFmt ? formatSecondsAsTime(val) : val?.toFixed(2);
+              return `${ctx.dataset.label}: ${formatted}${info?.unit ?? ""}`;
             },
           },
         },
       },
-      scales: {
-        x: {
-          title: {
-            display: !!config.xAxis?.label,
-            text: config.xAxis?.label ?? "",
-          },
-        },
-        y: {
-          title: {
-            display: !!config.yAxis?.label,
-            text: config.yAxis?.label ?? "",
-          },
-          min: yMin,
-          max: resolvedMax,
-          ticks: isTimeFmt
-            ? { callback: (val) => formatSecondsAsTime(val as number) }
-            : {},
-        },
-      },
+      scales: scales as any,
     },
   };
 
@@ -136,24 +255,22 @@ export function renderBarChart(
   config: TrackerConfig
 ): Chart {
   const labels = buildLabels(series, config);
-  const isTimeFmt = series.some(s => s.isTimeFormat);
-  const resolvedMin = resolveAxisBound((config.yAxis as any)?.min, isTimeFmt);
-  const resolvedMax = resolveAxisBound((config.yAxis as any)?.max, isTimeFmt);
-  const unit = config.yAxis?.unit ?? "";
+  const axes = buildAxes(series, config, "bar");
+  const datasets = buildDatasets(series, config, "bar", labels.length);
+
+  const scales: Record<string, unknown> = {
+    x: {
+      title: { display: !!config.xAxis?.label, text: config.xAxis?.label ?? "" },
+      stacked: false,
+    },
+    y: buildScaleOptions(axes.find((a) => a.id === "y")!, true, "bar"),
+  };
+  const y2Info = axes.find((a) => a.id === "y2");
+  if (y2Info) scales.y2 = buildScaleOptions(y2Info, false, "bar");
 
   const chartConfig: ChartConfiguration = {
     type: "bar",
-    data: {
-      labels,
-      datasets: series.map((s) => ({
-        label: s.name,
-        data: s.points.map((p) => p.value),
-        backgroundColor: s.color + "cc",
-        borderColor: s.color,
-        borderWidth: 1,
-        borderRadius: 3,
-      })),
-    },
+    data: { labels, datasets: datasets as any },
     options: {
       responsive: true,
       animation: false,
@@ -168,28 +285,15 @@ export function renderBarChart(
         tooltip: {
           callbacks: {
             label: (ctx) => {
+              const info = axisInfoFor(axes, ctx.dataset.yAxisID);
               const val = ctx.parsed.y;
-              const formatted = isTimeFmt ? formatSecondsAsTime(val) : val?.toFixed(2);
-              return `${ctx.dataset.label}: ${formatted}${unit}`;
+              const formatted = info?.isTimeFmt ? formatSecondsAsTime(val) : val?.toFixed(2);
+              return `${ctx.dataset.label}: ${formatted}${info?.unit ?? ""}`;
             },
           },
         },
       },
-      scales: {
-        x: {
-          title: { display: !!config.xAxis?.label, text: config.xAxis?.label ?? "" },
-          stacked: false,
-        },
-        y: {
-          title: { display: !!config.yAxis?.label, text: config.yAxis?.label ?? "" },
-          min: resolvedMin,
-          max: resolvedMax,
-          stacked: false,
-          ticks: isTimeFmt
-            ? { callback: (val) => formatSecondsAsTime(val as number) }
-            : {},
-        },
-      },
+      scales: scales as any,
     },
   };
 

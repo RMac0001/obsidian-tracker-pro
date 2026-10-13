@@ -1,5 +1,6 @@
 import * as yaml from "js-yaml";
 import { TrackerConfig, ChartType, AggregateType, ParseError } from "./types";
+import { resolveColor } from "./utils";
 
 // ─── Valid Values ─────────────────────────────────────────────────────────────
 
@@ -137,6 +138,47 @@ function validateConfig(
     }
   }
 
+  // y2Axis (secondary y-axis for line/bar charts)
+  if (raw.y2Axis !== undefined) {
+    const y2 = raw.y2Axis as Record<string, unknown>;
+
+    if (raw.type !== "line" && raw.type !== "bar") {
+      errors.push({
+        message: `y2Axis is only supported on "line" and "bar" charts (got type "${raw.type}")`,
+      });
+    }
+
+    if (!Array.isArray(y2?.properties) || y2.properties.length === 0) {
+      errors.push({
+        message: "y2Axis.properties is required and must be a non-empty list",
+      });
+    } else {
+      const mainProps = Array.isArray(raw.properties) ? (raw.properties as string[]) : [];
+      const y2Props = y2.properties as string[];
+
+      for (const p of y2Props) {
+        if (!mainProps.includes(p)) {
+          errors.push({
+            message: `y2Axis.properties entry "${p}" must also appear in properties`,
+          });
+        }
+      }
+
+      const uniqueY2 = new Set(y2Props);
+      if (mainProps.length > 0 && mainProps.every((p) => uniqueY2.has(p))) {
+        errors.push({
+          message: "y2Axis.properties cannot include every property — at least one must remain on the left axis",
+        });
+      }
+    }
+
+    if (y2?.style !== undefined && y2.style !== "line" && y2.style !== "bar") {
+      errors.push({
+        message: `y2Axis.style must be "line" or "bar" (got "${y2.style}")`,
+      });
+    }
+  }
+
   const config = raw as unknown as TrackerConfig;
 
   if (raw.showSource !== undefined) config.showSource = Boolean(raw.showSource);
@@ -150,6 +192,33 @@ function validateConfig(
   if (!config.missingValue) config.missingValue = "skip";
   if (!config.colorScheme) config.colorScheme = "green";
   if (!config.height) config.height = 300;
+
+  // Resolve named colours to hex (colors[] and thresholds[].color)
+  const unknownColorError = (name: string) => ({
+    message: `Unknown colour "${name}". Use a hex code or one of: red, blue, green, yellow, orange, purple, black.`,
+  });
+
+  if (Array.isArray(config.colors)) {
+    config.colors = config.colors.map((c) => {
+      const resolved = resolveColor(c);
+      if (resolved === null) {
+        errors.push(unknownColorError(c));
+        return c;
+      }
+      return resolved;
+    });
+  }
+
+  if (Array.isArray(config.thresholds)) {
+    config.thresholds = config.thresholds.map((t) => {
+      const resolved = resolveColor(t.color);
+      if (resolved === null) {
+        errors.push(unknownColorError(t.color));
+        return t;
+      }
+      return { ...t, color: resolved };
+    });
+  }
 
   return { config, errors };
 }

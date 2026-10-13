@@ -4,6 +4,24 @@
 
 ---
 
+### v1.7.11 — Secondary Y-Axis (`y2Axis`) for Line & Bar Charts + Named Colours
+
+Adds an optional `y2Axis` block to `line` and `bar` charts so selected properties plot against a second y-axis on the right, with its own bounds, label, unit and formatting — e.g. walking pace (`mm:ss`, left axis) alongside average heart rate (bpm, right axis) on one chart, instead of one clipping the other's scale.
+
+**Config:** a property moves to the right axis by being listed in both `properties` and `y2Axis.properties`. `y2Axis.label`/`min`/`max`/`unit` work like `yAxis`'s own fields (mm:ss bounds supported when that axis holds time-format series); `y2Axis.style: line | bar` renders that axis's series in the other style, enabling combo charts (e.g. pace bars + an HR line on top). `colors[i]` still maps to `properties[i]` regardless of axis.
+
+**Behavior:** each axis resolves its own series, `mm:ss` time-format detection, bounds, and (on line charts) smart auto-minimum completely independently — a time-format property on one axis no longer forces `mm:ss` formatting onto the other. The right axis sits on the chart's right edge with no grid lines of its own (`grid.drawOnChartArea: false`, left axis keeps the grid). When `y2Axis` is present and an axis holds exactly one series, that axis's ticks and title are tinted with the series' colour. Tooltips pick formatting and unit by the hovered dataset's axis. In a combo chart, line datasets are always drawn above bar datasets regardless of which one is the chart's "native" type. With no `y2Axis`, every chart renders exactly as before — no second scale is emitted and no dataset carries an explicit `type`/`order` override.
+
+**Validation (parser.ts):** `y2Axis` on a chart type other than `line`/`bar`, missing/empty/non-list `y2Axis.properties`, a `y2Axis.properties` entry absent from `properties`, every property assigned to `y2Axis` (none left on the left axis), and an invalid `y2Axis.style` each produce their own named error.
+
+**Named colours:** `colors` and `thresholds[].color` now also accept seven case-insensitive names (`red`, `blue`, `green`, `yellow`, `orange`, `purple`, `black`), resolved to hex once in the parser — renderers are unchanged since they always receive 6-digit hex (3-digit hex like `#f00` is also expanded). An unrecognised name is a config error naming the offending value.
+
+**Implementation:** `Y2AxisConfig` (`src/types.ts`); five `y2Axis` validation checks plus colour resolution (`src/parser.ts`); a shared `buildAxes`/`buildScaleOptions`/`buildDatasets` helper set in `src/charts/lineBarChart.ts`, used by both `renderLineChart` and `renderBarChart`, reusing the existing `resolveAxisBound`/`computeLineYMin`/`parseTimeToSeconds`/`formatSecondsAsTime`; `resolveColor`/`NAMED_COLORS` in `src/utils.ts`.
+
+**Files changed:** `src/types.ts`, `src/parser.ts`, `src/charts/lineBarChart.ts`, `src/utils.ts`, `Documentation.md`.
+
+---
+
 ### v1.7.10 — `{{meanDiff(propA, propB)}}` Summary Template Function
 
 Adds a new two-argument `summary` template function for paired-day averages, primarily for food logs: `{{meanDiff(cal_total, calories_burned)}}` gives the average daily net calories (surplus/deficit) instead of the misleading difference of two separate averages.
