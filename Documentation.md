@@ -550,9 +550,9 @@ height: 350          # chart height in pixels (default: 300)
 width: 100%          # CSS width (default: 100%)
 showLegend: true     # show/hide legend (default: true)
 
-colors:              # hex colors, one per series
+colors:              # hex colors, or named colors, one per series
   - "#4f86f7"
-  - "#f76c6c"
+  - red
 
 colorScheme: green   # for heatmap and calendar: green | blue | red | orange | purple
 
@@ -564,6 +564,22 @@ yAxis:
   max: 10
   unit: " kg"        # appended to tooltip values
 ```
+
+**Named colors**
+
+Anywhere a hex color is accepted (`colors`, `thresholds[].color`), you may use one of these seven names instead, case-insensitively:
+
+| Name | Hex |
+| --- | --- |
+| `red` | `#f76c6c` |
+| `blue` | `#4f86f7` |
+| `green` | `#43c59e` |
+| `yellow` | `#f7c948` |
+| `orange` | `#e67e22` |
+| `purple` | `#9b59b6` |
+| `black` | `#333333` |
+
+3-digit hex codes (e.g. `#f00`) are also accepted and expanded to 6 digits. An unrecognized name (e.g. `teal`, `rgb(...)`) is a config error.
 
 ---
 
@@ -616,6 +632,53 @@ Aggregation (weekly, monthly, moving-average) operates on the underlying seconds
 
 Known limitation: multiple notes on the same date have their values summed before aggregation (existing behavior for all properties). For time properties this means two runs on the same day sum their paces rather than average them.
 
+**Secondary y-axis (`y2Axis`)**
+
+Also applies to `bar` charts. Move a property to a second y-axis on the right so it gets its own bounds, label, unit and formatting — useful when two properties have very different scales or units, like walking pace (`mm:ss`) and average heart rate (bpm).
+
+A property moves to the right axis by being listed in both `properties` and `y2Axis.properties`; everything else stays on the left `yAxis`. `colors[i]` still maps to `properties[i]` regardless of which axis the property ends up on.
+
+```yaml
+type: line
+folder: Data/Workouts
+dateRange: this-year
+properties:
+  - walk_pace
+  - walk_avg_hr
+title: Walking Pace vs Heart Rate
+colors:
+  - "#4f86f7"
+  - "#f76c6c"
+yAxis:
+  label: Pace
+  min: "11:00"
+  max: "16:00"
+  unit: " /km"
+y2Axis:
+  properties:
+    - walk_avg_hr
+  label: Avg HR
+  min: 90
+  max: 160
+  unit: " bpm"
+showLegend: true
+```
+
+| Field | Required | Description |
+| --- | --- | --- |
+| `y2Axis.properties` | Yes | List of property names to plot on the right axis. Each must also appear in `properties`. |
+| `y2Axis.label` | No | Right-axis title text. |
+| `y2Axis.min` / `y2Axis.max` | No | Right-axis bounds. Plain numbers, or `mm:ss` strings when that axis holds time-format series. |
+| `y2Axis.unit` | No | Suffix appended to tooltip values for right-axis series. |
+| `y2Axis.style` | No | `line` or `bar`. Renders right-axis series in that style, enabling combo charts (e.g. pace bars + HR line). Defaults to the chart's own `type`. |
+
+Notes:
+
+- Each axis resolves its own `mm:ss` time-format detection, bounds, and (on line charts) smart auto-minimum independently — a time-format property on one axis doesn't affect numeric formatting on the other.
+- When an axis holds exactly one series, its ticks and title are tinted with that series' color.
+- `showLegend: true` is recommended for dual-axis charts so it's clear which series belongs to which axis.
+- Axis options must be nested under `yAxis:` / `y2Axis:` (e.g. `unit:` inside the block) — a top-level dotted key such as `yAxis.unit:` is not read.
+
 ---
 
 ### `bar`
@@ -642,7 +705,7 @@ showLegend: false
 ```
 
 **Bar-specific options:** identical to `line`. Multiple `properties` entries
-render as grouped bars side by side.
+render as grouped bars side by side. Supports `y2Axis` the same way `line` does (see the `line` section above), including `y2Axis.style: line` for a combo chart (e.g. bars on the left axis with a line drawn on top for the right-axis property).
 
 ---
 
@@ -2039,7 +2102,7 @@ All available parameters in one table.
 | `subtitle`         | string                     | —                                   | line, bar, pie, scatter, radar   | Subtitle below the title.                                              |
 | `height`           | number                     | 300                                 | all except summary, table        | Chart height in pixels.                                                |
 | `width`            | string                     | —                                   | all                              | CSS width (e.g. `400px`, `100%`).                                      |
-| `colors`           | list                       | built-in palette                    | all                              | Per-series hex colours.                                                |
+| `colors`           | list                       | built-in palette                    | all                              | Per-series hex colours, or named colours (see Visuals above).         |
 | `colorScheme`      | string                     | `green`                             | heatmap, calendar                | Named colour palette.                                                  |
 | `showLegend`       | boolean                    | `true`                              | line, bar, pie, donut, radar     | Show / hide legend.                                                    |
 | `xAxis.label`      | string                     | —                                   | line, bar, scatter               | X axis label text.                                                     |
@@ -2047,10 +2110,15 @@ All available parameters in one table.
 | `yAxis.label`      | string                     | —                                   | line, bar, scatter, radar        | Y axis label text.                                                     |
 | `yAxis.min/max`    | number                     | —                                   | line, bar, scatter, radar        | Y axis bounds.                                                         |
 | `yAxis.unit`       | string                     | —                                   | line, bar                        | Suffix added to tooltip values.                                        |
+| `y2Axis.properties`| list                       | —                                   | line, bar                        | Properties to plot on the secondary (right) y-axis. Each must also appear in `properties`. |
+| `y2Axis.label`     | string                     | —                                   | line, bar                        | Secondary y-axis label text.                                           |
+| `y2Axis.min/max`   | number / `mm:ss`           | —                                   | line, bar                        | Secondary y-axis bounds.                                               |
+| `y2Axis.unit`      | string                     | —                                   | line, bar                        | Suffix added to tooltip values for secondary-axis series.              |
+| `y2Axis.style`     | `line` / `bar`             | chart's own `type`                  | line, bar                        | Render secondary-axis series in this style, enabling combo charts.     |
 | `labels`           | list                       | property names                      | radar                            | Custom axis labels.                                                    |
 | `min`              | number                     | —                                   | gauge                            | **Required for gauge.** Minimum value.                                 |
 | `max`              | number                     | —                                   | gauge                            | **Required for gauge.** Maximum value.                                 |
-| `thresholds`       | list                       | red/yellow/green                    | gauge                            | Colour zones: `value` + `color` pairs.                                 |
+| `thresholds`       | list                       | red/yellow/green                    | gauge                            | Colour zones: `value` + `color` pairs. `color` accepts hex or named colours. |
 | `summary.template` | string                     | —                                   | summary                          | Multi-line template with `{{variable()}}` placeholders.                |
 | `groupBy`          | string                     | —                                   | table                            | **Required for table.** Frontmatter key to group rows by.              |
 | `groupLabel`       | string                     | groupBy key                         | table                            | Override header label for the group column.                            |

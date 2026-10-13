@@ -37,6 +37,12 @@ export interface AxisConfig {
   unit?: string;
 }
 
+// Secondary y-axis for line/bar charts — see AxisConfig for the shared fields.
+export interface Y2AxisConfig extends AxisConfig {
+  properties: string[];
+  style?: "line" | "bar";
+}
+
 // ─── Candlestick Property Mapping ─────────────────────────────────────────────
 
 export interface CandlestickProperties {
@@ -83,6 +89,7 @@ export interface TrackerConfig {
   // Axis options (line / bar / scatter)
   xAxis?: AxisConfig;
   yAxis?: AxisConfig;
+  y2Axis?: Y2AxisConfig;         // secondary y-axis (line / bar only)
 
   // Heatmap specific
   colorScheme?: "green" | "blue" | "red" | "orange" | "purple";

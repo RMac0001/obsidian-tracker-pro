@@ -2831,6 +2831,157 @@ var loader = {
 };
 var load                = loader.load;
 
+/**
+ * Resolves {{DATE:FORMAT}} tokens in a template string using moment.js.
+ * If a date is provided it is used; otherwise the current date is used.
+ * FORMAT is any moment.js format string (e.g. YYYY, MM, YYYY-MM, MMMM).
+ */
+function resolveDateTemplate(template, date) {
+    const m = date
+        ? window.moment(date)
+        : window.moment();
+    return template.replace(/\{\{DATE:([^}]+)\}\}/g, (_, fmt) => m.format(fmt));
+}
+// ─── Unit Normalization ────────────────────────────────────────────────────────
+const UNIT_CANONICAL = {
+    c: "cup",
+    cup: "cup", cups: "cup",
+    oz: "oz", ounce: "oz", ounces: "oz",
+    "fl oz": "fl oz", "fl. oz": "fl oz", "fluid oz": "fl oz",
+    "fluid ounce": "fl oz", "fluid ounces": "fl oz",
+    tbsp: "tbsp", tablespoon: "tbsp", tablespoons: "tbsp",
+    tsp: "tsp", teaspoon: "tsp", teaspoons: "tsp",
+    lb: "lb", lbs: "lb", pound: "lb", pounds: "lb",
+    g: "g", gram: "g", grams: "g",
+    kg: "kg", kilogram: "kg", kilograms: "kg",
+    ml: "ml", milliliter: "ml", milliliters: "ml",
+    l: "l", liter: "l", liters: "l",
+    slice: "slice", slices: "slice",
+    piece: "piece", pieces: "piece",
+    serving: "serving", servings: "serving",
+    pint: "pint", pints: "pint", pt: "pint",
+    quart: "quart", quarts: "quart", qt: "quart",
+};
+function normalizeUnit(unit) {
+    var _a;
+    const key = unit.toLowerCase().trim();
+    return (_a = UNIT_CANONICAL[key]) !== null && _a !== void 0 ? _a : key;
+}
+function fmt2(n) {
+    return parseFloat(n.toFixed(2)).toString();
+}
+// ─── Time Value Helpers ────────────────────────────────────────────────────────
+const TIME_VALUE_RE = /^\d{1,3}:\d{2}$/;
+function parseTimeToSeconds(raw) {
+    const trimmed = raw.trim();
+    if (!TIME_VALUE_RE.test(trimmed))
+        return null;
+    const [minutesStr, secondsStr] = trimmed.split(":");
+    const minutes = parseInt(minutesStr, 10);
+    const seconds = parseInt(secondsStr, 10);
+    if (seconds > 59)
+        return null;
+    return minutes * 60 + seconds;
+}
+function formatSecondsAsTime(totalSeconds) {
+    const rounded = Math.round(totalSeconds);
+    const m = Math.floor(rounded / 60);
+    const s = rounded % 60;
+    return `${m}:${String(s).padStart(2, "0")}`;
+}
+// ─── Named Colours ──────────────────────────────────────────────────────────────
+const NAMED_COLORS = {
+    red: "#f76c6c",
+    blue: "#4f86f7",
+    green: "#43c59e",
+    yellow: "#f7c948",
+    orange: "#e67e22",
+    purple: "#9b59b6",
+    black: "#333333",
+};
+const HEX6_RE = /^#[0-9a-fA-F]{6}$/;
+const HEX3_RE = /^#([0-9a-fA-F])([0-9a-fA-F])([0-9a-fA-F])$/;
+function resolveColor(input) {
+    const trimmed = input.trim();
+    if (HEX6_RE.test(trimmed))
+        return trimmed;
+    const hex3Match = trimmed.match(HEX3_RE);
+    if (hex3Match) {
+        const [, r, g, b] = hex3Match;
+        return `#${r}${r}${g}${g}${b}${b}`;
+    }
+    const named = NAMED_COLORS[trimmed.toLowerCase()];
+    if (named)
+        return named;
+    return null;
+}
+// ─── Slugify ────────────────────────────────────────────────────────────────────
+function slugify(name) {
+    return name
+        .trim()
+        .toLowerCase()
+        .replace(/[^a-z0-9]+/g, "_")
+        .replace(/^_+|_+$/g, "");
+}
+// ─── Section Range ─────────────────────────────────────────────────────────────
+function findSectionRange(lines, header) {
+    const headerRe = new RegExp(`^#{1,6}\\s+${header}\\s*$`, "i");
+    let start = -1;
+    for (let i = 0; i < lines.length; i++) {
+        if (headerRe.test(lines[i])) {
+            start = i + 1;
+            break;
+        }
+    }
+    if (start === -1)
+        return null;
+    let end = lines.length;
+    for (let i = start; i < lines.length; i++) {
+        if (/^#{1,6}\s/.test(lines[i])) {
+            end = i;
+            break;
+        }
+    }
+    return { start, end };
+}
+// ─── Exercise Display Name & Wikilinks ─────────────────────────────────────────
+// Exercise notes are filed under an internal name (e.g. Exercise-Recumbent-Bike)
+// with a human-facing display_name in frontmatter. Everywhere an exercise's
+// identity is shown or keyed, resolve through this helper — never file.basename
+// directly — and resolve wikilinks by their TARGET, never by trusting alias text
+// (an alias can drift out of sync with the note's current display_name).
+function getExerciseDisplayName(app, file) {
+    var _a;
+    const fm = (_a = app.metadataCache.getFileCache(file)) === null || _a === void 0 ? void 0 : _a.frontmatter;
+    const displayName = fm === null || fm === void 0 ? void 0 : fm.display_name;
+    return displayName ? String(displayName) : file.basename;
+}
+function parseWikilink(text) {
+    var _a;
+    const m = text.trim().match(/^\[\[([^\]|]+)(?:\|([^\]]+))?\]\]$/);
+    if (!m)
+        return null;
+    return { target: m[1].trim(), alias: (_a = m[2]) === null || _a === void 0 ? void 0 : _a.trim() };
+}
+function resolveWikilinkTarget(app, target, sourcePath) {
+    return app.metadataCache.getFirstLinkpathDest(target.replace(/\.md$/, ""), sourcePath);
+}
+// ─── Candidate Files ───────────────────────────────────────────────────────────
+function getCandidateFiles(app, settings) {
+    const foodFolder = settings.foodFolder.replace(/\/$/, "");
+    const recipeFolder = settings.recipeFolder.replace(/\/$/, "");
+    const result = [];
+    for (const file of app.vault.getMarkdownFiles()) {
+        if (file.path.startsWith(foodFolder + "/")) {
+            result.push({ file, isFood: true });
+        }
+        else if (file.path.startsWith(recipeFolder + "/")) {
+            result.push({ file, isFood: false });
+        }
+    }
+    return result;
+}
+
 // ─── Valid Values ─────────────────────────────────────────────────────────────
 const VALID_CHART_TYPES = [
     "line", "bar", "pie", "donut", "heatmap",
@@ -2955,6 +3106,42 @@ function validateConfig(raw) {
             errors.push({ message: "Gauge charts require min and max fields" });
         }
     }
+    // y2Axis (secondary y-axis for line/bar charts)
+    if (raw.y2Axis !== undefined) {
+        const y2 = raw.y2Axis;
+        if (raw.type !== "line" && raw.type !== "bar") {
+            errors.push({
+                message: `y2Axis is only supported on "line" and "bar" charts (got type "${raw.type}")`,
+            });
+        }
+        if (!Array.isArray(y2 === null || y2 === void 0 ? void 0 : y2.properties) || y2.properties.length === 0) {
+            errors.push({
+                message: "y2Axis.properties is required and must be a non-empty list",
+            });
+        }
+        else {
+            const mainProps = Array.isArray(raw.properties) ? raw.properties : [];
+            const y2Props = y2.properties;
+            for (const p of y2Props) {
+                if (!mainProps.includes(p)) {
+                    errors.push({
+                        message: `y2Axis.properties entry "${p}" must also appear in properties`,
+                    });
+                }
+            }
+            const uniqueY2 = new Set(y2Props);
+            if (mainProps.length > 0 && mainProps.every((p) => uniqueY2.has(p))) {
+                errors.push({
+                    message: "y2Axis.properties cannot include every property — at least one must remain on the left axis",
+                });
+            }
+        }
+        if ((y2 === null || y2 === void 0 ? void 0 : y2.style) !== undefined && y2.style !== "line" && y2.style !== "bar") {
+            errors.push({
+                message: `y2Axis.style must be "line" or "bar" (got "${y2.style}")`,
+            });
+        }
+    }
     const config = raw;
     if (raw.showSource !== undefined)
         config.showSource = Boolean(raw.showSource);
@@ -2975,6 +3162,30 @@ function validateConfig(raw) {
         config.colorScheme = "green";
     if (!config.height)
         config.height = 300;
+    // Resolve named colours to hex (colors[] and thresholds[].color)
+    const unknownColorError = (name) => ({
+        message: `Unknown colour "${name}". Use a hex code or one of: red, blue, green, yellow, orange, purple, black.`,
+    });
+    if (Array.isArray(config.colors)) {
+        config.colors = config.colors.map((c) => {
+            const resolved = resolveColor(c);
+            if (resolved === null) {
+                errors.push(unknownColorError(c));
+                return c;
+            }
+            return resolved;
+        });
+    }
+    if (Array.isArray(config.thresholds)) {
+        config.thresholds = config.thresholds.map((t) => {
+            const resolved = resolveColor(t.color);
+            if (resolved === null) {
+                errors.push(unknownColorError(t.color));
+                return t;
+            }
+            return { ...t, color: resolved };
+        });
+    }
     return { config, errors };
 }
 // ─── Main Parser ─────────────────────────────────────────────────────────────
@@ -3031,131 +3242,6 @@ function resolveStartEnd(config) {
     const start = new Date();
     start.setDate(end.getDate() - 30);
     return { start, end };
-}
-
-/**
- * Resolves {{DATE:FORMAT}} tokens in a template string using moment.js.
- * If a date is provided it is used; otherwise the current date is used.
- * FORMAT is any moment.js format string (e.g. YYYY, MM, YYYY-MM, MMMM).
- */
-function resolveDateTemplate(template, date) {
-    const m = date
-        ? window.moment(date)
-        : window.moment();
-    return template.replace(/\{\{DATE:([^}]+)\}\}/g, (_, fmt) => m.format(fmt));
-}
-// ─── Unit Normalization ────────────────────────────────────────────────────────
-const UNIT_CANONICAL = {
-    c: "cup",
-    cup: "cup", cups: "cup",
-    oz: "oz", ounce: "oz", ounces: "oz",
-    "fl oz": "fl oz", "fl. oz": "fl oz", "fluid oz": "fl oz",
-    "fluid ounce": "fl oz", "fluid ounces": "fl oz",
-    tbsp: "tbsp", tablespoon: "tbsp", tablespoons: "tbsp",
-    tsp: "tsp", teaspoon: "tsp", teaspoons: "tsp",
-    lb: "lb", lbs: "lb", pound: "lb", pounds: "lb",
-    g: "g", gram: "g", grams: "g",
-    kg: "kg", kilogram: "kg", kilograms: "kg",
-    ml: "ml", milliliter: "ml", milliliters: "ml",
-    l: "l", liter: "l", liters: "l",
-    slice: "slice", slices: "slice",
-    piece: "piece", pieces: "piece",
-    serving: "serving", servings: "serving",
-    pint: "pint", pints: "pint", pt: "pint",
-    quart: "quart", quarts: "quart", qt: "quart",
-};
-function normalizeUnit(unit) {
-    var _a;
-    const key = unit.toLowerCase().trim();
-    return (_a = UNIT_CANONICAL[key]) !== null && _a !== void 0 ? _a : key;
-}
-function fmt2(n) {
-    return parseFloat(n.toFixed(2)).toString();
-}
-// ─── Time Value Helpers ────────────────────────────────────────────────────────
-const TIME_VALUE_RE = /^\d{1,3}:\d{2}$/;
-function parseTimeToSeconds(raw) {
-    const trimmed = raw.trim();
-    if (!TIME_VALUE_RE.test(trimmed))
-        return null;
-    const [minutesStr, secondsStr] = trimmed.split(":");
-    const minutes = parseInt(minutesStr, 10);
-    const seconds = parseInt(secondsStr, 10);
-    if (seconds > 59)
-        return null;
-    return minutes * 60 + seconds;
-}
-function formatSecondsAsTime(totalSeconds) {
-    const rounded = Math.round(totalSeconds);
-    const m = Math.floor(rounded / 60);
-    const s = rounded % 60;
-    return `${m}:${String(s).padStart(2, "0")}`;
-}
-// ─── Slugify ────────────────────────────────────────────────────────────────────
-function slugify(name) {
-    return name
-        .trim()
-        .toLowerCase()
-        .replace(/[^a-z0-9]+/g, "_")
-        .replace(/^_+|_+$/g, "");
-}
-// ─── Section Range ─────────────────────────────────────────────────────────────
-function findSectionRange(lines, header) {
-    const headerRe = new RegExp(`^#{1,6}\\s+${header}\\s*$`, "i");
-    let start = -1;
-    for (let i = 0; i < lines.length; i++) {
-        if (headerRe.test(lines[i])) {
-            start = i + 1;
-            break;
-        }
-    }
-    if (start === -1)
-        return null;
-    let end = lines.length;
-    for (let i = start; i < lines.length; i++) {
-        if (/^#{1,6}\s/.test(lines[i])) {
-            end = i;
-            break;
-        }
-    }
-    return { start, end };
-}
-// ─── Exercise Display Name & Wikilinks ─────────────────────────────────────────
-// Exercise notes are filed under an internal name (e.g. Exercise-Recumbent-Bike)
-// with a human-facing display_name in frontmatter. Everywhere an exercise's
-// identity is shown or keyed, resolve through this helper — never file.basename
-// directly — and resolve wikilinks by their TARGET, never by trusting alias text
-// (an alias can drift out of sync with the note's current display_name).
-function getExerciseDisplayName(app, file) {
-    var _a;
-    const fm = (_a = app.metadataCache.getFileCache(file)) === null || _a === void 0 ? void 0 : _a.frontmatter;
-    const displayName = fm === null || fm === void 0 ? void 0 : fm.display_name;
-    return displayName ? String(displayName) : file.basename;
-}
-function parseWikilink(text) {
-    var _a;
-    const m = text.trim().match(/^\[\[([^\]|]+)(?:\|([^\]]+))?\]\]$/);
-    if (!m)
-        return null;
-    return { target: m[1].trim(), alias: (_a = m[2]) === null || _a === void 0 ? void 0 : _a.trim() };
-}
-function resolveWikilinkTarget(app, target, sourcePath) {
-    return app.metadataCache.getFirstLinkpathDest(target.replace(/\.md$/, ""), sourcePath);
-}
-// ─── Candidate Files ───────────────────────────────────────────────────────────
-function getCandidateFiles(app, settings) {
-    const foodFolder = settings.foodFolder.replace(/\/$/, "");
-    const recipeFolder = settings.recipeFolder.replace(/\/$/, "");
-    const result = [];
-    for (const file of app.vault.getMarkdownFiles()) {
-        if (file.path.startsWith(foodFolder + "/")) {
-            result.push({ file, isFood: true });
-        }
-        else if (file.path.startsWith(recipeFolder + "/")) {
-            result.push({ file, isFood: false });
-        }
-    }
-    return result;
 }
 
 // ─── File Resolution ──────────────────────────────────────────────────────────
@@ -18487,7 +18573,7 @@ function computeLineYMin(series, explicitMin) {
         return dataMin * 0.95; // flat line: add a little space below
     return dataMin - range * 0.10;
 }
-// ─── Line Chart ───────────────────────────────────────────────────────────────
+// ─── Axis Resolution (shared by line + bar) ───────────────────────────────────
 // Resolve a yAxis bound that may be a plain number or a mm:ss string
 function resolveAxisBound(raw, isTimeFmt) {
     var _a;
@@ -18497,133 +18583,209 @@ function resolveAxisBound(raw, isTimeFmt) {
         return (_a = parseTimeToSeconds(raw)) !== null && _a !== void 0 ? _a : undefined;
     return undefined;
 }
-function renderLineChart(canvas, series, config) {
-    var _a, _b, _c, _d, _e, _f, _g, _h, _j, _k, _l, _m, _o;
-    const labels = buildLabels(series, config);
-    const isTimeFmt = series.some(s => s.isTimeFormat);
-    const resolvedMin = resolveAxisBound((_a = config.yAxis) === null || _a === void 0 ? void 0 : _a.min, isTimeFmt);
-    const resolvedMax = resolveAxisBound((_b = config.yAxis) === null || _b === void 0 ? void 0 : _b.max, isTimeFmt);
-    const yMin = computeLineYMin(series, resolvedMin);
-    const unit = (_d = (_c = config.yAxis) === null || _c === void 0 ? void 0 : _c.unit) !== null && _d !== void 0 ? _d : "";
-    const chartConfig = {
-        type: "line",
-        data: {
-            labels,
-            datasets: series.map((s) => ({
+// Splits series across the primary (y) and secondary (y2) axes and resolves
+// each axis's own isTimeFmt/min/max/unit/label independently. With no
+// y2Axis config, this returns a single "y" axis built exactly as before.
+function buildAxes(series, config, kind) {
+    var _a;
+    const y2Conf = config.y2Axis;
+    const y2Names = new Set((_a = y2Conf === null || y2Conf === void 0 ? void 0 : y2Conf.properties) !== null && _a !== void 0 ? _a : []);
+    const primarySeries = series.filter((s) => !y2Names.has(s.name));
+    const secondarySeries = series.filter((s) => y2Names.has(s.name));
+    const buildOne = (id, axisSeries, axisConf) => {
+        var _a;
+        const isTimeFmt = axisSeries.some((s) => s.isTimeFormat);
+        const resolvedMin = resolveAxisBound(axisConf === null || axisConf === void 0 ? void 0 : axisConf.min, isTimeFmt);
+        const resolvedMax = resolveAxisBound(axisConf === null || axisConf === void 0 ? void 0 : axisConf.max, isTimeFmt);
+        const min = kind === "line" ? computeLineYMin(axisSeries, resolvedMin) : resolvedMin;
+        return {
+            id,
+            series: axisSeries,
+            isTimeFmt,
+            min,
+            max: resolvedMax,
+            unit: (_a = axisConf === null || axisConf === void 0 ? void 0 : axisConf.unit) !== null && _a !== void 0 ? _a : "",
+            label: axisConf === null || axisConf === void 0 ? void 0 : axisConf.label,
+            // Only tint an axis when y2Axis is present and that axis holds exactly one series.
+            singleColor: y2Conf && axisSeries.length === 1 ? axisSeries[0].color : undefined,
+        };
+    };
+    const axes = [buildOne("y", primarySeries, config.yAxis)];
+    if (y2Conf)
+        axes.push(buildOne("y2", secondarySeries, y2Conf));
+    return axes;
+}
+function buildScaleOptions(info, isLeft, kind) {
+    var _a;
+    const ticks = {};
+    if (info.isTimeFmt)
+        ticks.callback = (val) => formatSecondsAsTime(val);
+    if (info.singleColor)
+        ticks.color = info.singleColor;
+    const title = {
+        display: !!info.label,
+        text: (_a = info.label) !== null && _a !== void 0 ? _a : "",
+    };
+    if (info.singleColor)
+        title.color = info.singleColor;
+    const scale = {
+        position: isLeft ? "left" : "right",
+        title,
+        min: info.min,
+        max: info.max,
+        ticks,
+        grid: { drawOnChartArea: isLeft },
+    };
+    if (kind === "bar")
+        scale.stacked = false;
+    return scale;
+}
+// ─── Dataset Builders (shared by line + bar, including combo override) ───────
+function buildDatasets(series, config, kind, labelsLen) {
+    var _a;
+    const y2Conf = config.y2Axis;
+    const y2Names = new Set((_a = y2Conf === null || y2Conf === void 0 ? void 0 : y2Conf.properties) !== null && _a !== void 0 ? _a : []);
+    const plan = series.map((s) => {
+        const onY2 = y2Names.has(s.name);
+        const axisId = onY2 ? "y2" : "y";
+        const datasetKind = onY2 && (y2Conf === null || y2Conf === void 0 ? void 0 : y2Conf.style) ? y2Conf.style : kind;
+        return { s, axisId, datasetKind, overrideType: datasetKind !== kind };
+    });
+    // A combo chart mixes line and bar datasets, so Chart.js's draw order (lower
+    // `order` drawn last, i.e. on top) must be set explicitly on every dataset —
+    // otherwise an un-overridden dataset defaults to order 0 and would wrongly
+    // paint over a line dataset that was given an explicit, lower order.
+    const comboActive = plan.some((p) => p.overrideType);
+    return plan.map(({ s, axisId, datasetKind, overrideType }) => {
+        if (datasetKind === "line") {
+            return {
+                ...(overrideType ? { type: "line" } : {}),
+                ...(comboActive ? { order: 1 } : {}),
                 label: s.name,
                 data: s.points.map((p) => p.value),
                 borderColor: s.color,
                 backgroundColor: s.color + "22",
                 tension: 0.3,
                 fill: false,
-                pointRadius: labels.length > 60 ? 0 : 3,
+                pointRadius: labelsLen > 60 ? 0 : 3,
                 spanGaps: config.missingValue === "skip",
-            })),
+                yAxisID: axisId,
+            };
+        }
+        return {
+            ...(overrideType ? { type: "bar" } : {}),
+            ...(comboActive ? { order: 2 } : {}),
+            label: s.name,
+            data: s.points.map((p) => p.value),
+            backgroundColor: s.color + "cc",
+            borderColor: s.color,
+            borderWidth: 1,
+            borderRadius: 3,
+            yAxisID: axisId,
+        };
+    });
+}
+// Looks up the right axis's isTimeFmt/unit for the hovered dataset in a tooltip callback.
+function axisInfoFor(axes, yAxisID) {
+    var _a;
+    const id = (_a = yAxisID) !== null && _a !== void 0 ? _a : "y";
+    return axes.find((a) => a.id === id);
+}
+// ─── Line Chart ───────────────────────────────────────────────────────────────
+function renderLineChart(canvas, series, config) {
+    var _a, _b, _c, _d, _e, _f;
+    const labels = buildLabels(series, config);
+    const axes = buildAxes(series, config, "line");
+    const datasets = buildDatasets(series, config, "line", labels.length);
+    const scales = {
+        x: {
+            title: {
+                display: !!((_a = config.xAxis) === null || _a === void 0 ? void 0 : _a.label),
+                text: (_c = (_b = config.xAxis) === null || _b === void 0 ? void 0 : _b.label) !== null && _c !== void 0 ? _c : "",
+            },
         },
+        y: buildScaleOptions(axes.find((a) => a.id === "y"), true, "line"),
+    };
+    const y2Info = axes.find((a) => a.id === "y2");
+    if (y2Info)
+        scales.y2 = buildScaleOptions(y2Info, false, "line");
+    const chartConfig = {
+        type: "line",
+        data: { labels, datasets: datasets },
         options: {
             responsive: true,
             animation: false,
             plugins: {
                 title: {
                     display: !!config.title,
-                    text: (_e = config.title) !== null && _e !== void 0 ? _e : "",
+                    text: (_d = config.title) !== null && _d !== void 0 ? _d : "",
                     font: { size: 14, weight: "bold" },
                 },
                 subtitle: {
                     display: !!config.subtitle,
-                    text: (_f = config.subtitle) !== null && _f !== void 0 ? _f : "",
+                    text: (_e = config.subtitle) !== null && _e !== void 0 ? _e : "",
                 },
-                legend: { display: (_g = config.showLegend) !== null && _g !== void 0 ? _g : true },
+                legend: { display: (_f = config.showLegend) !== null && _f !== void 0 ? _f : true },
                 tooltip: {
                     callbacks: {
                         label: (ctx) => {
+                            var _a;
+                            const info = axisInfoFor(axes, ctx.dataset.yAxisID);
                             const val = ctx.parsed.y;
-                            const formatted = isTimeFmt ? formatSecondsAsTime(val) : val === null || val === void 0 ? void 0 : val.toFixed(2);
-                            return `${ctx.dataset.label}: ${formatted}${unit}`;
+                            const formatted = (info === null || info === void 0 ? void 0 : info.isTimeFmt) ? formatSecondsAsTime(val) : val === null || val === void 0 ? void 0 : val.toFixed(2);
+                            return `${ctx.dataset.label}: ${formatted}${(_a = info === null || info === void 0 ? void 0 : info.unit) !== null && _a !== void 0 ? _a : ""}`;
                         },
                     },
                 },
             },
-            scales: {
-                x: {
-                    title: {
-                        display: !!((_h = config.xAxis) === null || _h === void 0 ? void 0 : _h.label),
-                        text: (_k = (_j = config.xAxis) === null || _j === void 0 ? void 0 : _j.label) !== null && _k !== void 0 ? _k : "",
-                    },
-                },
-                y: {
-                    title: {
-                        display: !!((_l = config.yAxis) === null || _l === void 0 ? void 0 : _l.label),
-                        text: (_o = (_m = config.yAxis) === null || _m === void 0 ? void 0 : _m.label) !== null && _o !== void 0 ? _o : "",
-                    },
-                    min: yMin,
-                    max: resolvedMax,
-                    ticks: isTimeFmt
-                        ? { callback: (val) => formatSecondsAsTime(val) }
-                        : {},
-                },
-            },
+            scales: scales,
         },
     };
     return new Chart(canvas, chartConfig);
 }
 // ─── Bar Chart ────────────────────────────────────────────────────────────────
 function renderBarChart(canvas, series, config) {
-    var _a, _b, _c, _d, _e, _f, _g, _h, _j, _k, _l, _m, _o;
+    var _a, _b, _c, _d, _e, _f;
     const labels = buildLabels(series, config);
-    const isTimeFmt = series.some(s => s.isTimeFormat);
-    const resolvedMin = resolveAxisBound((_a = config.yAxis) === null || _a === void 0 ? void 0 : _a.min, isTimeFmt);
-    const resolvedMax = resolveAxisBound((_b = config.yAxis) === null || _b === void 0 ? void 0 : _b.max, isTimeFmt);
-    const unit = (_d = (_c = config.yAxis) === null || _c === void 0 ? void 0 : _c.unit) !== null && _d !== void 0 ? _d : "";
+    const axes = buildAxes(series, config, "bar");
+    const datasets = buildDatasets(series, config, "bar", labels.length);
+    const scales = {
+        x: {
+            title: { display: !!((_a = config.xAxis) === null || _a === void 0 ? void 0 : _a.label), text: (_c = (_b = config.xAxis) === null || _b === void 0 ? void 0 : _b.label) !== null && _c !== void 0 ? _c : "" },
+            stacked: false,
+        },
+        y: buildScaleOptions(axes.find((a) => a.id === "y"), true, "bar"),
+    };
+    const y2Info = axes.find((a) => a.id === "y2");
+    if (y2Info)
+        scales.y2 = buildScaleOptions(y2Info, false, "bar");
     const chartConfig = {
         type: "bar",
-        data: {
-            labels,
-            datasets: series.map((s) => ({
-                label: s.name,
-                data: s.points.map((p) => p.value),
-                backgroundColor: s.color + "cc",
-                borderColor: s.color,
-                borderWidth: 1,
-                borderRadius: 3,
-            })),
-        },
+        data: { labels, datasets: datasets },
         options: {
             responsive: true,
             animation: false,
             plugins: {
                 title: {
                     display: !!config.title,
-                    text: (_e = config.title) !== null && _e !== void 0 ? _e : "",
+                    text: (_d = config.title) !== null && _d !== void 0 ? _d : "",
                     font: { size: 14, weight: "bold" },
                 },
-                subtitle: { display: !!config.subtitle, text: (_f = config.subtitle) !== null && _f !== void 0 ? _f : "" },
-                legend: { display: ((_g = config.showLegend) !== null && _g !== void 0 ? _g : true) && series.length > 1 },
+                subtitle: { display: !!config.subtitle, text: (_e = config.subtitle) !== null && _e !== void 0 ? _e : "" },
+                legend: { display: ((_f = config.showLegend) !== null && _f !== void 0 ? _f : true) && series.length > 1 },
                 tooltip: {
                     callbacks: {
                         label: (ctx) => {
+                            var _a;
+                            const info = axisInfoFor(axes, ctx.dataset.yAxisID);
                             const val = ctx.parsed.y;
-                            const formatted = isTimeFmt ? formatSecondsAsTime(val) : val === null || val === void 0 ? void 0 : val.toFixed(2);
-                            return `${ctx.dataset.label}: ${formatted}${unit}`;
+                            const formatted = (info === null || info === void 0 ? void 0 : info.isTimeFmt) ? formatSecondsAsTime(val) : val === null || val === void 0 ? void 0 : val.toFixed(2);
+                            return `${ctx.dataset.label}: ${formatted}${(_a = info === null || info === void 0 ? void 0 : info.unit) !== null && _a !== void 0 ? _a : ""}`;
                         },
                     },
                 },
             },
-            scales: {
-                x: {
-                    title: { display: !!((_h = config.xAxis) === null || _h === void 0 ? void 0 : _h.label), text: (_k = (_j = config.xAxis) === null || _j === void 0 ? void 0 : _j.label) !== null && _k !== void 0 ? _k : "" },
-                    stacked: false,
-                },
-                y: {
-                    title: { display: !!((_l = config.yAxis) === null || _l === void 0 ? void 0 : _l.label), text: (_o = (_m = config.yAxis) === null || _m === void 0 ? void 0 : _m.label) !== null && _o !== void 0 ? _o : "" },
-                    min: resolvedMin,
-                    max: resolvedMax,
-                    stacked: false,
-                    ticks: isTimeFmt
-                        ? { callback: (val) => formatSecondsAsTime(val) }
-                        : {},
-                },
-            },
+            scales: scales,
         },
     };
     return new Chart(canvas, chartConfig);
