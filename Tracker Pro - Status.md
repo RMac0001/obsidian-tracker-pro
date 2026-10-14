@@ -4,6 +4,18 @@
 
 ---
 
+### v1.7.12 — Open-Ended `startDate` / `endDate`
+
+Fixes `resolveStartEnd()` silently falling back to the last 30 days whenever a block set only one of `startDate`/`endDate` — previously both had to be set together or neither was honoured. Also fixes a crash when an unquoted ISO `startDate`/`endDate` (e.g. `startDate: 2026-09-18` with no quotes) is parsed as a `Date` object by js-yaml instead of a string, since the old inline parser called `.match()` on it directly.
+
+**Behavior:** `startDate`/`endDate` now always take priority over `dateRange` when either is set, independently — `startDate` alone resolves to startDate → today; `endDate` alone resolves to 2000-01-01 → endDate (same floor as `all`); both set is unchanged; neither set falls through to `dateRange` and then the 30-day default, both unchanged. Accepts `YYYY-MM-DD`, `MM/DD/YYYY` (single-digit month/day too), or an unquoted-ISO `Date` object, quoted or not. A JS `Date` from js-yaml is always UTC midnight, so its Y/M/D is read with UTC getters and rebuilt as local midnight — using local getters here would silently shift the date back a day in negative-UTC-offset timezones (verified under `TZ=America/New_York`). An unparseable value or `startDate` after `endDate` is a config error naming the bad value.
+
+**Implementation:** new `parseConfigDate()`/`toYMD()` in `src/utils.ts`, shared by `parser.ts`'s validation (normalises both fields to `YYYY-MM-DD` once, so every downstream consumer can trust that shape) and `resolveStartEnd()` (replaces the old `startDate && endDate`-only branch and its `.match()`-based inline parser). `renderer.ts`'s `renderDateSelector()` now opens on **Custom…** whenever either field is set (not just both), and prefills a missing side with `2000-01-01` / today instead of leaving it blank.
+
+**Files changed:** `src/utils.ts`, `src/parser.ts`, `src/renderer.ts`, `Documentation.md`.
+
+---
+
 ### v1.7.11 — Secondary Y-Axis (`y2Axis`) for Line & Bar Charts + Named Colours
 
 Adds an optional `y2Axis` block to `line` and `bar` charts so selected properties plot against a second y-axis on the right, with its own bounds, label, unit and formatting — e.g. walking pace (`mm:ss`, left axis) alongside average heart rate (bpm, right axis) on one chart, instead of one clipping the other's scale.

@@ -2889,6 +2889,55 @@ function formatSecondsAsTime(totalSeconds) {
     const s = rounded % 60;
     return `${m}:${String(s).padStart(2, "0")}`;
 }
+// ─── Config Date Helpers ────────────────────────────────────────────────────────
+// Parses startDate/endDate values from a tracker config block. Accepts
+// YYYY-MM-DD, MM/DD/YYYY (single-digit month/day allowed), or a JS Date
+// (what js-yaml produces for an unquoted ISO date, always at UTC midnight —
+// its UTC Y/M/D is read off and rebuilt as local midnight to avoid shifting
+// a day in negative-UTC-offset timezones).
+const ISO_DATE_RE = /^(\d{4})-(\d{2})-(\d{2})$/;
+const US_DATE_RE = /^(\d{1,2})\/(\d{1,2})\/(\d{4})$/;
+function parseConfigDate(raw) {
+    let y, m, d;
+    if (raw instanceof Date) {
+        y = raw.getUTCFullYear();
+        m = raw.getUTCMonth() + 1;
+        d = raw.getUTCDate();
+    }
+    else if (typeof raw === "string") {
+        const trimmed = raw.trim();
+        const isoMatch = trimmed.match(ISO_DATE_RE);
+        const usMatch = trimmed.match(US_DATE_RE);
+        if (isoMatch) {
+            y = Number(isoMatch[1]);
+            m = Number(isoMatch[2]);
+            d = Number(isoMatch[3]);
+        }
+        else if (usMatch) {
+            m = Number(usMatch[1]);
+            d = Number(usMatch[2]);
+            y = Number(usMatch[3]);
+        }
+        else {
+            return null;
+        }
+    }
+    else {
+        return null;
+    }
+    const date = new Date(y, m - 1, d);
+    // Reject impossible dates (e.g. 02/31/2026) via a Y/M/D round-trip check
+    if (date.getFullYear() !== y || date.getMonth() !== m - 1 || date.getDate() !== d) {
+        return null;
+    }
+    return date;
+}
+function toYMD(d) {
+    const y = d.getFullYear();
+    const m = String(d.getMonth() + 1).padStart(2, "0");
+    const day = String(d.getDate()).padStart(2, "0");
+    return `${y}-${m}-${day}`;
+}
 // ─── Named Colours ──────────────────────────────────────────────────────────────
 const NAMED_COLORS = {
     red: "#f76c6c",
@@ -3100,6 +3149,24 @@ function validateConfig(raw) {
             message: `Unknown aggregate "${raw.aggregate}". Valid: ${VALID_AGGREGATES.join(", ")}`,
         });
     }
+    // startDate / endDate (explicit date range — normalised to YYYY-MM-DD below)
+    let parsedStartDate = null;
+    let parsedEndDate = null;
+    if (raw.startDate !== undefined) {
+        parsedStartDate = parseConfigDate(raw.startDate);
+        if (parsedStartDate === null) {
+            errors.push({ message: `Invalid startDate "${raw.startDate}" — use YYYY-MM-DD or MM/DD/YYYY` });
+        }
+    }
+    if (raw.endDate !== undefined) {
+        parsedEndDate = parseConfigDate(raw.endDate);
+        if (parsedEndDate === null) {
+            errors.push({ message: `Invalid endDate "${raw.endDate}" — use YYYY-MM-DD or MM/DD/YYYY` });
+        }
+    }
+    if (parsedStartDate && parsedEndDate && parsedStartDate.getTime() > parsedEndDate.getTime()) {
+        errors.push({ message: "startDate is after endDate" });
+    }
     // gauge: min/max
     if (raw.type === "gauge") {
         if (raw.min === undefined || raw.max === undefined) {
@@ -3143,6 +3210,10 @@ function validateConfig(raw) {
         }
     }
     const config = raw;
+    if (parsedStartDate)
+        config.startDate = toYMD(parsedStartDate);
+    if (parsedEndDate)
+        config.endDate = toYMD(parsedEndDate);
     if (raw.showSource !== undefined)
         config.showSource = Boolean(raw.showSource);
     if (raw.year !== undefined)
@@ -3221,15 +3292,18 @@ function parseTrackerConfig(source) {
 }
 // ─── Date Helpers ─────────────────────────────────────────────────────────────
 function resolveStartEnd(config) {
-    if (config.startDate && config.endDate) {
-        // Parse ISO date strings as local midnight, not UTC
+    if (config.startDate || config.endDate) {
+        const now = new Date();
+        const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+        // startDate/endDate are normalised to YYYY-MM-DD by validateConfig;
+        // parse as local midnight, not UTC.
         const parseLocal = (s) => {
-            const m = s.match(/^(\d{4})-(\d{2})-(\d{2})$/);
-            return m ? new Date(+m[1], +m[2] - 1, +m[3]) : new Date(s);
+            const [y, m, d] = s.split("-").map(Number);
+            return new Date(y, m - 1, d);
         };
         return {
-            start: parseLocal(config.startDate),
-            end: parseLocal(config.endDate),
+            start: config.startDate ? parseLocal(config.startDate) : new Date(2000, 0, 1),
+            end: config.endDate ? parseLocal(config.endDate) : today,
         };
     }
     if (config.dateRange) {
@@ -22263,7 +22337,7 @@ const DATE_OPTIONS = [
 function renderDateSelector(selectorEl, chartEl, app, config, settings) {
     var _a, _b, _c;
     let currentValue = (_a = config.dateRange) !== null && _a !== void 0 ? _a : "last-30-days";
-    if (config.startDate && config.endDate && !config.dateRange)
+    if (config.startDate || config.endDate)
         currentValue = "custom";
     const select = selectorEl.createEl("select", { cls: "tracker-pro-date-select" });
     for (const opt of DATE_OPTIONS) {
@@ -22276,12 +22350,12 @@ function renderDateSelector(selectorEl, chartEl, app, config, settings) {
         customEl.addClass("hidden");
     const startInput = customEl.createEl("input");
     startInput.type = "date";
-    startInput.value = (_b = config.startDate) !== null && _b !== void 0 ? _b : "";
+    startInput.value = (_b = config.startDate) !== null && _b !== void 0 ? _b : "2000-01-01";
     const sep = customEl.createEl("span", { text: "→", cls: "tracker-pro-date-sep" });
     sep.style.color = "var(--text-muted)";
     const endInput = customEl.createEl("input");
     endInput.type = "date";
-    endInput.value = (_c = config.endDate) !== null && _c !== void 0 ? _c : "";
+    endInput.value = (_c = config.endDate) !== null && _c !== void 0 ? _c : toYMD(new Date());
     const rerender = async () => {
         await renderChartContent(app, chartEl, config, settings);
     };

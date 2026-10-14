@@ -1,6 +1,6 @@
 import * as yaml from "js-yaml";
 import { TrackerConfig, ChartType, AggregateType, ParseError } from "./types";
-import { resolveColor } from "./utils";
+import { resolveColor, parseConfigDate, toYMD } from "./utils";
 
 // ─── Valid Values ─────────────────────────────────────────────────────────────
 
@@ -131,6 +131,26 @@ function validateConfig(
     });
   }
 
+  // startDate / endDate (explicit date range — normalised to YYYY-MM-DD below)
+  let parsedStartDate: Date | null = null;
+  let parsedEndDate: Date | null = null;
+
+  if (raw.startDate !== undefined) {
+    parsedStartDate = parseConfigDate(raw.startDate);
+    if (parsedStartDate === null) {
+      errors.push({ message: `Invalid startDate "${raw.startDate}" — use YYYY-MM-DD or MM/DD/YYYY` });
+    }
+  }
+  if (raw.endDate !== undefined) {
+    parsedEndDate = parseConfigDate(raw.endDate);
+    if (parsedEndDate === null) {
+      errors.push({ message: `Invalid endDate "${raw.endDate}" — use YYYY-MM-DD or MM/DD/YYYY` });
+    }
+  }
+  if (parsedStartDate && parsedEndDate && parsedStartDate.getTime() > parsedEndDate.getTime()) {
+    errors.push({ message: "startDate is after endDate" });
+  }
+
   // gauge: min/max
   if (raw.type === "gauge") {
     if (raw.min === undefined || raw.max === undefined) {
@@ -180,6 +200,9 @@ function validateConfig(
   }
 
   const config = raw as unknown as TrackerConfig;
+
+  if (parsedStartDate) config.startDate = toYMD(parsedStartDate);
+  if (parsedEndDate) config.endDate = toYMD(parsedEndDate);
 
   if (raw.showSource !== undefined) config.showSource = Boolean(raw.showSource);
   if (raw.year !== undefined) config.year = Number(raw.year);
@@ -266,15 +289,19 @@ export function parseTrackerConfig(
 export function resolveStartEnd(
   config: TrackerConfig
 ): { start: Date; end: Date } {
-  if (config.startDate && config.endDate) {
-    // Parse ISO date strings as local midnight, not UTC
+  if (config.startDate || config.endDate) {
+    const now = new Date();
+    const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+
+    // startDate/endDate are normalised to YYYY-MM-DD by validateConfig;
+    // parse as local midnight, not UTC.
     const parseLocal = (s: string) => {
-      const m = s.match(/^(\d{4})-(\d{2})-(\d{2})$/);
-      return m ? new Date(+m[1], +m[2] - 1, +m[3]) : new Date(s);
+      const [y, m, d] = s.split("-").map(Number);
+      return new Date(y, m - 1, d);
     };
     return {
-      start: parseLocal(config.startDate),
-      end:   parseLocal(config.endDate),
+      start: config.startDate ? parseLocal(config.startDate) : new Date(2000, 0, 1),
+      end:   config.endDate ? parseLocal(config.endDate) : today,
     };
   }
   if (config.dateRange) {

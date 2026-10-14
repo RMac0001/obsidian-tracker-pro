@@ -65,6 +65,57 @@ export function formatSecondsAsTime(totalSeconds: number): string {
     return `${m}:${String(s).padStart(2, "0")}`;
 }
 
+// ─── Config Date Helpers ────────────────────────────────────────────────────────
+// Parses startDate/endDate values from a tracker config block. Accepts
+// YYYY-MM-DD, MM/DD/YYYY (single-digit month/day allowed), or a JS Date
+// (what js-yaml produces for an unquoted ISO date, always at UTC midnight —
+// its UTC Y/M/D is read off and rebuilt as local midnight to avoid shifting
+// a day in negative-UTC-offset timezones).
+
+const ISO_DATE_RE = /^(\d{4})-(\d{2})-(\d{2})$/;
+const US_DATE_RE = /^(\d{1,2})\/(\d{1,2})\/(\d{4})$/;
+
+export function parseConfigDate(raw: unknown): Date | null {
+    let y: number, m: number, d: number;
+
+    if (raw instanceof Date) {
+        y = raw.getUTCFullYear();
+        m = raw.getUTCMonth() + 1;
+        d = raw.getUTCDate();
+    } else if (typeof raw === "string") {
+        const trimmed = raw.trim();
+        const isoMatch = trimmed.match(ISO_DATE_RE);
+        const usMatch = trimmed.match(US_DATE_RE);
+        if (isoMatch) {
+            y = Number(isoMatch[1]);
+            m = Number(isoMatch[2]);
+            d = Number(isoMatch[3]);
+        } else if (usMatch) {
+            m = Number(usMatch[1]);
+            d = Number(usMatch[2]);
+            y = Number(usMatch[3]);
+        } else {
+            return null;
+        }
+    } else {
+        return null;
+    }
+
+    const date = new Date(y, m - 1, d);
+    // Reject impossible dates (e.g. 02/31/2026) via a Y/M/D round-trip check
+    if (date.getFullYear() !== y || date.getMonth() !== m - 1 || date.getDate() !== d) {
+        return null;
+    }
+    return date;
+}
+
+export function toYMD(d: Date): string {
+    const y = d.getFullYear();
+    const m = String(d.getMonth() + 1).padStart(2, "0");
+    const day = String(d.getDate()).padStart(2, "0");
+    return `${y}-${m}-${day}`;
+}
+
 // ─── Named Colours ──────────────────────────────────────────────────────────────
 
 const NAMED_COLORS: Record<string, string> = {

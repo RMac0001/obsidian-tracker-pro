@@ -430,12 +430,27 @@ If omitted, Tracker Pro looks for common frontmatter keys (`date`, `created`,
 dateRange: last-30-days
 ```
 
-Alternatively, use explicit dates:
+Alternatively, use explicit dates. `startDate` / `endDate` always take priority over `dateRange` when either is set, and they don't need to be set together:
+
+| startDate | endDate | dateRange | Resolved window |
+| --- | --- | --- | --- |
+| set | set | any | startDate → endDate |
+| set | — | any | startDate → today |
+| — | set | any | 2000-01-01 → endDate (same floor as `all`) |
+| — | — | set | dateRange preset |
+| — | — | — | last 30 days |
 
 ```yaml
 startDate: 2025-01-01
 endDate:   2025-03-31
 ```
+
+```yaml
+# Everything since January 18 — no endDate needed, defaults to today
+startDate: 2026-01-18
+```
+
+Accepted formats, quoted or unquoted: `YYYY-MM-DD` (e.g. `2026-09-18`), `MM/DD/YYYY` (e.g. `09/18/2026`, single-digit month/day also accepted), or an unquoted ISO date (which YAML reads in as a date value rather than a string — Tracker Pro handles this the same as a quoted string). Both resolve to local midnight. An unparseable value, or a `startDate` after `endDate`, is a config error shown in place of the chart.
 
 ---
 
@@ -468,7 +483,7 @@ Choosing a preset immediately re-renders the chart for that range. Choosing **Cu
 | All Time | `all` |
 | Custom… | uses `startDate` / `endDate` |
 
-The initial selection reflects the `dateRange` set in the block (defaults to **Last 30 Days** if none is set).
+The initial selection reflects the `dateRange` set in the block (defaults to **Last 30 Days** if none is set). A block with `startDate` and/or `endDate` set opens on **Custom…** instead, with the date pickers prefilled (missing `startDate` defaults the picker to `2000-01-01`, missing `endDate` to today).
 
 ---
 
@@ -2088,8 +2103,8 @@ All available parameters in one table.
 | `file`             | string                     | —                                   | all                              | Single file path (without `.md`).                                      |
 | `files`            | list                       | —                                   | all                              | List of file paths.                                                    |
 | `dateRange`        | string                     | [[#Full list of dateRange options]] | all                              | Preset date window.                                                    |
-| `startDate`        | ISO date                   | —                                   | all                              | Explicit range start.                                                  |
-| `endDate`          | ISO date                   | —                                   | all                              | Explicit range end.                                                    |
+| `startDate`        | date (YYYY-MM-DD or MM/DD/YYYY) | —                              | all                              | Range start; defaults to all time.                                     |
+| `endDate`          | date (YYYY-MM-DD or MM/DD/YYYY) | —                              | all                              | Range end; defaults to today.                                          |
 | `dateProperty`     | string                     | —                                   | all                              | Frontmatter key for the note's date.                                   |
 | `properties`       | list / map                 | —                                   | most                             | Frontmatter key(s) to chart. Optional for summary and table.           |
 | `aggregate`        | string                     | `daily`                             | line, bar, heatmap, gauge, radar | Time aggregation mode.                                                 |

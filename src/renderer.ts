@@ -1,5 +1,6 @@
 import { App } from "obsidian";
 import { TrackerConfig, ParseError } from "./types";
+import { toYMD } from "./utils";
 import { TrackerSettings } from "./settings";
 import { collectRawEntries, buildSeriesData, buildOHLCData, buildFrequencyData } from "./dataCollector";
 import { aggregateAllSeries } from "./aggregator";
@@ -218,7 +219,7 @@ function renderDateSelector(
   settings?: TrackerSettings
 ): void {
   let currentValue = config.dateRange ?? "last-30-days";
-  if (config.startDate && config.endDate && !config.dateRange) currentValue = "custom";
+  if (config.startDate || config.endDate) currentValue = "custom";
 
   const select = selectorEl.createEl("select", { cls: "tracker-pro-date-select" });
   for (const opt of DATE_OPTIONS) {
@@ -231,14 +232,14 @@ function renderDateSelector(
 
   const startInput = customEl.createEl("input") as HTMLInputElement;
   startInput.type = "date";
-  startInput.value = config.startDate ?? "";
+  startInput.value = config.startDate ?? "2000-01-01";
 
   const sep = customEl.createEl("span", { text: "→", cls: "tracker-pro-date-sep" });
   sep.style.color = "var(--text-muted)";
 
   const endInput = customEl.createEl("input") as HTMLInputElement;
   endInput.type = "date";
-  endInput.value = config.endDate ?? "";
+  endInput.value = config.endDate ?? toYMD(new Date());
 
   const rerender = async () => {
     await renderChartContent(app, chartEl, config, settings);
